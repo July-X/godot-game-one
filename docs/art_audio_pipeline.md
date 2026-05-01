@@ -1,63 +1,63 @@
-# Art and Audio Pipeline
+# 美术与音频管线
 
-This project is intentionally scoped as a small complete game, so the content pipeline stays simple.
+本项目有意识地限定为一个完整的短游戏，因此内容管线保持简单。
 
-## Locked Production Assumptions
+## 固定的生产假设
 
-- Game type: single-player 3D micro-story
-- Target length: under 1 hour
-- Visual family: Contra-like readability with 3D execution
-- Scope rule: complete the vertical slice before adding more chapters
+- 游戏类型：单机 3D 微剧情游戏
+- 目标时长：1 小时以内
+- 视觉系列：Contra 风格可读性，用 3D 实现
+- 范围规则：先完成垂直切片，再添加更多章节
 
-## Visual Direction
+## 视觉方向
 
-- Base reference: Contra / Metal Slug era arcade readability
-- 3D implementation: low-poly silhouettes, hard edges, strong lighting contrast
-- Post-process: subtle pixelation or downscaled viewport if needed
-- Animation: exaggerated run, hit, recoil, and death states
+- 基础参考：Contra / Metal Slug 时代的街机可读性
+- 3D 实现：低多边形轮廓、硬边、强光照对比
+- 后处理：如有需要，使用微妙像素化或缩小视口
+- 动画：夸张的奔跑、受击、后退和死亡姿态
 
-## Asset List
+## 资产清单
 
-### Characters
+### 角色
 
-- Player
-- 2 to 4 enemy types
-- Boss or mid-boss for the ending
+- 玩家
+- 2 到 4 种敌人类型
+- 用于尾声的头目或中头目
 
-### Environments
+### 环境
 
-- Intro corridor
-- Industrial compound
-- Interior terminal room
-- Escape or final reveal room
+- 开场走廊
+- 工业区
+- 室内终端房间
+- 逃脱或最终揭示房间
 
 ### UI
 
-- Health display
-- Objective banner
-- Dialogue box
-- Result screen
+- 血量显示
+- 目标横幅
+- 对话框
+- 结果画面
 
-### Audio
+### 音频
 
-- Footsteps
-- Blaster shot
-- Enemy hit
-- Player hit
-- Explosion
-- UI confirm / cancel
-- 2 to 3 music loops
+- 脚步声
+- 爆能枪射击音
+- 敌人受击音
+- 玩家受击音
+- 爆炸音
+- UI 确认 / 取消音
+- 2 到 3 个音乐循环
 
-## Production Order
+## 生产顺序
 
-1. Block out the full game in primitive 3D
-2. Replace the player and first enemy with final models
-3. Add animation clips and hit reactions
-4. Add sound effects and music
-5. Polish camera, UI, and transitions
+1. 用原始 3D 几何体搭建整个游戏
+2. 将玩家和第一个敌人替换为最终模型
+3. 添加动画片段和受击反应
+4. 添加音效和音乐
+5. 打磨相机、UI 和过渡
 
-## Documentation Cross-References
+## 文档交叉引用
 
-- See `README.md` for the public-facing summary.
-- See `agents.md` for the working rules that future agent turns should obey.
-- See `docs/Design_Decisions.md` for the frozen scope and production assumptions.
+- 参见 `README.md` 了解面向公众的摘要。
+- 参见 `agents.md` 了解未来 Agent 轮次应遵守的工作规则。
+- 参见 `docs/Design_Decisions.md` 了解冻结的范围和生产假设。

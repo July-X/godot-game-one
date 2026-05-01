@@ -1,65 +1,65 @@
 # Godot Game One
 
-Single-player 3D micro-story game for Godot 4.
+适用于 Godot 4 的单机 3D 微剧情游戏。
 
-## Reference Docs
+## 参考文档
 
-- [Agent Guide](./agents.md)
-- [Development Plan](./docs/Development_Plan.md)
-- [Design Decisions](./docs/Design_Decisions.md)
-- [Art and Audio Pipeline](./docs/art_audio_pipeline.md)
+- [Agent 指南](./agents.md)
+- [开发计划](./docs/Development_Plan.md)
+- [设计决策](./docs/Design_Decisions.md)
+- [美术与音频管线](./docs/art_audio_pipeline.md)
 
-## Target
+## 目标
 
-- Playtime: under 1 hour
-- Tone: short sci-fi rescue story
-- Visual direction: NES / Contra-inspired retro action, but built in 3D
-- Camera: side-biased 3D action camera with pixel-like presentation
-- Scope: one complete vertical slice first, then expand content
-- Technical target: Godot 4.x, GDScript, small scene count, fast iteration
+- 时长：1 小时以内
+- 基调：短篇科幻救援故事
+- 视觉方向：NES / Contra 风格复古动作，用 3D 构建
+- 相机：侧偏 3D 动作相机，像素风格呈现
+- 范围：先完成一个完整的垂直切片，再扩展内容
+- 技术目标：Godot 4.x，GDScript，小场景数量，快速迭代
 
-## Core Loop
+## 核心循环
 
-1. Briefing
-2. Run through a compact hostile corridor
-3. Fight a small set of enemies
-4. Reach a story terminal or objective checkpoint
-5. Escape / end scene
+1. 简报
+2. 穿越紧凑的敌占走廊
+3. 与一小群敌人战斗
+4. 到达剧情终端或目标检查点
+5. 逃脱 / 结束场景
 
-## Controls
+## 操作
 
-- Move: `ui_left`, `ui_right`, `ui_up`, `ui_down`
-- Jump / cancel: `ui_cancel`
-- Shoot / confirm: `ui_accept`
+- 移动：`ui_left`、`ui_right`、`ui_up`、`ui_down`
+- 跳跃 / 取消：`ui_cancel`
+- 射击 / 确认：`ui_accept`
 
-## Project Layout
+## 项目布局
 
-- `scenes/` Godot scenes
-- `scripts/` gameplay logic
-- `docs/` story, art, and audio brief
-- `assets/` placeholder folders for future art and sound
+- `scenes/` Godot 场景
+- `scripts/` 游戏逻辑
+- `docs/` 剧情、美术和音频简介
+- `assets/` 未来美术和音效的占位文件夹
 
-## Style Guide
+## 风格指南
 
-- World scale: compact rooms, readable silhouettes, limited clutter
-- Colors: high-contrast, saturated accents, restrained background palette
-- Materials: simple shaded materials, low-frequency detail, obvious form language
-- UI: arcade-style, minimal, screen-space only when needed
-- Audio: punchy effects, short loops, clear weapon feedback
+- 世界比例：紧凑房间、可读轮廓、有限杂乱
+- 颜色：高对比度、饱和强调色、克制的背景调色板
+- 材质：简单着色材质、低频细节、清晰的形态语言
+- UI：街机风格、极简、仅在需要时使用屏幕空间
+- 音频：有力的音效、短循环、清晰的武器反馈
 
-## Next Milestones
+## 下一个里程碑
 
-1. Replace primitive geometry with final level art
-2. Add enemy behaviors and a dialogue sequence
-3. Add music, weapon sounds, and hit feedback
-4. Expand into 3 to 5 short chapters
+1. 用最终关卡美术替换原始几何体
+2. 添加敌人行为和对话序列
+3. 添加音乐、武器音效和受击反馈
+4. 扩展到 3 到 5 个短章节
 
-## Current Focus
+## 当前重点
 
-- Phase 1: playable vertical slice
-- Status: player/enemy/combat/exit-state loop is being wired up
+- Phase 1：可玩垂直切片
+- 状态：玩家 / 敌人 / 战斗 / 出口状态循环正在连接中
 
-## Documentation Rule
+## 文档规则
 
-- Any change to gameplay scope, camera, control feel, art direction, or production order must be mirrored in the design docs before implementation drifts.
-- Keep the README as the entry point, and keep the detailed decisions in the design docs.
+- 任何游戏玩法范围、相机、操作手感、美术方向或生产顺序的变更，必须在实现偏离之前同步更新设计文档。
+- 保持 README 作为入口，详细决策放在设计文档中。

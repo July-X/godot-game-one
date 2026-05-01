@@ -1,65 +1,91 @@
-# Development Plan
+# 开发计划
 
-This plan describes the work sequence for the current game slice. It is intentionally narrow: the goal is to ship a complete short game, not to grow the scope before the loop is stable.
+本计划描述了当前游戏切片的工作顺序。它有意保持狭窄：目标是交付一个完整的短游戏，而不是在循环稳定之前扩大范围。
 
-## Phase 1: Playable Vertical Slice
+## Phase 1：可玩垂直切片
 
-Goal: make the game start, play, fight, and finish.
+目标：让游戏能够启动、游玩、战斗并完成。
 
-Work items:
+工作项：
 
-1. Keep the project loadable in Godot 4.
-2. Make the player move, jump, and shoot.
-3. Make enemies patrol, chase, take damage, and die.
-4. Add win and fail conditions.
-5. Add a simple HUD and story line.
+1. 保持项目在 Godot 4 中可加载。
+2. 让玩家能够移动、跳跃和射击。
+3. 让敌人能够巡逻、追击、受击和死亡。
+4. 添加胜利和失败条件。
+5. 添加简单的 HUD 和剧情文本。
 
-Expected result:
+预期结果：
 
-- One compact level can be cleared from start to finish.
-- The player understands the objective at a glance.
-- Combat feedback is readable even with placeholder art.
+- 一个紧凑的关卡可以从头到尾打通。
+- 玩家一眼就能理解目标。
+- 即使使用占位美术，战斗反馈也是可读的。
 
-## Phase 2: Narrative and Flow
+### Phase 1 子任务（2026-05-01 细化）
 
-Goal: turn the vertical slice into a short micro-story game.
+- [x] 玩家移动、跳跃、射击
+- [x] 敌人巡逻、追击、触碰伤害、死亡
+- [x] 基础关卡（地面、墙壁、出生点、出口、剧情触发器）
+- [x] HUD 显示（血量、目标、剧情、调试信息）
+- [x] 出口锁定/解锁流程
+- [x] 游戏状态管理（running / finished / failed）
+- [x] 重启流程（按 Enter 重试）
+- [x] 修复窗口显示过小（改为 canvas_items 拉伸模式，初始 960x540）
+- [x] 增强关卡视觉丰富度（增加更多障碍物、掩体、视觉标记）
+- [x] 添加击中反馈特效（粒子、闪光）
+- [x] 添加相机震动（受击时）
+- [x] 添加结算/游戏结束画面（替代原始的场景重载）
+- [ ] 添加基础主菜单/标题画面
 
-Work items:
+## Phase 2：叙事和流程
 
-1. Add intro and outro beats.
-2. Add 2 to 4 short scene segments.
-3. Tighten pacing so a full run stays under 1 hour.
-4. Add result screen and restart flow.
+目标：把垂直切片变成一个短篇微剧情游戏。
 
-## Phase 3: Visual Production
+工作项：
 
-Goal: replace placeholders with final art while preserving the current style direction.
+1. 添加开场和结尾片段。
+2. 添加 2 到 4 个短场景段落。
+3. 调整节奏，使完整流程保持在 1 小时以内。
+4. 添加结果画面和重启流程。
 
-Work items:
+### Phase 2 子任务（已规划）
 
-1. Model the player, enemies, environment props, and key set pieces.
-2. Add animation clips and state transitions.
-3. Improve lighting, post-process, and readability.
-4. Keep the Contra-inspired 3D visual language consistent.
+- [ ] 标题画面（"按 Enter 开始"）
+- [ ] 开场简报序列
+- [ ] 关卡内多个剧情触发器节点
+- [ ] 关卡结束结果画面（带统计）
+- [ ] 状态间的平滑过渡
 
-## Phase 4: Audio and Polish
+## Phase 3：美术生产
 
-Goal: finish the experience.
+目标：在保持当前风格方向的前提下，用最终美术替换占位资源。
 
-Work items:
+工作项：
 
-1. Add weapon, hit, explosion, UI, and ambient sounds.
-2. Add 2 to 3 short BGM loops.
-3. Tune difficulty, hit timings, and transitions.
-4. Fix bugs and prepare a playable build.
+1. 建模玩家、敌人、环境道具和关键场景部件。
+2. 添加动画片段和状态过渡。
+3. 改进光照、后处理和可读性。
+4. 保持 Contra 风格 3D 视觉语言的一致性。
 
-## Working Rule
+## Phase 4：音频与打磨
 
-- Do not expand into new systems before Phase 1 is complete.
-- Update this document when the plan changes.
-- If a milestone is added or removed, mirror the change in `README.md` and `docs/Design_Decisions.md`.
+目标：完成体验。
 
-## Current Progress
+工作项：
 
-- Phase 1 in progress.
-- Completed in current slice: enemy touch damage, player hit invincibility, exit lock/unlock flow, restart flow, and one story trigger beat in level 01.
+1. 添加武器、受击、爆炸、UI 和环境音效。
+2. 添加 2 到 3 个短 BGM 循环。
+3. 调整难度、受击时机和过渡。
+4. 修复 Bug 并准备可玩构建。
+
+## 工作规则
+
+- 在 Phase 1 完成之前，不要扩展新系统。
+- 当计划变化时更新本文档。
+- 如果新增或移除里程碑，同步更新 `README.md` 和 `docs/Design_Decisions.md`。
+
+## 当前进度
+
+- Phase 1 大部分完成，剩余"基础主菜单/标题画面"待实现。
+- 已完成（当前切片）：敌人触碰伤害、玩家受击无敌帧、出口锁定/解锁流程、重启流程、关卡 01 中一个剧情触发节点。
+- Phase 1 已新增：窗口修复、关卡视觉增强、击中反馈/粒子特效/相机震动、结算画面、击杀追踪。
+- 下一步可进入 Phase 2（叙事和流程增强），或完成剩余 Phase 1 任务。详见 `agents.md` 第 11 节。

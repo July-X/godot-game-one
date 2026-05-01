@@ -1,68 +1,68 @@
-# Design Decisions
+# 设计决策
 
-This document freezes the current direction of the project. If any of these decisions change, update this file first, then update the implementation and the related reference docs.
+本文档冻结当前项目的方向。如果以下任何决策发生变化，请先更新此文件，然后更新实现和相关参考文档。
 
-## 1. Game Pitch
+## 1. 游戏定位
 
-- Single-player 3D micro-story game.
-- Target playtime: under 1 hour.
-- Tone: compact sci-fi rescue mission with light narrative framing.
-- Style reference: NES / Contra energy, but rebuilt in 3D with modern readability.
+- 单机 3D 微剧情游戏。
+- 目标时长：1 小时以内。
+- 基调：紧凑的科幻救援任务，带有轻度叙事框架。
+- 风格参考：NES / Contra 风格，但用 3D 重建，具有现代可读性。
 
-## 2. Scope Freeze
+## 2. 范围冻结
 
-- Build a complete vertical slice before expanding content.
-- No multiplayer, no online services, no backend dependencies.
-- No large open world.
-- No large skill tree or systemic progression layer yet.
-- Focus on a short, replayable action loop with a clear beginning and ending.
+- 先构建完整的垂直切片，再扩展内容。
+- 无多人、无在线服务、无后端依赖。
+- 无大型开放世界。
+- 暂无大型技能树或系统化成长层。
+- 专注于一个短小、可重玩的动作循环，具有明确的开始和结束。
 
-## 3. Core Loop
+## 3. 核心循环
 
-1. Briefing and objective setup.
-2. Move through a hostile corridor or compact arena.
-3. Fight a small enemy set.
-4. Reach a terminal, switch, or exit condition.
-5. Resolve the story beat and end the run.
+1. 简报和目标设定。
+2. 通过一条充满敌意的走廊或紧凑竞技场移动。
+3. 与一小群敌人战斗。
+4. 到达终端、开关或出口条件。
+5. 解决剧情节点并结束本轮。
 
-## 4. Camera and Controls
+## 4. 相机和操作
 
-- Camera: side-biased 3D action camera.
-- Movement: standard action movement mapped to the default Godot input actions.
-- Jump: used sparingly, only if it improves traversal readability.
-- Shooting: direct, readable, low-friction firing behavior.
+- 相机：侧偏 3D 动作相机。
+- 移动：标准的动作移动，映射到 Godot 默认输入动作。
+- 跳跃：谨慎使用，仅在能改善穿越可读性时使用。
+- 射击：直接、可读、低摩擦的射击行为。
 
-## 5. Visual Direction
+## 5. 视觉方向
 
-- Low-poly or simple-shape 3D assets.
-- High-contrast silhouettes.
-- Saturated foreground accents against restrained backgrounds.
-- Readability takes priority over realism.
-- Extra detail should support combat clarity, not clutter the frame.
+- 低多边形或简单形状 3D 资产。
+- 高对比度轮廓。
+- 饱和的前景强调色与克制的中性背景。
+- 可读性优先于真实感。
+- 额外细节应支持战斗清晰度，而不是干扰画面。
 
-## 6. Audio Direction
+## 6. 音频方向
 
-- Short, punchy weapon and hit sounds.
-- Clear feedback for damage, death, pickups, and UI confirmation.
-- Music should support quick action pacing and short story scenes.
+- 短促有力的武器和受击音效。
+- 清晰的伤害、死亡、拾取和 UI 确认反馈。
+- 音乐应支持快节奏动作和短篇剧情场景。
 
-## 7. Current Production Order
+## 7. 当前生产顺序
 
-1. Keep the current prototype scene loadable.
-2. Replace placeholder geometry with final art only after the loop is stable.
-3. Add enemy behaviors and the story sequence.
-4. Add animation, hit feedback, and audio.
-5. Polish level flow and final menu/result presentation.
+1. 保持当前原型场景可加载。
+2. 仅在循环稳定后用最终美术替换占位几何体。
+3. 添加敌人行为和剧情序列。
+4. 添加动画、受击反馈和音频。
+5. 打磨关卡流程和最终菜单/结果展示。
 
-## 8. Development Plan Link
+## 8. 开发计划链接
 
-- See `docs/Development_Plan.md` for the task-by-task rollout order.
-- Phase 1 is the current focus until the playable vertical slice is complete.
+- 参见 `docs/Development_Plan.md` 了解按任务展开的发布顺序。
+- Phase 1 是当前关注重点，直到可玩的垂直切片完成。
 
-## 9. Update Rule
+## 9. 更新规则
 
-- If a feature changes the game pitch, time budget, visual language, or content scope, update:
+- 如果某项功能改变了游戏定位、时间预算、视觉语言或内容范围，请更新：
   - `README.md`
   - `agents.md`
   - `docs/art_audio_pipeline.md`
-- If a scene or script change implies a new rule for future work, write it here instead of leaving it implicit.
+- 如果场景或脚本的变更意味着未来的新规则，请写在此处，而不是保持隐含。
