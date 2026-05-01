@@ -5,8 +5,11 @@ extends Node3D
 @onready var hud = $HUD
 
 var _enemy_count: int = 0
+var _kill_count: int = 0
+var _total_enemies: int = 0
 var _exit_open: bool = false
 var _debug_visible: bool = true
+var _result_shown: bool = false
 
 func _ready() -> void:
 	GameState.reset_run()
@@ -61,6 +64,7 @@ func _ensure_camera_current() -> void:
 
 func _refresh_enemy_count() -> void:
 	_enemy_count = get_tree().get_nodes_in_group("enemies").size()
+	_total_enemies = _enemy_count
 	_update_exit_state()
 
 func _update_exit_state() -> void:
@@ -91,18 +95,35 @@ func _on_player_took_damage(current_health: int, max_health: int) -> void:
 	GameState.health_changed.emit(current_health, max_health)
 	if current_health == 0:
 		GameState.set_story_line("You were overwhelmed. Restart and push through more cleanly.")
-		GameState.set_run_state("failed")
+		_trigger_result()
 
 func _on_player_died() -> void:
 	GameState.set_story_line("Mission failed.")
+	_trigger_result()
+
+func _trigger_result() -> void:
+	if _result_shown:
+		return
+	_result_shown = true
 	GameState.set_run_state("failed")
+	_hide_game_hud()
+	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies)
+
+func _hide_game_hud() -> void:
+	hud.get_node("Root/TopBar").visible = false
+	hud.get_node("Root/DialogueBox").visible = false
 
 func _on_player_reached_exit() -> void:
 	if not _exit_open:
 		GameState.set_story_line("The exit is still locked. Clear the room first.")
 		return
+	if _result_shown:
+		return
+	_result_shown = true
 	GameState.set_story_line("Extraction complete. The relay data is secured.")
 	GameState.set_run_state("finished")
+	_hide_game_hud()
+	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies)
 
 func _on_player_reached_story_trigger() -> void:
 	if GameState.run_state != "running":
@@ -111,6 +132,7 @@ func _on_player_reached_story_trigger() -> void:
 
 func notify_enemy_defeated() -> void:
 	_enemy_count = max(_enemy_count - 1, 0)
+	_kill_count += 1
 	_update_exit_state()
 
 func _process(_delta: float) -> void:
@@ -136,11 +158,12 @@ func _update_debug_overlay() -> void:
 		return
 	var fps := Engine.get_frames_per_second()
 	var player_pos: Vector3 = player.global_position
-	var debug_text := "state: %s\nhp: %d/%d\nenemies: %d\npos: (%.2f, %.2f, %.2f)\nfps: %d" % [
+	var debug_text := "state: %s\nhp: %d/%d\nenemies: %d\nkills: %d\npos: (%.2f, %.2f, %.2f)\nfps: %d" % [
 		GameState.run_state,
 		GameState.current_health,
 		GameState.max_health,
 		_enemy_count,
+		_kill_count,
 		player_pos.x,
 		player_pos.y,
 		player_pos.z,

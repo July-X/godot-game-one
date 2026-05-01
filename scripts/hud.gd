@@ -3,9 +3,13 @@ extends CanvasLayer
 @onready var health_label = $Root/TopBar/HealthLabel
 @onready var objective_label = $Root/TopBar/ObjectiveLabel
 @onready var story_label = $Root/DialogueBox/StoryLabel
-@onready var status_label = $Root/StatusLabel
 @onready var debug_panel = $Root/DebugPanel
 @onready var debug_label = $Root/DebugPanel/DebugLabel
+@onready var result_panel = $Root/ResultPanel
+@onready var title_label = $Root/ResultPanel/CenterBox/VBox/TitleLabel
+@onready var story_result_label = $Root/ResultPanel/CenterBox/VBox/StoryResultLabel
+@onready var stats_label = $Root/ResultPanel/CenterBox/VBox/StatsLabel
+@onready var restart_hint = $Root/ResultPanel/CenterBox/VBox/RestartHint
 
 func set_health(current_health: int, max_health: int) -> void:
 	health_label.text = "HP %d/%d" % [current_health, max_health]
@@ -18,16 +22,25 @@ func set_story_line(text: String) -> void:
 
 func set_run_state(state: String) -> void:
 	if state == "running":
-		status_label.text = "Objective active"
+		story_label.text = "Objective active"
 	elif state == "finished":
-		status_label.text = "Mission complete. Press Enter to restart."
+		story_label.text = "Mission complete. Press Enter to restart."
 	elif state == "failed":
-		status_label.text = "Mission failed. Press Enter to retry."
+		story_label.text = "Mission failed. Press Enter to retry."
 	else:
-		status_label.text = "Booting..."
+		story_label.text = "Booting..."
 
 func toggle_debug(visible_state: bool) -> void:
 	debug_panel.visible = visible_state
 
 func set_debug_text(text: String) -> void:
 	debug_label.text = text
+
+func show_result_screen(state: String, story: String, kills: int, total_enemies: int) -> void:
+	var is_success = state == "finished"
+	title_label.text = "MISSION COMPLETE" if is_success else "MISSION FAILED"
+	title_label.add_theme_color_override("font_color", Color(0.3, 0.85, 0.4, 1) if is_success else Color(0.85, 0.25, 0.2, 1))
+	story_result_label.text = story
+	stats_label.text = "Enemies eliminated: %d / %d" % [kills, total_enemies]
+	restart_hint.text = "Press ENTER to restart"
+	result_panel.visible = true

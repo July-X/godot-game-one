@@ -10,18 +10,24 @@ signal died
 @export var max_health: int = 5
 @export var fire_cooldown: float = 0.18
 @export var hit_invincibility: float = 0.45
+@export var shake_intensity: float = 0.18
+@export var shake_decay: float = 8.0
 
 @onready var muzzle = $CameraRig/Muzzle
 @onready var body_mesh = $MeshInstance3D
+@onready var camera_rig = $CameraRig
 
 var current_health = 5
 var _fire_timer = 0.0
 var _invincibility_timer = 0.0
 var _flash_timer = 0.0
+var _shake_strength = 0.0
+var _camera_rest_pos: Vector3
 
 func _ready() -> void:
 	add_to_group("player")
 	current_health = max_health
+	_camera_rest_pos = camera_rig.position
 
 func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":
@@ -33,6 +39,7 @@ func _physics_process(delta: float) -> void:
 	_invincibility_timer = max(_invincibility_timer - delta, 0.0)
 	_flash_timer = max(_flash_timer - delta, 0.0)
 	_update_damage_flash()
+	_update_camera_shake(delta)
 
 	var input_x := Input.get_axis("ui_left", "ui_right")
 	var input_z := Input.get_axis("ui_up", "ui_down")
@@ -67,6 +74,7 @@ func take_damage(amount: int = 1) -> void:
 	current_health = max(current_health - amount, 0)
 	_invincibility_timer = hit_invincibility
 	_flash_timer = hit_invincibility
+	_shake_strength = shake_intensity
 	took_damage.emit(current_health, max_health)
 	if current_health == 0:
 		died.emit()
@@ -78,3 +86,15 @@ func _update_damage_flash() -> void:
 		body_mesh.visible = false
 	else:
 		body_mesh.visible = true
+
+func _update_camera_shake(delta: float) -> void:
+	if _shake_strength > 0.0:
+		var offset := Vector3(
+			randf_range(-_shake_strength, _shake_strength),
+			randf_range(-_shake_strength, _shake_strength),
+			randf_range(-_shake_strength * 0.5, _shake_strength * 0.5)
+		)
+		camera_rig.position = _camera_rest_pos + offset
+		_shake_strength = max(_shake_strength - shake_decay * delta, 0.0)
+	else:
+		camera_rig.position = _camera_rest_pos
