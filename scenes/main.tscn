@@ -6,12 +6,10 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4"]
 
 [sub_resource type="Environment" id="1"]
-ambient_light_color = Color(0.2, 0.22, 0.28, 1)
-ambient_light_energy = 1.0
+ambient_light_color = Color(0.35, 0.38, 0.45, 1)
+ambient_light_energy = 1.5
 background_mode = 1
-fog_enabled = true
-fog_light_color = Color(0.06, 0.07, 0.1, 1)
-fog_density = 0.015
+fog_enabled = false
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -20,8 +18,8 @@ script = ExtResource("1")
 environment = SubResource("1")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-42, 35, 0)
-light_energy = 2.0
+rotation_degrees = Vector3(-35, 30, 0)
+light_energy = 2.8
 shadow_enabled = true
 
 [node name="Level" parent="." instance=ExtResource("2")]
