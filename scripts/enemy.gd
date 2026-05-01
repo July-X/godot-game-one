@@ -16,6 +16,8 @@ var _direction = 1.0
 var _target = null
 var _dead = false
 var _touch_timer = 0.0
+var _mesh_instance: MeshInstance3D
+var _original_material: Material
 
 func _ready() -> void:
 	add_to_group("enemies")
@@ -23,6 +25,9 @@ func _ready() -> void:
 	var players = get_tree().get_nodes_in_group("player")
 	if players.size() > 0:
 		_target = players[0]
+	_mesh_instance = $MeshInstance3D
+	if _mesh_instance and _mesh_instance.material_override:
+		_original_material = _mesh_instance.material_override.duplicate()
 
 func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":
@@ -61,10 +66,24 @@ func take_damage(amount: int = 1) -> void:
 	if _dead:
 		return
 	health -= amount
+	_flash_hit()
 	if health <= 0:
 		_dead = true
 		defeated.emit()
 		queue_free()
+
+func _flash_hit() -> void:
+	if not _mesh_instance or not _original_material:
+		return
+	var flash_mat = _mesh_instance.material_override
+	flash_mat.emission_enabled = true
+	flash_mat.emission = Color(1.0, 1.0, 1.0)
+	flash_mat.emission_energy_multiplier = 2.0
+	var tween := create_tween()
+	tween.tween_property(flash_mat, "emission_energy_multiplier", 0.0, 0.12)
+	tween.tween_callback(func():
+		flash_mat.emission_enabled = false
+	)
 
 func _try_touch_target() -> void:
 	if _target == null or _touch_timer > 0.0:
