@@ -241,7 +241,19 @@ mesh = SubResource("25")
 material_override = SubResource("13")
 
 [node name="PlayerSpawn" type="Marker3D" parent="."]
-position = Vector3(0, 1.2, 6.0)
+	position = Vector3(0, 1.2, 6.0)
+
+[node name="SpawnBeacon" type="Node3D" parent="."]
+	position = Vector3(0, 0.05, 6.0)
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SpawnBeacon"]
+	mesh = SubResource("8")
+	scale = Vector3(1.2, 0.05, 1.2)
+	material_override = SubResource("16")
+[node name="ArrowMesh" type="MeshInstance3D" parent="SpawnBeacon"]
+	mesh = SubResource("8")
+	position = Vector3(0, 0.3, -0.8)
+	scale = Vector3(0.6, 0.6, 0.6)
+	material_override = SubResource("16")
 
 [node name="ExitZone" type="Area3D" parent="."]
 position = Vector3(0, 1.2, -9.5)

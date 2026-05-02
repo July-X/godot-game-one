@@ -5,6 +5,7 @@ extends Node3D
 @onready var hud = $HUD
 @onready var title_screen = $TitleScreen
 @onready var briefing_screen = $BriefingScreen
+@onready var screen_transition = $ScreenTransition
 
 var _enemy_count: int = 0
 var _kill_count: int = 0
@@ -29,12 +30,18 @@ func _show_title() -> void:
 	briefing_screen.visible = false
 
 func _start_briefing() -> void:
+	screen_transition.fade_out(0.4)
+	await screen_transition.transition_finished
 	title_screen.visible = false
 	briefing_screen.visible = true
 	if briefing_screen.has_signal("briefing_finished"):
 		briefing_screen.briefing_finished.connect(_start_game, CONNECT_ONE_SHOT)
+	screen_transition.fade_in(0.3)
+	await screen_transition.transition_finished
 
 func _start_game() -> void:
+	screen_transition.fade_out(0.4)
+	await screen_transition.transition_finished
 	briefing_screen.visible = false
 	level.visible = true
 	player.visible = true
@@ -51,6 +58,8 @@ func _start_game() -> void:
 	GameState.set_story_line("Briefing: the outpost is silent, but the corridor is not empty.")
 	_update_exit_state()
 	GameState.set_run_state("running")
+	screen_transition.fade_in(0.5)
+	await screen_transition.transition_finished
 
 func _bind_player() -> void:
 	player.shoot_requested.connect(_on_player_shoot_requested)
@@ -148,6 +157,8 @@ func _trigger_result() -> void:
 	_result_shown = true
 	GameState.set_run_state("failed")
 	_hide_game_hud()
+	screen_transition.fade_out(0.3)
+	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
 
 func _hide_game_hud() -> void:
@@ -164,6 +175,8 @@ func _on_player_reached_exit() -> void:
 	GameState.set_story_line("Extraction complete. The relay data is secured.")
 	GameState.set_run_state("finished")
 	_hide_game_hud()
+	screen_transition.fade_out(0.3)
+	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
 
 func _on_player_reached_story_trigger(trigger_index: int = 0) -> void:

@@ -70,7 +70,7 @@ func take_damage(amount: int = 1) -> void:
 	if health <= 0:
 		_dead = true
 		defeated.emit()
-		queue_free()
+		_death_animation()
 
 func _flash_hit() -> void:
 	if not _mesh_instance or not _original_material:
@@ -84,6 +84,19 @@ func _flash_hit() -> void:
 	tween.tween_callback(func():
 		flash_mat.emission_enabled = false
 	)
+
+func _death_animation() -> void:
+	## 死亡动画：缩小消失 + 红色闪烁，然后 queue_free
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(self, "scale", Vector3.ZERO, 0.35)
+	if _mesh_instance and _mesh_instance.material_override:
+		var mat = _mesh_instance.material_override
+		mat.emission_enabled = true
+		mat.emission = Color(1.0, 0.2, 0.1)
+		mat.emission_energy_multiplier = 3.0
+		tween.tween_property(mat, "emission_energy_multiplier", 0.0, 0.35)
+	tween.tween_callback(queue_free).set_delay(0.35)
 
 func _try_touch_target() -> void:
 	if _target == null or _touch_timer > 0.0:

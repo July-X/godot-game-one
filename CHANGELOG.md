@@ -1,5 +1,17 @@
 # 更新日志
 
+## [0.4.0] - 2026-05-02
+
+### 新增
+- **屏幕淡入淡出过渡**：标题→简报、简报→游戏、游戏→结算之间添加黑色淡入淡出效果（`screen_transition.gd`）
+- **敌人死亡动画**：敌人死亡时播放缩小消失 + 红色 emission 闪烁动画（0.35s），替代直接 queue_free
+- **出生点信标**：关卡出生点处添加绿色脉冲缩放信标，帮助玩家识别起始位置
+
+### 修改
+- `enemy.gd`：`take_damage()` 中死亡逻辑改为调用 `_death_animation()`，不再直接 `queue_free`
+- `level_01.gd`：新增 `_start_beacon_pulse()`，信标持续脉冲动画
+- `main.tscn`：新增 `ScreenTransition` 节点
+
 ## [0.3.0] - 2026-05-02
 
 ### 新增

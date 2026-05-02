@@ -6,6 +6,7 @@ signal player_reached_story_trigger(trigger_index)
 @onready var exit_zone = $ExitZone
 @onready var exit_marker = $ExitZone/ExitMarker
 @onready var exit_collision = $ExitZone/CollisionShape3D
+@onready var spawn_beacon = $SpawnBeacon
 
 var _exit_locked := true
 var _locked_material: StandardMaterial3D
@@ -22,6 +23,7 @@ func _ready() -> void:
 	_unlocked_material.albedo_color = Color(0.2, 0.85, 0.35, 0.8)
 	_set_exit_visual_state()
 	_discover_story_triggers()
+	_start_beacon_pulse()
 
 ## 自动发现所有 StoryTrigger* 节点并注册
 func _discover_story_triggers() -> void:
@@ -68,3 +70,11 @@ func _on_story_trigger_body_entered(body: Node, index: int) -> void:
 		if not _story_triggers[entry_index]["used"]:
 			_story_triggers[entry_index]["used"] = true
 			player_reached_story_trigger.emit(index)
+
+func _start_beacon_pulse() -> void:
+	if spawn_beacon == null:
+		return
+	var tween := create_tween()
+	tween.set_loops(-1)
+	tween.tween_property(spawn_beacon, "scale", Vector3(1.15, 1.0, 1.15), 1.0)
+	tween.tween_property(spawn_beacon, "scale", Vector3(1.0, 1.0, 1.0), 1.0)
