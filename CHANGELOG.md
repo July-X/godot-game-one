@@ -1,5 +1,16 @@
 # 更新日志
 
+## [0.3.0] - 2026-05-02
+
+### 新增
+- **标题画面**：游戏启动时显示 "GODOT GAME ONE" 标题、"PRESS ENTER TO START" 闪烁提示
+- **游戏流程**：标题画面 → 按 Enter → 进入游戏；结算后按 Enter 返回标题
+- **game_state 状态**：新增 `"title"` 状态，`reset_run()` 默认设为 `"title"`
+
+### 文档
+- 新增 `docs/AI_Development_Instructions.md`（详细开发指令、禁止事项、验证流程）
+- `Development_Plan.md`：Phase 1 所有子任务标记完成，进入 Phase 2
+
 ## [0.2.1] - 2026-05-01
 
 ### 修复
