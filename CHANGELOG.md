@@ -1,5 +1,23 @@
 # 更新日志
 
+## [0.6.0] - 2026-05-02
+
+### 新增
+- **程序化音效系统** (`sfx_manager.gd`，Autoload)：8-bit 风格音效，AudioStreamGenerator 实时合成，包含射击（频率扫降）、受击（白噪声）、敌人受伤/死亡（方波衰减）、玩家受伤（低频方波）、UI 确认（短促高音）、爆炸（白噪声衰减）
+- **伤害数字弹出** (`damage_number.gd` + `damage_number.tscn`)：3D Label 显示伤害值，金色（敌人）/红色（玩家），上升漂浮 + 渐隐
+- **子弹发光材质**：子弹 SphereMesh 启用 emission，金色发光
+- **子弹拖尾**：projectile 每 0.02s 更新拖尾 MeshInstance3D，动态计算位置和朝向
+- **敌人巡逻停顿**：到达巡逻端点时停顿 0.8s（`patrol_wait_time` 导出变量）
+- **HUD 伤害反馈**：玩家受击时底部显示 "-N HP" 渐隐文本（`DamageFeedLabel`）
+
+### 修改
+- `projectile.td`：`_update_trail()` 动态生成拖尾
+- `enemy.gd`：新增 `_patrol_pause`、`patrol_wait_time`、`_spawn_damage_number()`
+- `player.gd`：新增 `_damage_number_scene`、`_spawn_damage_number()`
+- `main.gd`：标题画面和结果画面按 Enter 播放 UI 音效
+- `hud.gd`：新增 `show_damage_feed()`，`DamageFeedLabel`
+- `project.godot`：新增 SFX Autoload
+
 ## [0.5.0] - 2026-05-02
 
 ### 新增

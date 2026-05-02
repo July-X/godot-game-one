@@ -16,6 +16,8 @@ var _direction = 1.0
 var _target = null
 var _dead = false
 var _touch_timer = 0.0
+var _patrol_pause: float = 0.0
+@export var patrol_wait_time: float = 0.8
 var _mesh_instance: MeshInstance3D
 var _original_material: Material
 var _model_root: Node3D
@@ -43,6 +45,14 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y = 0
 
+	## 巡逻停顿逻辑
+	if _patrol_pause > 0.0:
+		_patrol_pause -= delta
+		velocity.x = 0.0
+		move_and_slide()
+		_try_touch_target()
+		return
+
 	var desired_speed = move_speed
 	if _target != null and global_position.distance_to(_target.global_position) <= aggro_range:
 		desired_speed = chase_speed
@@ -50,10 +60,13 @@ func _physics_process(delta: float) -> void:
 		if _direction == 0.0:
 			_direction = 1.0
 	else:
+		## 到达巡逻端点时停顿
 		if global_position.x > _home_x + patrol_distance:
 			_direction = -1.0
+			_patrol_pause = patrol_wait_time
 		elif global_position.x < _home_x - patrol_distance:
 			_direction = 1.0
+			_patrol_pause = patrol_wait_time
 
 	velocity.x = _direction * desired_speed
 	velocity.z = 0.0
@@ -64,15 +77,27 @@ func _physics_process(delta: float) -> void:
 
 	_try_touch_target()
 
+var _damage_number_scene = preload("res://scenes/entities/damage_number.tscn")
+
 func take_damage(amount: int = 1) -> void:
 	if _dead:
 		return
 	health -= amount
 	_flash_hit()
+	_spawn_damage_number(amount)
 	if health <= 0:
 		_dead = true
 		defeated.emit()
+		SFX.play_enemy_death()
 		_death_animation()
+	else:
+		SFX.play_enemy_hurt()
+
+func _spawn_damage_number(amount: int) -> void:
+	var dn := _damage_number_scene.instantiate()
+	get_tree().current_scene.add_child(dn)
+	dn.global_position = global_position + Vector3(0, 1.2, 0)
+	dn.setup(amount, false)
 
 func _flash_hit() -> void:
 	## 受击时所有部件白色闪烁

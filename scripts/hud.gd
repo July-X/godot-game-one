@@ -37,6 +37,16 @@ func toggle_debug(visible_state: bool) -> void:
 func set_debug_text(text: String) -> void:
 	debug_label.text = text
 
+func show_damage_feed(text: String) -> void:
+	## 底部伤害反馈文本，短暂显示后消失
+	var feed_label := $Root/DamageFeedLabel
+	if feed_label == null:
+		return
+	feed_label.text = text
+	feed_label.modulate.a = 1.0
+	var tween := create_tween()
+	tween.tween_property(feed_label, "modulate:a", 0.0, 1.2)
+
 func show_result_screen(state: String, story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
 	var is_success = state == "finished"
 	title_label.text = "MISSION COMPLETE" if is_success else "MISSION FAILED"

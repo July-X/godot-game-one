@@ -72,6 +72,7 @@ func _physics_process(delta: float) -> void:
 		_fire_timer = fire_cooldown
 		shoot_requested.emit(muzzle.global_position, -global_transform.basis.z.normalized())
 		_recoil_pose()
+		SFX.play_shoot()
 
 	move_and_slide()
 
@@ -123,6 +124,14 @@ func _recoil_pose() -> void:
 		tween.tween_property(_blaster, "rotation_degrees:x", -8.0, 0.05)
 		tween.tween_property(_blaster, "rotation_degrees:x", 0.0, 0.12)
 
+var _damage_number_scene = preload("res://scenes/entities/damage_number.tscn")
+
+func _spawn_damage_number(amount: int) -> void:
+	var dn := _damage_number_scene.instantiate()
+	get_tree().current_scene.add_child(dn)
+	dn.global_position = global_position + Vector3(0, 1.2, 0)
+	dn.setup(amount, true)
+
 func take_damage(amount: int = 1) -> void:
 	if _invincibility_timer > 0.0:
 		return
@@ -131,6 +140,8 @@ func take_damage(amount: int = 1) -> void:
 	_flash_timer = hit_invincibility
 	_shake_strength = shake_intensity
 	took_damage.emit(current_health, max_health)
+	SFX.play_player_hurt()
+	_spawn_damage_number(amount)
 	if current_health == 0:
 		died.emit()
 

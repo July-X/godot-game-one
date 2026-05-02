@@ -137,6 +137,8 @@ func _on_player_took_damage(current_health: int, max_health: int) -> void:
 	GameState.current_health = current_health
 	GameState.max_health = max_health
 	GameState.health_changed.emit(current_health, max_health)
+	if hud.has_method("show_damage_feed"):
+		hud.show_damage_feed("-%d HP" % (GameState.max_health - current_health))
 	if current_health == 0:
 		GameState.set_story_line("You were overwhelmed. Restart and push through more cleanly.")
 		_trigger_result()
@@ -192,6 +194,7 @@ func notify_enemy_defeated() -> void:
 
 func _process(_delta: float) -> void:
 	if GameState.run_state == "title" and Input.is_action_just_pressed("ui_accept"):
+		SFX.play_ui_confirm()
 		_start_briefing()
 		return
 	if Input.is_key_pressed(KEY_F3):

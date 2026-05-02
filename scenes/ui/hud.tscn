@@ -59,6 +59,20 @@ offset_bottom = 34.0
 text = "Command: hold the line and retrieve the data core."
 autowrap_mode = 3
 
+[node name="DamageFeedLabel" type="Label" parent="Root"]
+	anchor_left = 0.5
+	anchor_top = 1.0
+	anchor_right = 0.5
+	anchor_bottom = 1.0
+	offset_left = -80.0
+	offset_top = -70.0
+	offset_right = 80.0
+	offset_bottom = -50.0
+	theme_override_font_sizes/font_size = 9
+	theme_override_colors/font_color = Color(1.0, 0.85, 0.3, 1.0)
+	horizontal_alignment = 1
+	autowrap_mode = 3
+
 [node name="DebugPanel" type="Panel" parent="Root"]
 visible = false
 offset_left = 12.0
