@@ -9,13 +9,13 @@ var max_health: int = 5
 var current_health: int = 5
 var objective_text: String = "Reach the relay terminal"
 var story_line: String = "Command: hold the line and retrieve the data core."
-var run_state: String = "boot"
+var run_state: String = "title"
 
 func reset_run() -> void:
 	current_health = max_health
 	objective_text = "Reach the relay terminal"
 	story_line = "Command: hold the line and retrieve the data core."
-	run_state = "running"
+	run_state = "title"
 	health_changed.emit(current_health, max_health)
 	objective_changed.emit(objective_text)
 	story_line_changed.emit(story_line)

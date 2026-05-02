@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/levels/level_01.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/entities/player.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/ui/title_screen.tscn" id="5"]
 
 [sub_resource type="Environment" id="1"]
 ambient_light_color = Color(0.35, 0.38, 0.45, 1)
@@ -28,3 +29,5 @@ shadow_enabled = true
 position = Vector3(0, 1.2, 4)
 
 [node name="HUD" parent="." instance=ExtResource("4")]
+
+[node name="TitleScreen" parent="." instance=ExtResource("5")]

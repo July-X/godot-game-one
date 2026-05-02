@@ -3,6 +3,7 @@ extends Node3D
 @onready var level = $Level
 @onready var player = $Player
 @onready var hud = $HUD
+@onready var title_screen = $TitleScreen
 
 var _enemy_count: int = 0
 var _kill_count: int = 0
@@ -13,6 +14,21 @@ var _result_shown: bool = false
 
 func _ready() -> void:
 	GameState.reset_run()
+	_show_title()
+
+func _show_title() -> void:
+	level.visible = false
+	player.visible = false
+	player.process_mode = PROCESS_MODE_DISABLED
+	hud.visible = false
+	title_screen.visible = true
+
+func _start_game() -> void:
+	title_screen.visible = false
+	level.visible = true
+	player.visible = true
+	player.process_mode = PROCESS_MODE_INHERIT
+	hud.visible = true
 	_bind_player()
 	_bind_level()
 	_bind_hud()
@@ -22,6 +38,7 @@ func _ready() -> void:
 	GameState.set_objective("Neutralize the patrol and reach the relay terminal")
 	GameState.set_story_line("Briefing: the outpost is silent, but the corridor is not empty.")
 	_update_exit_state()
+	GameState.set_run_state("running")
 
 func _bind_player() -> void:
 	player.shoot_requested.connect(_on_player_shoot_requested)
@@ -136,6 +153,9 @@ func notify_enemy_defeated() -> void:
 	_update_exit_state()
 
 func _process(_delta: float) -> void:
+	if GameState.run_state == "title" and Input.is_action_just_pressed("ui_accept"):
+		_start_game()
+		return
 	if Input.is_key_pressed(KEY_F3):
 		if not has_meta("debug_toggle_latch"):
 			_debug_visible = not _debug_visible
