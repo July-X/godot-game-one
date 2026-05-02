@@ -1,5 +1,22 @@
 # 更新日志
 
+## [0.5.0] - 2026-05-02
+
+### 新增
+- **玩家低多边形模型**：从单一胶囊体改为多部件组合（躯干 Box + 头部 Sphere + 头盔 Box + 四肢 Box），蓝色主体 + 深蓝四肢
+- **敌人低多边形模型**：多部件组合（躯干 + 头部 + 黄色护目镜 + 四肢），红色主体 + 深红四肢
+- **玩家奔跑动画**：移动时腿臂摆动 + 身体上下起伏
+- **玩家射击 recoil**：射击时枪口上跳 8° 后恢复
+- **敌人全身受击闪光**：所有部件白色 emission 闪烁
+- **敌人全身死亡动画**：所有部件红色 emission + 缩小消失
+- **光照增强**：主光能量 3.2 + 补光 0.6，硬阴影（shadow_opacity 0.85）
+- **后处理增强**：ACES 色调映射、暗色背景 (#0d0d1a)、微弱辉光（bloom 0.15）
+
+### 修改
+- `player.gd`：新增 `_update_walk_animation()`、`_reset_pose()`、`_recoil_pose()`，操作 ModelRoot 下各部件
+- `enemy.gd`：`_flash_hit()` 和 `_death_animation()` 改为遍历 ModelRoot 子部件
+- `main.tscn`：WorldEnvironment 增强，新增 FillLight 节点
+
 ## [0.4.0] - 2026-05-02
 
 ### 新增

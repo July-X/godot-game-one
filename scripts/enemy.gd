@@ -18,6 +18,7 @@ var _dead = false
 var _touch_timer = 0.0
 var _mesh_instance: MeshInstance3D
 var _original_material: Material
+var _model_root: Node3D
 
 func _ready() -> void:
 	add_to_group("enemies")
@@ -28,6 +29,7 @@ func _ready() -> void:
 	_mesh_instance = $MeshInstance3D
 	if _mesh_instance and _mesh_instance.material_override:
 		_original_material = _mesh_instance.material_override.duplicate()
+	_model_root = $ModelRoot
 
 func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":
@@ -73,29 +75,36 @@ func take_damage(amount: int = 1) -> void:
 		_death_animation()
 
 func _flash_hit() -> void:
-	if not _mesh_instance or not _original_material:
+	## 受击时所有部件白色闪烁
+	if _model_root == null:
 		return
-	var flash_mat = _mesh_instance.material_override
-	flash_mat.emission_enabled = true
-	flash_mat.emission = Color(1.0, 1.0, 1.0)
-	flash_mat.emission_energy_multiplier = 2.0
-	var tween := create_tween()
-	tween.tween_property(flash_mat, "emission_energy_multiplier", 0.0, 0.12)
-	tween.tween_callback(func():
-		flash_mat.emission_enabled = false
-	)
+	for child in _model_root.get_children():
+		if child is MeshInstance3D and child.material_override:
+			var mat = child.material_override as StandardMaterial3D
+			if mat:
+				mat.emission_enabled = true
+				mat.emission = Color(1.0, 1.0, 1.0)
+				mat.emission_energy_multiplier = 2.0
+				var tween := create_tween()
+				tween.tween_property(mat, "emission_energy_multiplier", 0.0, 0.12)
+				tween.tween_callback(func():
+					mat.emission_enabled = false
+				)
 
 func _death_animation() -> void:
 	## 死亡动画：缩小消失 + 红色闪烁，然后 queue_free
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(self, "scale", Vector3.ZERO, 0.35)
-	if _mesh_instance and _mesh_instance.material_override:
-		var mat = _mesh_instance.material_override
-		mat.emission_enabled = true
-		mat.emission = Color(1.0, 0.2, 0.1)
-		mat.emission_energy_multiplier = 3.0
-		tween.tween_property(mat, "emission_energy_multiplier", 0.0, 0.35)
+	if _model_root:
+		for child in _model_root.get_children():
+			if child is MeshInstance3D and child.material_override:
+				var mat = child.material_override as StandardMaterial3D
+				if mat:
+					mat.emission_enabled = true
+					mat.emission = Color(1.0, 0.2, 0.1)
+					mat.emission_energy_multiplier = 3.0
+					tween.tween_property(mat, "emission_energy_multiplier", 0.0, 0.35)
 	tween.tween_callback(queue_free).set_delay(0.35)
 
 func _try_touch_target() -> void:

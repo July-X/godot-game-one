@@ -9,10 +9,17 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/screen_transition.tscn" id="7"]
 
 [sub_resource type="Environment" id="1"]
-ambient_light_color = Color(0.35, 0.38, 0.45, 1)
-ambient_light_energy = 1.5
-background_mode = 1
+ambient_light_color = Color(0.25, 0.28, 0.35, 1)
+ambient_light_energy = 0.8
+background_mode = 2
+background_color = Color(0.05, 0.05, 0.1, 1)
 fog_enabled = false
+tonemap_mode = 2
+tonemap_white = 0.9
+glow_enabled = true
+glow_intensity = 0.3
+glow_strength = 0.8
+glow_bloom = 0.15
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -21,9 +28,19 @@ script = ExtResource("1")
 environment = SubResource("1")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-35, 30, 0)
-light_energy = 2.8
-shadow_enabled = true
+	rotation_degrees = Vector3(-40, 25, 0)
+	light_energy = 3.2
+	light_indirect_energy = 0.4
+	shadow_enabled = true
+	shadow_opacity = 0.85
+	directional_shadow_mode = 2
+	directional_shadow_split_1 = 0.05
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+	rotation_degrees = Vector3(-10, -120, 0)
+	light_energy = 0.6
+	light_indirect_energy = 0.3
+	shadow_enabled = false
 
 [node name="Level" parent="." instance=ExtResource("2")]
 

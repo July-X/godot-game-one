@@ -16,6 +16,7 @@ signal died
 @onready var muzzle = $CameraRig/Muzzle
 @onready var body_mesh = $MeshInstance3D
 @onready var camera_rig = $CameraRig
+@onready var model_root = $ModelRoot
 
 var current_health = 5
 var _fire_timer = 0.0
@@ -23,6 +24,14 @@ var _invincibility_timer = 0.0
 var _flash_timer = 0.0
 var _shake_strength = 0.0
 var _camera_rest_pos: Vector3
+var _walk_cycle: float = 0.0
+var _is_moving: bool = false
+
+@onready var _leg_l: Node3D = $ModelRoot/LegL
+@onready var _leg_r: Node3D = $ModelRoot/LegR
+@onready var _arm_l: Node3D = $ModelRoot/ArmL
+@onready var _arm_r: Node3D = $ModelRoot/ArmR
+@onready var _blaster: Node3D = $CameraRig/Muzzle/Blaster
 
 func _ready() -> void:
 	add_to_group("player")
@@ -33,6 +42,7 @@ func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":
 		velocity = Vector3.ZERO
 		move_and_slide()
+		_reset_pose()
 		return
 
 	_fire_timer = max(_fire_timer - delta, 0.0)
@@ -61,12 +71,57 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("ui_accept") and _fire_timer <= 0.0:
 		_fire_timer = fire_cooldown
 		shoot_requested.emit(muzzle.global_position, -global_transform.basis.z.normalized())
+		_recoil_pose()
 
 	move_and_slide()
 
-	if movement.length() > 0.1:
+	_is_moving = movement.length() > 0.1
+	if _is_moving:
+		_walk_cycle += delta * 8.0
+		_update_walk_animation()
+	else:
+		_reset_pose()
+
+	if _is_moving:
 		var flat_dir := Vector3(movement.x, 0.0, movement.z)
 		look_at(global_position + flat_dir, Vector3.UP)
+
+func _update_walk_animation() -> void:
+	## 奔跑时腿臂摆动
+	var swing: float = sin(_walk_cycle) * 0.3
+	var bounce: float = abs(sin(_walk_cycle)) * 0.04
+
+	if _leg_l:
+		_leg_l.rotation.x = swing
+	if _leg_r:
+		_leg_r.rotation.x = -swing
+	if _arm_l:
+		_arm_l.rotation.x = -swing * 0.7
+	if _arm_r:
+		_arm_r.rotation.x = swing * 0.7
+
+	## 身体上下起伏
+	model_root.position.y = bounce
+
+func _reset_pose() -> void:
+	## 静止时恢复默认姿态
+	_walk_cycle = 0.0
+	model_root.position.y = 0.0
+	if _leg_l:
+		_leg_l.rotation.x = 0.0
+	if _leg_r:
+		_leg_r.rotation.x = 0.0
+	if _arm_l:
+		_arm_l.rotation.x = 0.0
+	if _arm_r:
+		_arm_r.rotation.x = 0.0
+
+func _recoil_pose() -> void:
+	## 射击时枪口上跳，然后恢复
+	if _blaster:
+		var tween := create_tween()
+		tween.tween_property(_blaster, "rotation_degrees:x", -8.0, 0.05)
+		tween.tween_property(_blaster, "rotation_degrees:x", 0.0, 0.12)
 
 func take_damage(amount: int = 1) -> void:
 	if _invincibility_timer > 0.0:
