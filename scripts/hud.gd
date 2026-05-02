@@ -10,6 +10,7 @@ extends CanvasLayer
 @onready var story_result_label = $Root/ResultPanel/CenterBox/VBox/StoryResultLabel
 @onready var stats_label = $Root/ResultPanel/CenterBox/VBox/StatsLabel
 @onready var restart_hint = $Root/ResultPanel/CenterBox/VBox/RestartHint
+@onready var time_label = $Root/ResultPanel/CenterBox/VBox/TimeLabel
 
 func set_health(current_health: int, max_health: int) -> void:
 	health_label.text = "HP %d/%d" % [current_health, max_health]
@@ -36,11 +37,15 @@ func toggle_debug(visible_state: bool) -> void:
 func set_debug_text(text: String) -> void:
 	debug_label.text = text
 
-func show_result_screen(state: String, story: String, kills: int, total_enemies: int) -> void:
+func show_result_screen(state: String, story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
 	var is_success = state == "finished"
 	title_label.text = "MISSION COMPLETE" if is_success else "MISSION FAILED"
 	title_label.add_theme_color_override("font_color", Color(0.3, 0.85, 0.4, 1) if is_success else Color(0.85, 0.25, 0.2, 1))
 	story_result_label.text = story
 	stats_label.text = "Enemies eliminated: %d / %d" % [kills, total_enemies]
-	restart_hint.text = "Press ENTER to restart"
+	if elapsed_time != "":
+		time_label.text = "Time: %s" % elapsed_time
+	else:
+		time_label.text = ""
+	restart_hint.text = "Press ENTER to return to title"
 	result_panel.visible = true

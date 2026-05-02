@@ -4,6 +4,7 @@ extends Node3D
 @onready var player = $Player
 @onready var hud = $HUD
 @onready var title_screen = $TitleScreen
+@onready var briefing_screen = $BriefingScreen
 
 var _enemy_count: int = 0
 var _kill_count: int = 0
@@ -11,9 +12,12 @@ var _total_enemies: int = 0
 var _exit_open: bool = false
 var _debug_visible: bool = true
 var _result_shown: bool = false
+var _start_time: float = 0.0
+var _story_texts: Dictionary = {}
 
 func _ready() -> void:
 	GameState.reset_run()
+	briefing_screen.visible = false
 	_show_title()
 
 func _show_title() -> void:
@@ -22,9 +26,16 @@ func _show_title() -> void:
 	player.process_mode = PROCESS_MODE_DISABLED
 	hud.visible = false
 	title_screen.visible = true
+	briefing_screen.visible = false
+
+func _start_briefing() -> void:
+	title_screen.visible = false
+	briefing_screen.visible = true
+	if briefing_screen.has_signal("briefing_finished"):
+		briefing_screen.briefing_finished.connect(_start_game, CONNECT_ONE_SHOT)
 
 func _start_game() -> void:
-	title_screen.visible = false
+	briefing_screen.visible = false
 	level.visible = true
 	player.visible = true
 	player.process_mode = PROCESS_MODE_INHERIT
@@ -35,6 +46,7 @@ func _start_game() -> void:
 	_ensure_camera_current()
 	_refresh_enemy_count()
 	_place_player_at_spawn()
+	_start_time = Time.get_ticks_msec() / 1000.0
 	GameState.set_objective("Neutralize the patrol and reach the relay terminal")
 	GameState.set_story_line("Briefing: the outpost is silent, but the corridor is not empty.")
 	_update_exit_state()
@@ -50,6 +62,12 @@ func _bind_level() -> void:
 		level.player_reached_exit.connect(_on_player_reached_exit)
 	if level.has_signal("player_reached_story_trigger"):
 		level.player_reached_story_trigger.connect(_on_player_reached_story_trigger)
+	## 多段剧情文本，按触发器索引映射
+	_story_texts = {
+		1: "Corridor ahead is quiet. Stay alert.",
+		2: "Signal is getting stronger. The terminal is close.",
+		3: "Warning: heavy resistance near the exit. Prepare for combat."
+	}
 	if level.has_method("register_enemy"):
 		for enemy in get_tree().get_nodes_in_group("enemies"):
 			level.register_enemy(enemy)
@@ -118,13 +136,19 @@ func _on_player_died() -> void:
 	GameState.set_story_line("Mission failed.")
 	_trigger_result()
 
+func _get_elapsed_time() -> String:
+	var elapsed := Time.get_ticks_msec() / 1000.0 - _start_time
+	var minutes := int(elapsed) / 60
+	var seconds := int(elapsed) % 60
+	return "%d:%02d" % [minutes, seconds]
+
 func _trigger_result() -> void:
 	if _result_shown:
 		return
 	_result_shown = true
 	GameState.set_run_state("failed")
 	_hide_game_hud()
-	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies)
+	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
 
 func _hide_game_hud() -> void:
 	hud.get_node("Root/TopBar").visible = false
@@ -140,12 +164,13 @@ func _on_player_reached_exit() -> void:
 	GameState.set_story_line("Extraction complete. The relay data is secured.")
 	GameState.set_run_state("finished")
 	_hide_game_hud()
-	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies)
+	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
 
-func _on_player_reached_story_trigger() -> void:
+func _on_player_reached_story_trigger(trigger_index: int = 0) -> void:
 	if GameState.run_state != "running":
 		return
-	GameState.set_story_line("Signal recovered: hostiles are guarding the final terminal. Push forward.")
+	var text: String = _story_texts.get(trigger_index, "Push forward.")
+	GameState.set_story_line(text)
 
 func notify_enemy_defeated() -> void:
 	_enemy_count = max(_enemy_count - 1, 0)
@@ -154,7 +179,7 @@ func notify_enemy_defeated() -> void:
 
 func _process(_delta: float) -> void:
 	if GameState.run_state == "title" and Input.is_action_just_pressed("ui_accept"):
-		_start_game()
+		_start_briefing()
 		return
 	if Input.is_key_pressed(KEY_F3):
 		if not has_meta("debug_toggle_latch"):
@@ -168,8 +193,11 @@ func _process(_delta: float) -> void:
 	if Input.is_key_pressed(KEY_F5):
 		get_tree().reload_current_scene()
 	if GameState.run_state in ["finished", "failed"] and Input.is_action_just_pressed("ui_accept"):
-		get_tree().reload_current_scene()
+		_return_to_title()
 	_update_debug_overlay()
+
+func _return_to_title() -> void:
+	get_tree().reload_current_scene()
 
 func _update_debug_overlay() -> void:
 	if not _debug_visible:

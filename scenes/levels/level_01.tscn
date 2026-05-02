@@ -252,14 +252,32 @@ mesh = SubResource("8")
 scale = Vector3(0.7, 1.4, 0.7)
 material_override = SubResource("13")
 
-[node name="StoryTrigger" type="Area3D" parent="."]
-position = Vector3(0, 1.0, -4.5)
-[node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger"]
-shape = SubResource("7")
-[node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger"]
-mesh = SubResource("8")
-scale = Vector3(0.35, 0.2, 0.35)
-material_override = SubResource("14")
+[node name="StoryTrigger1" type="Area3D" parent="."]
+	position = Vector3(0, 1.0, 2.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger1"]
+	shape = SubResource("7")
+[node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger1"]
+	mesh = SubResource("8")
+	scale = Vector3(0.35, 0.2, 0.35)
+	material_override = SubResource("14")
+
+[node name="StoryTrigger2" type="Area3D" parent="."]
+	position = Vector3(0, 1.0, -3.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger2"]
+	shape = SubResource("7")
+[node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger2"]
+	mesh = SubResource("8")
+	scale = Vector3(0.35, 0.2, 0.35)
+	material_override = SubResource("14")
+
+[node name="StoryTrigger3" type="Area3D" parent="."]
+	position = Vector3(0, 1.0, -7.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger3"]
+	shape = SubResource("7")
+[node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger3"]
+	mesh = SubResource("8")
+	scale = Vector3(0.35, 0.2, 0.35)
+	material_override = SubResource("14")
 
 [node name="EnemyA" parent="." instance=ExtResource("2")]
 position = Vector3(-5.0, 1.2, -1.0)

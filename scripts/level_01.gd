@@ -1,27 +1,40 @@
 extends Node3D
 
 signal player_reached_exit
-signal player_reached_story_trigger
+signal player_reached_story_trigger(trigger_index)
 
 @onready var exit_zone = $ExitZone
-@onready var player_spawn = $PlayerSpawn
 @onready var exit_marker = $ExitZone/ExitMarker
 @onready var exit_collision = $ExitZone/CollisionShape3D
-@onready var story_trigger = $StoryTrigger
 
 var _exit_locked := true
 var _locked_material: StandardMaterial3D
 var _unlocked_material: StandardMaterial3D
-var _story_trigger_used := false
+
+## 多段剧情触发器：每个触发器只触发一次
+var _story_triggers: Array[Dictionary] = []
 
 func _ready() -> void:
 	exit_zone.body_entered.connect(_on_exit_body_entered)
-	story_trigger.body_entered.connect(_on_story_trigger_body_entered)
 	_locked_material = StandardMaterial3D.new()
 	_locked_material.albedo_color = Color(0.85, 0.2, 0.2, 0.8)
 	_unlocked_material = StandardMaterial3D.new()
 	_unlocked_material.albedo_color = Color(0.2, 0.85, 0.35, 0.8)
 	_set_exit_visual_state()
+	_discover_story_triggers()
+
+## 自动发现所有 StoryTrigger* 节点并注册
+func _discover_story_triggers() -> void:
+	_story_triggers.clear()
+	var index := 1
+	while true:
+		var trigger_name := "StoryTrigger%d" % index
+		if not has_node(trigger_name):
+			break
+		var trigger: Area3D = get_node(trigger_name)
+		trigger.body_entered.connect(_on_story_trigger_body_entered.bind(index))
+		_story_triggers.append({"node": trigger, "used": false})
+		index += 1
 
 func register_enemy(enemy: Node) -> void:
 	if enemy == null:
@@ -47,9 +60,11 @@ func _on_exit_body_entered(body: Node) -> void:
 	if body.is_in_group("player") and not _exit_locked:
 		player_reached_exit.emit()
 
-func _on_story_trigger_body_entered(body: Node) -> void:
-	if _story_trigger_used:
+func _on_story_trigger_body_entered(body: Node, index: int) -> void:
+	if not body.is_in_group("player"):
 		return
-	if body.is_in_group("player"):
-		_story_trigger_used = true
-		player_reached_story_trigger.emit()
+	var entry_index := index - 1
+	if entry_index >= 0 and entry_index < _story_triggers.size():
+		if not _story_triggers[entry_index]["used"]:
+			_story_triggers[entry_index]["used"] = true
+			player_reached_story_trigger.emit(index)

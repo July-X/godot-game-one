@@ -3,13 +3,16 @@
 ## [0.3.0] - 2026-05-02
 
 ### 新增
-- **标题画面**：游戏启动时显示 "GODOT GAME ONE" 标题、"PRESS ENTER TO START" 闪烁提示
-- **游戏流程**：标题画面 → 按 Enter → 进入游戏；结算后按 Enter 返回标题
-- **game_state 状态**：新增 `"title"` 状态，`reset_run()` 默认设为 `"title"`
+- **开场简报序列**：标题画面后进入简报界面，逐行显示任务简报（7行剧情文本，按行延迟显示），按 Enter 跳过/继续
+- **多段剧情触发器**：关卡内新增 StoryTrigger1-3，分别位于入口/中段/出口前，触发不同剧情文本
+- **结算画面计时**：结果画面显示任务用时（分:秒格式）
+- **结果画面返回标题**：按 Enter 从结果画面返回标题（场景重载）
 
-### 文档
-- 新增 `docs/AI_Development_Instructions.md`（详细开发指令、禁止事项、验证流程）
-- `Development_Plan.md`：Phase 1 所有子任务标记完成，进入 Phase 2
+### 修改
+- `main.gd`：重构为 `标题 → 简报 → 游戏` 三阶段流程，新增 `_start_briefing()`、`_get_elapsed_time()`、`_return_to_title()`
+- `level_01.gd`：重写为自动发现 `StoryTrigger*` 节点，支持多触发器注册，信号携带触发器索引
+- `hud.gd`：`show_result_screen()` 新增 `elapsed_time` 参数，显示 TimeLabel
+- `briefing.gd`：改为逐行显示简报文本（旧版为打字机效果），信号名改为 `briefing_finished`
 
 ## [0.2.1] - 2026-05-01
 
