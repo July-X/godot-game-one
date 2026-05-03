@@ -51,8 +51,8 @@ func _physics_process(delta: float) -> void:
 	_update_damage_flash()
 	_update_camera_shake(delta)
 
-	var input_x := Input.get_axis("ui_left", "ui_right")
-	var input_z := Input.get_axis("ui_up", "ui_down")
+	var input_x := Input.get_axis("move_left", "move_right")
+	var input_z := Input.get_axis("move_up", "move_down")
 	var movement := Vector3(input_x, 0.0, input_z)
 
 	if movement.length() > 1.0:
@@ -65,10 +65,10 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= gravity * delta
 	else:
 		velocity.y = 0
-		if Input.is_action_just_pressed("ui_cancel"):
+		if Input.is_action_just_pressed("jump"):
 			velocity.y = jump_velocity
 
-	if Input.is_action_just_pressed("ui_accept") and _fire_timer <= 0.0:
+	if Input.is_action_just_pressed("shoot") and _fire_timer <= 0.0:
 		_fire_timer = fire_cooldown
 		shoot_requested.emit(muzzle.global_position, -global_transform.basis.z.normalized())
 		_recoil_pose()
