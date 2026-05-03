@@ -18,7 +18,7 @@ signal died
 @onready var camera_rig = $CameraRig
 @onready var model_root = $ModelRoot
 
-var current_health = 5
+var current_health: int = max_health
 var _fire_timer = 0.0
 var _invincibility_timer = 0.0
 var _flash_timer = 0.0

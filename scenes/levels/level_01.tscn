@@ -1,7 +1,8 @@
-[gd_scene load_steps=30 format=3]
+[gd_scene load_steps=31 format=3]
 
 [ext_resource type="Script" path="res://scripts/level_01.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_patroller.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/entities/enemy_shooter.tscn" id="3"]
 
 [sub_resource type="BoxShape3D" id="1"]
 size = Vector3(24, 0.4, 24)
@@ -296,3 +297,46 @@ position = Vector3(-5.0, 1.2, -1.0)
 
 [node name="EnemyB" parent="." instance=ExtResource("2")]
 position = Vector3(5.0, 1.2, -3.0)
+
+## 新增敌人
+[node name="EnemyC" parent="." instance=ExtResource("2")]
+position = Vector3(-3.0, 1.2, -6.0)
+
+[node name="EnemyD" parent="." instance=ExtResource("2")]
+position = Vector3(4.0, 1.2, 1.0)
+
+[node name="EnemyShooterA" parent="." instance=ExtResource("3")]
+position = Vector3(0.0, 1.2, -8.0)
+
+## 新增掩体
+[node name="LowWallC" type="StaticBody3D" parent="."]
+position = Vector3(0.0, 0.9, -1.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallC"]
+shape = SubResource("20")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallC"]
+mesh = SubResource("19")
+material_override = SubResource("13")
+
+[node name="LowWallD" type="StaticBody3D" parent="."]
+position = Vector3(-6.0, 0.9, -4.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallD"]
+shape = SubResource("20")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallD"]
+mesh = SubResource("19")
+material_override = SubResource("13")
+
+[node name="CrateE" type="StaticBody3D" parent="."]
+position = Vector3(2.5, 0.2, 2.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CrateE"]
+shape = SubResource("7")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="CrateE"]
+mesh = SubResource("8")
+material_override = SubResource("15")
+
+[node name="CrateF" type="StaticBody3D" parent="."]
+position = Vector3(-4.0, 0.2, -7.5)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CrateF"]
+shape = SubResource("7")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="CrateF"]
+mesh = SubResource("8")
+material_override = SubResource("15")
