@@ -50,9 +50,6 @@ func _start_briefing() -> void:
 	await screen_transition.transition_finished
 
 func _start_game() -> void:
-	## 如果关卡已存在且不是当前关卡，替换
-	if level != null and level.has_method("get_groups") == false:
-		pass
 	## 切换到下一关
 	if level != null:
 		level.queue_free()
@@ -87,6 +84,13 @@ func _start_game() -> void:
 	await screen_transition.transition_finished
 
 func _bind_player() -> void:
+	## 防止信号重复连接（关卡切换时 player 节点保留）
+	if player.shoot_requested.is_connected(_on_player_shoot_requested):
+		player.shoot_requested.disconnect(_on_player_shoot_requested)
+	if player.took_damage.is_connected(_on_player_took_damage):
+		player.took_damage.disconnect(_on_player_took_damage)
+	if player.died.is_connected(_on_player_died):
+		player.died.disconnect(_on_player_died)
 	player.shoot_requested.connect(_on_player_shoot_requested)
 	player.took_damage.connect(_on_player_took_damage)
 	player.died.connect(_on_player_died)
@@ -114,6 +118,15 @@ func _bind_level() -> void:
 			level.register_enemy(enemy)
 
 func _bind_hud() -> void:
+	## 防止信号重复连接
+	if GameState.health_changed.is_connected(hud.set_health):
+		GameState.health_changed.disconnect(hud.set_health)
+	if GameState.objective_changed.is_connected(hud.set_objective):
+		GameState.objective_changed.disconnect(hud.set_objective)
+	if GameState.story_line_changed.is_connected(hud.set_story_line):
+		GameState.story_line_changed.disconnect(hud.set_story_line)
+	if GameState.run_state_changed.is_connected(hud.set_run_state):
+		GameState.run_state_changed.disconnect(hud.set_run_state)
 	if hud.has_method("set_health"):
 		GameState.health_changed.connect(hud.set_health)
 	if hud.has_method("set_objective"):
@@ -166,12 +179,13 @@ func _on_player_shoot_requested(origin: Vector3, direction: Vector3) -> void:
 		projectile.configure(direction)
 
 func _on_player_took_damage(current_health: int, max_health: int) -> void:
-	_hp_lost += (GameState.current_health - current_health)
+	var damage_taken: int = GameState.current_health - current_health
+	_hp_lost += damage_taken
 	GameState.current_health = current_health
 	GameState.max_health = max_health
 	GameState.health_changed.emit(current_health, max_health)
-	if hud.has_method("show_damage_feed"):
-		hud.show_damage_feed("-%d HP" % (GameState.max_health - current_health))
+	if hud.has_method("show_damage_feed") and damage_taken > 0:
+		hud.show_damage_feed("-%d HP" % damage_taken)
 	if current_health == 0:
 		GameState.set_story_line("You were overwhelmed. Restart and push through more cleanly.")
 		_trigger_result()

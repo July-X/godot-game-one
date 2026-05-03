@@ -4,17 +4,20 @@ extends Area3D
 @export var lifetime: float = 1.0
 @export var damage: int = 1
 
-var _direction = Vector3(0, 0, -1)
+var _direction: Vector3 = Vector3(0, 0, -1)
 var _hit_effect_scene = preload("res://scenes/entities/hit_effect.tscn")
 var _trail_mesh: MeshInstance3D
 var _trail_timer: float = 0.0
+var _expired: bool = false
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
-	await get_tree().create_timer(lifetime).timeout
-	queue_free()
 	_trail_mesh = $Trail
 	_update_trail()
+	await get_tree().create_timer(lifetime).timeout
+	if not _expired:
+		_expired = true
+		queue_free()
 
 func configure(direction: Vector3) -> void:
 	_direction = direction.normalized()
@@ -30,15 +33,15 @@ func _physics_process(delta: float) -> void:
 func _update_trail() -> void:
 	if _trail_mesh == null:
 		return
-	## 拖尾：一根细长条，从子弹位置向后延伸
 	var length: float = 0.4
 	var mid: Vector3 = -_direction * length * 0.5
 	_trail_mesh.position = mid
-	var basis := Basis()
-	basis = Basis().scaled(Vector3(0.03, 0.03, length * 0.5))
-	_trail_mesh.transform.basis = basis
+	_trail_mesh.transform.basis = Basis().scaled(Vector3(0.03, 0.03, length * 0.5))
 
 func _on_body_entered(body: Node) -> void:
+	if _expired:
+		return
+	_expired = true
 	if body.has_method("take_damage"):
 		body.take_damage(damage)
 	_spawn_hit_effect()
