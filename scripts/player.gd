@@ -7,9 +7,9 @@ signal died
 @export var move_speed: float = 6.5
 @export var jump_velocity: float = 6.0
 @export var gravity: float = 18.0
-@export var max_health: int = 5
+@export var max_health: int = 4
 @export var fire_cooldown: float = 0.18
-@export var hit_invincibility: float = 0.45
+@export var hit_invincibility: float = 0.5
 @export var shake_intensity: float = 0.18
 @export var shake_decay: float = 8.0
 

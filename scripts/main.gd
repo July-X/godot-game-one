@@ -22,6 +22,7 @@ func _ready() -> void:
 	_show_title()
 
 func _show_title() -> void:
+	BGM.play_title_music()
 	level.visible = false
 	player.visible = false
 	player.process_mode = PROCESS_MODE_DISABLED
@@ -30,6 +31,7 @@ func _show_title() -> void:
 	briefing_screen.visible = false
 
 func _start_briefing() -> void:
+	BGM.stop_music()
 	screen_transition.fade_out(0.4)
 	await screen_transition.transition_finished
 	title_screen.visible = false
@@ -40,6 +42,7 @@ func _start_briefing() -> void:
 	await screen_transition.transition_finished
 
 func _start_game() -> void:
+	BGM.play_game_music()
 	screen_transition.fade_out(0.4)
 	await screen_transition.transition_finished
 	briefing_screen.visible = false
@@ -157,6 +160,7 @@ func _trigger_result() -> void:
 	if _result_shown:
 		return
 	_result_shown = true
+	BGM.stop_music()
 	GameState.set_run_state("failed")
 	_hide_game_hud()
 	screen_transition.fade_out(0.3)
@@ -174,6 +178,7 @@ func _on_player_reached_exit() -> void:
 	if _result_shown:
 		return
 	_result_shown = true
+	BGM.play_result_music()
 	GameState.set_story_line("Extraction complete. The relay data is secured.")
 	GameState.set_run_state("finished")
 	_hide_game_hud()

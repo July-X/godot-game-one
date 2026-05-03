@@ -5,11 +5,11 @@ signal defeated
 @export var move_speed: float = 2.2
 @export var chase_speed: float = 3.4
 @export var gravity: float = 18.0
-@export var health: int = 3
+@export var health: int = 2
 @export var patrol_distance: float = 3.0
 @export var aggro_range: float = 6.0
 @export var touch_damage: int = 1
-@export var touch_cooldown: float = 0.6
+@export var touch_cooldown: float = 1.0
 
 var _home_x = 0.0
 var _direction = 1.0
@@ -17,7 +17,7 @@ var _target = null
 var _dead = false
 var _touch_timer = 0.0
 var _patrol_pause: float = 0.0
-@export var patrol_wait_time: float = 0.8
+@export var patrol_wait_time: float = 1.0
 var _mesh_instance: MeshInstance3D
 var _original_material: Material
 var _model_root: Node3D

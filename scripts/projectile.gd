@@ -1,7 +1,7 @@
 extends Area3D
 
-@export var speed: float = 18.0
-@export var lifetime: float = 1.2
+@export var speed: float = 20.0
+@export var lifetime: float = 1.0
 @export var damage: int = 1
 
 var _direction = Vector3(0, 0, -1)
@@ -35,7 +35,7 @@ func _update_trail() -> void:
 	var mid: Vector3 = -_direction * length * 0.5
 	_trail_mesh.position = mid
 	var basis := Basis()
-	basis = basis.scaled(Vector3(0.03, 0.03, length * 0.5))
+	basis = Basis().scaled(Vector3(0.03, 0.03, length * 0.5))
 	_trail_mesh.transform.basis = basis
 
 func _on_body_entered(body: Node) -> void:
