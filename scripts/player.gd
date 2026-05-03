@@ -48,6 +48,18 @@ func _ready() -> void:
 	_blaster = get_node("FPModel/Blaster") as Node3D
 
 func _unhandled_input(event: InputEvent) -> void:
+	# ESC 释放鼠标，方便操作界面或切换窗口
+	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		else:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# 点击窗口重新捕获鼠标
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and GameState.run_state == "running":
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
 	if event is InputEventMouseMotion and GameState.run_state == "running":
 		## 鼠标控制视角：Y轴旋转玩家，X轴旋转相机俯仰
 		rotate_y(-event.relative.x * mouse_sensitivity)
