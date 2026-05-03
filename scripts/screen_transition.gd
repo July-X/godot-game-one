@@ -12,7 +12,9 @@ func fade_out(duration: float = 0.4) -> void:
 	overlay.visible = true
 	var tween := create_tween()
 	tween.tween_property(overlay, "color", Color(0, 0, 0, 1), duration)
-	tween.tween_signal(self, "transition_finished")
+	tween.tween_callback(func():
+		transition_finished.emit()
+	)
 
 func fade_in(duration: float = 0.3) -> void:
 	overlay.visible = true
@@ -21,5 +23,5 @@ func fade_in(duration: float = 0.3) -> void:
 	tween.tween_property(overlay, "color", Color(0, 0, 0, 0), duration)
 	tween.tween_callback(func():
 		overlay.visible = false
+		transition_finished.emit()
 	)
-	tween.tween_signal(self, "transition_finished")
