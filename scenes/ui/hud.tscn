@@ -138,7 +138,12 @@ horizontal_alignment = 1
 	theme_override_colors/font_color = Color(0.55, 0.65, 0.85, 1)
 	horizontal_alignment = 1
 
+[node name="RecordLabel" type="Label" parent="Root/ResultPanel/CenterBox/VBox"]
+	theme_override_font_sizes/font_size = 8
+	theme_override_colors/font_color = Color(0.5, 0.55, 0.7, 1)
+	horizontal_alignment = 1
+
 [node name="RestartHint" type="Label" parent="Root/ResultPanel/CenterBox/VBox"]
-theme_override_font_sizes/font_size = 9
-theme_override_colors/font_color = Color(0.85, 0.85, 0.3, 1)
-horizontal_alignment = 1
+	theme_override_font_sizes/font_size = 9
+	theme_override_colors/font_color = Color(0.85, 0.85, 0.3, 1)
+	horizontal_alignment = 1

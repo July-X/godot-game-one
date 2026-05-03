@@ -52,8 +52,14 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.8, 0.8, 0.3, 1)
 horizontal_alignment = 1
 
+[node name="RecordHint" type="Label" parent="Root/CenterContainer/VBox"]
+	text = "NO RECORD YET"
+	theme_override_font_sizes/font_size = 8
+	theme_override_colors/font_color = Color(0.4, 0.45, 0.6, 1)
+	horizontal_alignment = 1
+
 [node name="CreditLabel" type="Label" parent="Root/CenterContainer/VBox"]
-text = "Godot 4 - GDScript"
-theme_override_font_sizes/font_size = 7
-theme_override_colors/font_color = Color(0.3, 0.3, 0.4, 1)
-horizontal_alignment = 1
+	text = "Godot 4 - GDScript"
+	theme_override_font_sizes/font_size = 7
+	theme_override_colors/font_color = Color(0.3, 0.3, 0.4, 1)
+	horizontal_alignment = 1

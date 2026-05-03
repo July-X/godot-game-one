@@ -11,6 +11,7 @@ extends CanvasLayer
 @onready var stats_label = $Root/ResultPanel/CenterBox/VBox/StatsLabel
 @onready var restart_hint = $Root/ResultPanel/CenterBox/VBox/RestartHint
 @onready var time_label = $Root/ResultPanel/CenterBox/VBox/TimeLabel
+@onready var record_label = $Root/ResultPanel/CenterBox/VBox/RecordLabel
 
 func set_health(current_health: int, max_health: int) -> void:
 	health_label.text = "HP %d/%d" % [current_health, max_health]
@@ -57,5 +58,9 @@ func show_result_screen(state: String, story: String, kills: int, total_enemies:
 		time_label.text = "Time: %s" % elapsed_time
 	else:
 		time_label.text = ""
+	## 显示最佳记录
+	var best_time_str: String = SaveSystem.get_best_time_string()
+	if record_label != null:
+		record_label.text = "Best Time: %s  |  Total Kills: %d" % [best_time_str, SaveSystem.total_kills]
 	restart_hint.text = "Press ENTER to return to title"
 	result_panel.visible = true

@@ -163,6 +163,9 @@ func _trigger_result() -> void:
 	BGM.stop_music()
 	GameState.set_run_state("failed")
 	_hide_game_hud()
+	## 记录存档（失败也记录）
+	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
+	SaveSystem.record_run(_kill_count, elapsed, false)
 	screen_transition.fade_out(0.3)
 	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
@@ -182,6 +185,9 @@ func _on_player_reached_exit() -> void:
 	GameState.set_story_line("Extraction complete. The relay data is secured.")
 	GameState.set_run_state("finished")
 	_hide_game_hud()
+	## 记录存档（成功通关）
+	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
+	SaveSystem.record_run(_kill_count, elapsed, true)
 	screen_transition.fade_out(0.3)
 	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())

@@ -1,8 +1,9 @@
-[gd_scene load_steps=31 format=3]
+[gd_scene load_steps=32 format=3]
 
 [ext_resource type="Script" path="res://scripts/level_01.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_patroller.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_shooter.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/entities/enemy_jumper.tscn" id="4"]
 
 [sub_resource type="BoxShape3D" id="1"]
 size = Vector3(24, 0.4, 24)
@@ -340,3 +341,10 @@ shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateF"]
 mesh = SubResource("8")
 material_override = SubResource("15")
+
+## 跳跃型敌人
+[node name="EnemyJumperA" parent="." instance=ExtResource("4")]
+position = Vector3(-7.0, 1.2, -2.0)
+
+[node name="EnemyJumperB" parent="." instance=ExtResource("4")]
+position = Vector3(7.0, 1.2, -5.0)
