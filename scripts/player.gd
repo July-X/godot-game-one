@@ -37,7 +37,7 @@ var _blaster: Node3D
 func _ready() -> void:
 	add_to_group("player")
 	current_health = max_health
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	muzzle = get_node("FPModel/Muzzle") as Marker3D
 	camera = get_node("Camera3D") as Camera3D
 	fp_model = get_node("FPModel") as Node3D

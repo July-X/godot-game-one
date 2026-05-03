@@ -321,6 +321,22 @@ func notify_enemy_defeated() -> void:
 	_update_exit_state()
 
 func _process(_delta: float) -> void:
+	## Esc 键切换鼠标模式和窗口模式
+	if Input.is_action_just_pressed("ui_cancel"):
+		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		else:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	## F11 切换全屏
+	if Input.is_key_pressed(KEY_F11):
+		if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		else:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		set_meta("fullscreen_latch", true)
+	else:
+		if has_meta("fullscreen_latch"):
+			remove_meta("fullscreen_latch")
 	if GameState.run_state == "title" and Input.is_action_just_pressed("ui_accept"):
 		SFX.play_ui_confirm()
 		_start_briefing()
