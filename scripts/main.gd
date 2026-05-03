@@ -23,7 +23,8 @@ func _ready() -> void:
 	GameState.reset_run()
 	_level_scenes = {
 		1: preload("res://scenes/levels/level_01.tscn"),
-		2: preload("res://scenes/levels/level_02.tscn")
+		2: preload("res://scenes/levels/level_02.tscn"),
+		3: preload("res://scenes/levels/level_03.tscn")
 	}
 	_current_level = 1
 	briefing_screen.visible = false
@@ -76,6 +77,8 @@ func _start_game() -> void:
 	var level_name: String = "Neutralize the patrol and reach the relay terminal"
 	if _current_level == 2:
 		level_name = "Clear the forward base and secure the data core"
+	elif _current_level == 3:
+		level_name = "Assault the command center and eliminate all hostiles"
 	GameState.set_objective(level_name)
 	GameState.set_story_line("Eliminate all hostiles to open the terminal room.")
 	_update_exit_state()
@@ -107,11 +110,17 @@ func _bind_level() -> void:
 			2: "Signal is getting stronger. The terminal is close.",
 			3: "Warning: heavy resistance near the exit. Prepare for combat."
 		}
-	else:
+	elif _current_level == 2:
 		_story_texts = {
 			1: "Forward base ahead. Multiple hostiles detected.",
 			2: "Shooter units spotted. Use cover wisely.",
 			3: "The data core is just ahead. Clear the area."
+		}
+	else:
+		_story_texts = {
+			1: "Command center ahead. Heavy resistance expected.",
+			2: "All enemy types detected. Stay sharp.",
+			3: "Final push. Clear the area and extract."
 		}
 	if level.has_method("register_enemy"):
 		for enemy in get_tree().get_nodes_in_group("enemies"):
