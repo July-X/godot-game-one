@@ -49,29 +49,28 @@ func _ready() -> void:
 	_apply_procedural_textures()
 
 func _apply_procedural_textures() -> void:
-	## 为所有 FPModel 子节点的材质添加程序化纹理
-	var noise = FastNoiseLite.new()
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	noise.frequency = 0.04
-	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	noise.fractal_octaves = 4
-	var grad = GradientTexture2D.new()
-	grad.width = 256
-	grad.height = 256
-	var g = Gradient.new()
-	g.colors = [Color(0.35, 0.35, 0.4, 1), Color(0.12, 0.12, 0.15, 1)]
-	g.offsets = [0.0, 1.0]
-	grad.gradient = g
-	var noise_tex = NoiseTexture2D.new()
-	noise_tex.noise = noise
-	noise_tex.width = 256
-	noise_tex.height = 256
+	## 为所有 FPModel 子节点的材质添加程序化噪声纹理
 	for child in fp_model.get_children():
 		if child is MeshInstance3D:
 			var mat = child.material_override as StandardMaterial3D
-			if mat and mat.albedo_color.r < 0.5:
-				mat.albedo_texture = noise_tex
-				mat.roughness_texture = grad
+			if mat == null:
+				continue
+			## 跳过自发光材质（枪口、条纹等）
+			if mat.emission_energy_multiplier > 0.5:
+				continue
+			var noise = FastNoiseLite.new()
+			noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+			noise.frequency = randf_range(0.03, 0.08)
+			noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+			noise.fractal_octaves = randi_range(3, 5)
+			var noise_tex = NoiseTexture2D.new()
+			noise_tex.noise = noise
+			noise_tex.width = 128
+			noise_tex.height = 128
+			mat.albedo_texture = noise_tex
+			mat.normal_enabled = true
+			mat.normal_texture = noise_tex
+			mat.normal_scale = 0.15
 
 func _unhandled_input(event: InputEvent) -> void:
 	# ESC 释放鼠标，方便操作界面或切换窗口
@@ -149,6 +148,12 @@ func _physics_process(delta: float) -> void:
 		SFX.play_shoot()
 
 	move_and_slide()
+
+	## 地图边界限制
+	var map_half_x: float = 11.0
+	var map_half_z: float = 11.0
+	global_position.x = clamp(global_position.x, -map_half_x, map_half_x)
+	global_position.z = clamp(global_position.z, -map_half_z, map_half_z)
 
 	if global_position.y < fall_damage_height:
 		_respawn_at_spawn()
