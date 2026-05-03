@@ -198,7 +198,7 @@ func _update_walk_animation() -> void:
 
 	## 相机轻微上下起伏（呼吸感）
 	if camera:
-		camera.position.y = 0.7 + bounce * 0.5
+		camera.position = Vector3(0, 0.7 + bounce * 0.5, 0)
 
 func _reset_pose() -> void:
 	_walk_cycle = 0.0
@@ -216,7 +216,7 @@ func _reset_pose() -> void:
 	if _leg_r:
 		_leg_r.rotation.x = 0.0
 	if camera:
-		camera.position.y = 0.7
+		camera.position = Vector3(0, 0.7, 0)
 
 func _recoil_pose() -> void:
 	if _blaster:
@@ -285,4 +285,4 @@ func _update_camera_shake(delta: float) -> void:
 		camera.position = Vector3(0, 0.7, 0) + offset
 		_shake_strength = max(_shake_strength - shake_decay * delta, 0.0)
 	else:
-		camera.position.y = 0.7
+		camera.position = Vector3(0, 0.7, 0)
