@@ -14,6 +14,7 @@ var _exit_open: bool = false
 var _debug_visible: bool = true
 var _result_shown: bool = false
 var _start_time: float = 0.0
+var _hp_lost: int = 0
 var _story_texts: Dictionary = {}
 
 func _ready() -> void:
@@ -137,6 +138,7 @@ func _on_player_shoot_requested(origin: Vector3, direction: Vector3) -> void:
 		projectile.configure(direction)
 
 func _on_player_took_damage(current_health: int, max_health: int) -> void:
+	_hp_lost += (GameState.current_health - current_health)
 	GameState.current_health = current_health
 	GameState.max_health = max_health
 	GameState.health_changed.emit(current_health, max_health)
@@ -166,6 +168,8 @@ func _trigger_result() -> void:
 	## 记录存档（失败也记录）
 	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
 	SaveSystem.record_run(_kill_count, elapsed, false)
+	## 检查成就
+	var _new_achievements: Array = Achievements.check_achievements(_kill_count, _total_enemies, elapsed, false, _hp_lost)
 	screen_transition.fade_out(0.3)
 	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
@@ -188,6 +192,10 @@ func _on_player_reached_exit() -> void:
 	## 记录存档（成功通关）
 	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
 	SaveSystem.record_run(_kill_count, elapsed, true)
+	## 检查成就
+	var new_achievements: Array = Achievements.check_achievements(_kill_count, _total_enemies, elapsed, true, _hp_lost)
+	if new_achievements.size() > 0:
+		hud.show_achievement_unlocks(new_achievements)
 	screen_transition.fade_out(0.3)
 	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())

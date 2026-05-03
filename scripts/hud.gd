@@ -48,6 +48,30 @@ func show_damage_feed(text: String) -> void:
 	var tween := create_tween()
 	tween.tween_property(feed_label, "modulate:a", 0.0, 1.2)
 
+var _achievement_scene = preload("res://scenes/ui/achievement_toast.tscn")
+var _active_toasts: Array[Control] = []
+
+func show_achievement_unlocks(achievement_ids: Array) -> void:
+	for id in achievement_ids:
+		var ach_data: Dictionary = Achievements.get_all_achievements()
+		if not ach_data.has(id):
+			continue
+		var toast = _achievement_scene.instantiate()
+		if toast.has_node("Label"):
+			toast.get_node("Label").text = "ACHIEVEMENT: %s" % ach_data[id]["name"]
+		toast.position = Vector2(280, 40 + _active_toasts.size() * 28)
+		add_child(toast)
+		_active_toasts.append(toast)
+		## 3秒后渐隐消失
+		var tween: Tween = create_tween()
+		tween.set_delay(3.0)
+		tween.tween_property(toast, "modulate:a", 0.0, 0.5)
+		tween.tween_callback(func():
+			if toast.is_inside_tree():
+				toast.queue_free()
+			_active_toasts.erase(toast)
+		)
+
 func show_result_screen(state: String, story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
 	var is_success = state == "finished"
 	title_label.text = "MISSION COMPLETE" if is_success else "MISSION FAILED"

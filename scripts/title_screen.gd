@@ -20,3 +20,8 @@ func _update_record_display() -> void:
 		record_hint.text = "NO RECORD YET"
 	else:
 		record_hint.text = "BEST: %s  |  KILLS: %d" % [SaveSystem.get_best_time_string(), SaveSystem.total_kills]
+	## 显示成就进度
+	var unlocked: int = Achievements.get_unlocked_count()
+	var total: int = Achievements.get_all_achievements().size()
+	if record_hint.text != "NO RECORD YET":
+		record_hint.text += " | ACH: %d/%d" % [unlocked, total]
