@@ -1,5 +1,29 @@
 # 更新日志
 
+## [0.9.0] - 2026-05-02
+
+### 新增
+- **跳跃型敌人** (`enemy_jumper.gd` + `enemy_jumper.tscn`)：绿色外观，周期性跳跃接近玩家，跳跃力 5.0，冷却 1.5s，追击范围 8
+- **存档系统** (`save_system.gd`，Autoload)：保存/加载最佳通关时间、总击杀数、通关次数、单局最高击杀数到 `user://save_data.json`
+- **标题画面记录显示**：显示最佳时间和总击杀数（`RecordHint` 标签）
+- **结算画面记录显示**：显示最佳时间和总击杀数（`RecordLabel` 标签）
+- **关卡扩展**：新增 2 个跳跃型敌人（EnemyJumperA/B）
+
+### 修改
+- `title_screen.gd`：新增 `_update_record_display()`，显示最佳记录
+- `hud.gd`：新增 `record_label`，结算画面显示最佳记录
+- `main.gd`：结算时调用 `SaveSystem.record_run()` 记录数据
+- `project.godot`：新增 SaveSystem Autoload
+
+## [0.8.0] - 2026-05-02
+
+### 新增
+- **射击型敌人** (`enemy_shooter.gd` + `enemy_shooter.tscn`)：紫色外观，不移动但转向玩家，每 2 秒发射子弹，射程 8
+- **关卡扩展**：新增 2 个巡逻敌人（EnemyC/D）、1 个射击型敌人（EnemyShooterA）、2 面矮墙掩体（LowWallC/D）、2 个木箱掩体（CrateE/F）
+
+### 修改
+- `player.gd`：修复 `current_health` 初始值从硬编码 5 改为 `max_health`（4）
+
 ## [0.7.0] - 2026-05-02
 
 ### 新增
