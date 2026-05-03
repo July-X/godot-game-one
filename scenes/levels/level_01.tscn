@@ -1,4 +1,4 @@
-[gd_scene load_steps=34 format=3]
+[gd_scene load_steps=24 format=3]
 
 [ext_resource type="Script" path="res://scripts/level_01.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_patroller.tscn" id="2"]
@@ -12,27 +12,15 @@ size = Vector3(24, 0.4, 24)
 size = Vector3(24, 0.4, 24)
 
 [sub_resource type="BoxShape3D" id="3"]
-size = Vector3(24, 4, 0.6)
+size = Vector3(24, 0.6, 12)
 
 [sub_resource type="BoxMesh" id="4"]
-size = Vector3(24, 4, 0.6)
-
-[sub_resource type="BoxShape3D" id="27"]
-size = Vector3(24, 12, 0.6)
-
-[sub_resource type="BoxMesh" id="25"]
-size = Vector3(24, 12, 0.6)
+size = Vector3(24, 0.6, 12)
 
 [sub_resource type="BoxShape3D" id="5"]
-size = Vector3(0.6, 4, 24)
-
-[sub_resource type="BoxMesh" id="6"]
-size = Vector3(0.6, 4, 24)
-
-[sub_resource type="BoxShape3D" id="28"]
 size = Vector3(0.6, 12, 24)
 
-[sub_resource type="BoxMesh" id="26"]
+[sub_resource type="BoxMesh" id="6"]
 size = Vector3(0.6, 12, 24)
 
 [sub_resource type="BoxShape3D" id="7"]
@@ -47,28 +35,46 @@ size = Vector3(0.8, 0.4, 0.8)
 [sub_resource type="BoxMesh" id="10"]
 size = Vector3(0.8, 0.4, 0.8)
 
-[sub_resource type="StandardMaterial3D" id="11"]
-albedo_color = Color(0.45, 0.48, 0.55, 1)
-shading_mode = 1
-metallic = 0.3
-roughness = 0.7
+[sub_resource type="BoxMesh" id="11"]
+size = Vector3(12.0, 0.1, 4.0)
 
-[sub_resource type="StandardMaterial3D" id="12"]
-albedo_color = Color(0.12, 0.14, 0.18, 1)
+[sub_resource type="BoxMesh" id="12"]
+size = Vector3(4.0, 0.1, 12.0)
+
+[sub_resource type="BoxMesh" id="13"]
+size = Vector3(1.6, 1.0, 1.6)
+
+[sub_resource type="BoxShape3D" id="14"]
+size = Vector3(1.6, 1.0, 1.6)
+
+[sub_resource type="StandardMaterial3D" id="15"]
+albedo_color = Color(0.3, 0.32, 0.38, 1)
 shading_mode = 1
 metallic = 0.4
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="16"]
+albedo_color = Color(0.15, 0.17, 0.22, 1)
+shading_mode = 1
+metallic = 0.5
+roughness = 0.7
+
+[sub_resource type="StandardMaterial3D" id="17"]
+albedo_color = Color(0.18, 0.2, 0.28, 1)
+shading_mode = 1
+metallic = 0.5
 roughness = 0.6
 
-[sub_resource type="StandardMaterial3D" id="13"]
+[sub_resource type="StandardMaterial3D" id="18"]
 albedo_color = Color(0.7, 0.22, 0.18, 1)
 shading_mode = 1
 metallic = 0.5
 roughness = 0.45
 emission_enabled = true
-emission = Color(0.25, 0.05, 0.03, 1)
-emission_energy_multiplier = 0.2
+emission = Color(0.3, 0.05, 0.03, 1)
+emission_energy_multiplier = 0.3
 
-[sub_resource type="StandardMaterial3D" id="14"]
+[sub_resource type="StandardMaterial3D" id="19"]
 albedo_color = Color(0.2, 0.4, 0.65, 1)
 shading_mode = 1
 metallic = 0.6
@@ -77,50 +83,11 @@ emission_enabled = true
 emission = Color(0.05, 0.12, 0.25, 1)
 emission_energy_multiplier = 0.25
 
-[sub_resource type="StandardMaterial3D" id="15"]
+[sub_resource type="StandardMaterial3D" id="20"]
 albedo_color = Color(0.75, 0.58, 0.12, 1)
 shading_mode = 1
 metallic = 0.45
 roughness = 0.5
-
-[sub_resource type="StandardMaterial3D" id="16"]
-albedo_color = Color(0.85, 0.85, 0.8, 1)
-shading_mode = 1
-metallic = 0.2
-roughness = 0.3
-emission_enabled = true
-emission = Color(0.15, 0.35, 0.15, 1)
-emission_energy_multiplier = 0.6
-
-[sub_resource type="BoxMesh" id="17"]
-size = Vector3(0.6, 2.4, 0.6)
-
-[sub_resource type="BoxShape3D" id="18"]
-size = Vector3(0.6, 2.4, 0.6)
-
-[sub_resource type="BoxMesh" id="19"]
-size = Vector3(3.0, 1.8, 0.4)
-
-[sub_resource type="BoxShape3D" id="20"]
-size = Vector3(3.0, 1.8, 0.4)
-
-[sub_resource type="BoxMesh" id="21"]
-size = Vector3(2.4, 0.2, 2.4)
-
-[sub_resource type="BoxShape3D" id="22"]
-size = Vector3(2.4, 0.2, 2.4)
-
-[sub_resource type="BoxMesh" id="23"]
-size = Vector3(12.0, 0.1, 4.0)
-
-[sub_resource type="BoxMesh" id="24"]
-size = Vector3(4.0, 0.1, 12.0)
-
-[sub_resource type="BoxMesh" id="25"]
-size = Vector3(1.6, 1.0, 1.6)
-
-[sub_resource type="BoxShape3D" id="26"]
-size = Vector3(1.6, 1.0, 1.6)
 
 [node name="Level01" type="Node3D"]
 script = ExtResource("1")
@@ -130,100 +97,115 @@ script = ExtResource("1")
 shape = SubResource("1")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
 mesh = SubResource("2")
-material_override = SubResource("11")
+material_override = SubResource("15")
 
 [node name="FloorZoneBack" type="MeshInstance3D" parent="."]
-mesh = SubResource("23")
-material_override = SubResource("12")
+mesh = SubResource("11")
+material_override = SubResource("16")
 position = Vector3(0, 0.05, -8.0)
 
 [node name="FloorZoneFront" type="MeshInstance3D" parent="."]
-mesh = SubResource("24")
-material_override = SubResource("12")
+mesh = SubResource("12")
+material_override = SubResource("16")
 position = Vector3(0, 0.05, 4.0)
 
 [node name="BackWall" type="StaticBody3D" parent="."]
 position = Vector3(0, 5.0, -12.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="BackWall"]
-shape = SubResource("27")
+shape = SubResource("3")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="BackWall"]
-mesh = SubResource("25")
-material_override = SubResource("12")
+mesh = SubResource("4")
+material_override = SubResource("17")
 
 [node name="FrontWall" type="StaticBody3D" parent="."]
 position = Vector3(0, 5.0, 9.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="FrontWall"]
-shape = SubResource("27")
+shape = SubResource("3")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="FrontWall"]
-mesh = SubResource("25")
-material_override = SubResource("12")
+mesh = SubResource("4")
+material_override = SubResource("17")
 
 [node name="LeftWall" type="StaticBody3D" parent="."]
 position = Vector3(-12.0, 5.0, 0)
 rotation_degrees = Vector3(0, 90, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LeftWall"]
-shape = SubResource("28")
+shape = SubResource("5")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="LeftWall"]
-mesh = SubResource("26")
-material_override = SubResource("12")
+mesh = SubResource("6")
+material_override = SubResource("17")
 
 [node name="RightWall" type="StaticBody3D" parent="."]
 position = Vector3(12.0, 5.0, 0)
 rotation_degrees = Vector3(0, 90, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="RightWall"]
-shape = SubResource("28")
+shape = SubResource("5")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="RightWall"]
-mesh = SubResource("26")
-material_override = SubResource("12")
+mesh = SubResource("6")
+material_override = SubResource("17")
 
 [node name="PillarA" type="StaticBody3D" parent="."]
 position = Vector3(-6.0, 1.2, -5.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PillarA"]
-shape = SubResource("18")
+shape = SubResource("14")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PillarA"]
-mesh = SubResource("17")
-material_override = SubResource("12")
+mesh = SubResource("13")
+material_override = SubResource("17")
 
 [node name="PillarB" type="StaticBody3D" parent="."]
 position = Vector3(6.0, 1.2, -5.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PillarB"]
-shape = SubResource("18")
+shape = SubResource("14")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PillarB"]
-mesh = SubResource("17")
-material_override = SubResource("12")
+mesh = SubResource("13")
+material_override = SubResource("17")
 
 [node name="PillarC" type="StaticBody3D" parent="."]
 position = Vector3(-6.0, 1.2, 3.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PillarC"]
-shape = SubResource("18")
+shape = SubResource("14")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PillarC"]
-mesh = SubResource("17")
-material_override = SubResource("12")
+mesh = SubResource("13")
+material_override = SubResource("17")
 
 [node name="PillarD" type="StaticBody3D" parent="."]
 position = Vector3(6.0, 1.2, 3.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="PillarD"]
-shape = SubResource("18")
+shape = SubResource("14")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="PillarD"]
-mesh = SubResource("17")
-material_override = SubResource("12")
+mesh = SubResource("13")
+material_override = SubResource("17")
 
 [node name="LowWallA" type="StaticBody3D" parent="."]
 position = Vector3(-3.0, 0.9, -6.5)
-rotation_degrees = Vector3(0, 0, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallA"]
-shape = SubResource("20")
+shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallA"]
-mesh = SubResource("19")
-material_override = SubResource("13")
+mesh = SubResource("8")
+material_override = SubResource("18")
 
 [node name="LowWallB" type="StaticBody3D" parent="."]
 position = Vector3(3.0, 0.9, -6.5)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallB"]
-shape = SubResource("20")
+shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallB"]
-mesh = SubResource("19")
-material_override = SubResource("13")
+mesh = SubResource("8")
+material_override = SubResource("18")
+
+[node name="LowWallC" type="StaticBody3D" parent="."]
+position = Vector3(0.0, 0.9, -1.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallC"]
+shape = SubResource("7")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallC"]
+mesh = SubResource("8")
+material_override = SubResource("18")
+
+[node name="LowWallD" type="StaticBody3D" parent="."]
+position = Vector3(-6.0, 0.9, -4.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallD"]
+shape = SubResource("7")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallD"]
+mesh = SubResource("8")
+material_override = SubResource("18")
 
 [node name="CrateA" type="StaticBody3D" parent="."]
 position = Vector3(-3.5, 0.2, -2.0)
@@ -231,7 +213,7 @@ position = Vector3(-3.5, 0.2, -2.0)
 shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateA"]
 mesh = SubResource("8")
-material_override = SubResource("15")
+material_override = SubResource("20")
 
 [node name="CrateB" type="StaticBody3D" parent="."]
 position = Vector3(4.0, 0.2, 1.5)
@@ -239,7 +221,7 @@ position = Vector3(4.0, 0.2, 1.5)
 shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateB"]
 mesh = SubResource("8")
-material_override = SubResource("15")
+material_override = SubResource("20")
 
 [node name="CrateC" type="StaticBody3D" parent="."]
 position = Vector3(-1.5, 0.2, 0.0)
@@ -247,7 +229,7 @@ position = Vector3(-1.5, 0.2, 0.0)
 shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateC"]
 mesh = SubResource("8")
-material_override = SubResource("15")
+material_override = SubResource("20")
 
 [node name="CrateD" type="StaticBody3D" parent="."]
 position = Vector3(2.0, 0.2, -4.5)
@@ -255,7 +237,7 @@ position = Vector3(2.0, 0.2, -4.5)
 shape = SubResource("7")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateD"]
 mesh = SubResource("8")
-material_override = SubResource("15")
+material_override = SubResource("20")
 
 [node name="CrateSmallA" type="StaticBody3D" parent="."]
 position = Vector3(-2.0, 0.2, -5.5)
@@ -263,7 +245,7 @@ position = Vector3(-2.0, 0.2, -5.5)
 shape = SubResource("9")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateSmallA"]
 mesh = SubResource("10")
-material_override = SubResource("14")
+material_override = SubResource("19")
 
 [node name="CrateSmallB" type="StaticBody3D" parent="."]
 position = Vector3(5.5, 0.2, 0.0)
@@ -271,38 +253,23 @@ position = Vector3(5.5, 0.2, 0.0)
 shape = SubResource("9")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateSmallB"]
 mesh = SubResource("10")
-material_override = SubResource("14")
+material_override = SubResource("19")
 
 [node name="CrateTallA" type="StaticBody3D" parent="."]
 position = Vector3(-5.0, 0.7, 1.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="CrateTallA"]
-shape = SubResource("26")
+shape = SubResource("14")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateTallA"]
-mesh = SubResource("25")
-material_override = SubResource("13")
+mesh = SubResource("13")
+material_override = SubResource("18")
 
 [node name="CrateTallB" type="StaticBody3D" parent="."]
 position = Vector3(6.5, 0.7, -1.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="CrateTallB"]
-shape = SubResource("26")
+shape = SubResource("14")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="CrateTallB"]
-mesh = SubResource("25")
-material_override = SubResource("13")
-
-[node name="PlayerSpawn" type="Marker3D" parent="."]
-	position = Vector3(0, 1.2, 6.0)
-
-[node name="SpawnBeacon" type="Node3D" parent="."]
-	position = Vector3(0, 0.05, 6.0)
-[node name="MeshInstance3D" type="MeshInstance3D" parent="SpawnBeacon"]
-	mesh = SubResource("8")
-	scale = Vector3(1.2, 0.05, 1.2)
-	material_override = SubResource("16")
-[node name="ArrowMesh" type="MeshInstance3D" parent="SpawnBeacon"]
-	mesh = SubResource("8")
-	position = Vector3(0, 0.3, -0.8)
-	scale = Vector3(0.6, 0.6, 0.6)
-	material_override = SubResource("16")
+mesh = SubResource("13")
+material_override = SubResource("18")
 
 [node name="ExitZone" type="Area3D" parent="."]
 position = Vector3(0, 1.2, -9.5)
@@ -310,35 +277,41 @@ position = Vector3(0, 1.2, -9.5)
 shape = SubResource("7")
 [node name="ExitMarker" type="MeshInstance3D" parent="ExitZone"]
 mesh = SubResource("8")
-scale = Vector3(0.7, 1.4, 0.7)
-material_override = SubResource("13")
+material_override = SubResource("18")
 
 [node name="StoryTrigger1" type="Area3D" parent="."]
-	position = Vector3(0, 1.0, 2.0)
+position = Vector3(0, 1.0, 2.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger1"]
-	shape = SubResource("7")
+shape = SubResource("7")
 [node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger1"]
-	mesh = SubResource("8")
-	scale = Vector3(0.35, 0.2, 0.35)
-	material_override = SubResource("14")
+mesh = SubResource("9")
+material_override = SubResource("19")
 
 [node name="StoryTrigger2" type="Area3D" parent="."]
-	position = Vector3(0, 1.0, -3.0)
+position = Vector3(0, 1.0, -3.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger2"]
-	shape = SubResource("7")
+shape = SubResource("7")
 [node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger2"]
-	mesh = SubResource("8")
-	scale = Vector3(0.35, 0.2, 0.35)
-	material_override = SubResource("14")
+mesh = SubResource("9")
+material_override = SubResource("19")
 
 [node name="StoryTrigger3" type="Area3D" parent="."]
-	position = Vector3(0, 1.0, -7.0)
+position = Vector3(0, 1.0, -7.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="StoryTrigger3"]
-	shape = SubResource("7")
+shape = SubResource("7")
 [node name="StoryMarker" type="MeshInstance3D" parent="StoryTrigger3"]
-	mesh = SubResource("8")
-	scale = Vector3(0.35, 0.2, 0.35)
-	material_override = SubResource("14")
+mesh = SubResource("9")
+material_override = SubResource("19")
+
+[node name="PlayerSpawn" type="Marker3D" parent="."]
+position = Vector3(0, 1.2, 6.0)
+
+[node name="SpawnBeacon" type="Node3D" parent="."]
+position = Vector3(0, 0.05, 6.0)
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SpawnBeacon"]
+mesh = SubResource("8")
+scale = Vector3(1.2, 0.05, 1.2)
+material_override = SubResource("19")
 
 [node name="EnemyA" parent="." instance=ExtResource("2")]
 position = Vector3(-5.0, 1.2, -1.0)
@@ -346,7 +319,6 @@ position = Vector3(-5.0, 1.2, -1.0)
 [node name="EnemyB" parent="." instance=ExtResource("2")]
 position = Vector3(5.0, 1.2, -3.0)
 
-## 新增敌人
 [node name="EnemyC" parent="." instance=ExtResource("2")]
 position = Vector3(-3.0, 1.2, -6.0)
 
@@ -356,40 +328,6 @@ position = Vector3(4.0, 1.2, 1.0)
 [node name="EnemyShooterA" parent="." instance=ExtResource("3")]
 position = Vector3(0.0, 1.2, -8.0)
 
-## 新增掩体
-[node name="LowWallC" type="StaticBody3D" parent="."]
-position = Vector3(0.0, 0.9, -1.0)
-[node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallC"]
-shape = SubResource("20")
-[node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallC"]
-mesh = SubResource("19")
-material_override = SubResource("13")
-
-[node name="LowWallD" type="StaticBody3D" parent="."]
-position = Vector3(-6.0, 0.9, -4.0)
-[node name="CollisionShape3D" type="CollisionShape3D" parent="LowWallD"]
-shape = SubResource("20")
-[node name="MeshInstance3D" type="MeshInstance3D" parent="LowWallD"]
-mesh = SubResource("19")
-material_override = SubResource("13")
-
-[node name="CrateE" type="StaticBody3D" parent="."]
-position = Vector3(2.5, 0.2, 2.0)
-[node name="CollisionShape3D" type="CollisionShape3D" parent="CrateE"]
-shape = SubResource("7")
-[node name="MeshInstance3D" type="MeshInstance3D" parent="CrateE"]
-mesh = SubResource("8")
-material_override = SubResource("15")
-
-[node name="CrateF" type="StaticBody3D" parent="."]
-position = Vector3(-4.0, 0.2, -7.5)
-[node name="CollisionShape3D" type="CollisionShape3D" parent="CrateF"]
-shape = SubResource("7")
-[node name="MeshInstance3D" type="MeshInstance3D" parent="CrateF"]
-mesh = SubResource("8")
-material_override = SubResource("15")
-
-## 跳跃型敌人
 [node name="EnemyJumperA" parent="." instance=ExtResource("4")]
 position = Vector3(-7.0, 1.2, -2.0)
 

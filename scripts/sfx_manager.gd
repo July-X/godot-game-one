@@ -125,3 +125,8 @@ func play_explosion() -> void:
 	var player := _get_available_player()
 	player.stream = _generate_noise(0.3, 0.5)
 	player.play()
+
+func play_pickup() -> void:
+	var player := _get_available_player()
+	player.stream = _generate_tone(800.0, 0.08, 0.3)
+	player.play()

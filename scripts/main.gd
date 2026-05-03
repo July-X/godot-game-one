@@ -25,7 +25,8 @@ func _ready() -> void:
 	_level_scenes = {
 		1: preload("res://scenes/levels/level_01.tscn"),
 		2: preload("res://scenes/levels/level_02.tscn"),
-		3: preload("res://scenes/levels/level_03.tscn")
+		3: preload("res://scenes/levels/level_03.tscn"),
+		4: preload("res://scenes/levels/level_04.tscn")
 	}
 	_current_level = 1
 	briefing_screen.visible = false
@@ -80,6 +81,8 @@ func _start_game() -> void:
 		level_name = "Clear the forward base and secure the data core"
 	elif _current_level == 3:
 		level_name = "Assault the command center and eliminate all hostiles"
+	elif _current_level == 4:
+		level_name = "Assault the command center and eliminate the Boss"
 	GameState.set_objective(level_name)
 	GameState.set_story_line("Eliminate all hostiles to open the terminal room.")
 	_update_exit_state()
@@ -123,9 +126,17 @@ func _bind_level() -> void:
 			2: "All enemy types detected. Stay sharp.",
 			3: "Final push. Clear the area and extract."
 		}
+	if _current_level == 4:
+		_story_texts = {
+			1: "Detecting base core area - The Ultimate Guardian awaits.",
+			2: "ALERT! Ultimate Guardian has appeared! Eliminate it to complete the mission!"
+		}
 	if level.has_method("register_enemy"):
 		for enemy in get_tree().get_nodes_in_group("enemies"):
 			level.register_enemy(enemy)
+	# Boss 关卡特殊绑定
+	if _is_boss_level() and level.has_signal("boss_defeated"):
+		level.boss_defeated.connect(_on_boss_defeated)
 
 func _bind_hud() -> void:
 	## 防止信号重复连接
@@ -176,6 +187,34 @@ func _update_exit_state() -> void:
 	else:
 		GameState.set_objective("Clear the patrol and unlock the exit")
 		GameState.set_story_line("Eliminate all hostiles to open the terminal room.")
+
+func _is_boss_level() -> bool:
+	"""判断是否为 Boss 关卡"""
+	return _current_level == 4
+
+func _on_boss_defeated() -> void:
+	"""Boss 被击败信号回调"""
+	notify_boss_defeated()
+
+func notify_boss_defeated() -> void:
+	"""Boss 击败处理：Boss 关卡专属结算"""
+	if _result_shown:
+		return
+	_result_shown = true
+	BGM.stop_music()
+	GameState.set_run_state("boss_defeated")
+	_hide_game_hud()
+	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
+	SaveSystem.record_run(_kill_count, elapsed, true)
+	# 检查成就
+	var new_achievements: Array = Achievements.check_achievements(
+		_kill_count, _total_enemies, elapsed, true, _hp_lost
+	)
+	if new_achievements.size() > 0:
+		hud.show_achievement_unlocks(new_achievements)
+	screen_transition.fade_out(0.5)
+	await screen_transition.transition_finished
+	hud.show_boss_result_screen("FINAL BOSS DEFEATED", _kill_count, _total_enemies, _get_elapsed_time())
 
 func _on_player_shoot_requested(origin: Vector3, direction: Vector3) -> void:
 	if GameState.run_state != "running":
@@ -231,6 +270,9 @@ func _hide_game_hud() -> void:
 	hud.get_node("Root/DialogueBox").visible = false
 
 func _on_player_reached_exit() -> void:
+	# Boss 关卡无出口，不应触发此方法
+	if _is_boss_level():
+		return
 	if not _exit_open:
 		GameState.set_story_line("The exit is still locked. Clear the room first.")
 		return

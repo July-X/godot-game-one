@@ -1,9 +1,10 @@
-[gd_scene load_steps=40 format=3]
+[gd_scene load_steps=41 format=3]
 
 [ext_resource type="Script" path="res://scripts/level_01.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_patroller.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_shooter.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_jumper.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/entities/health_pack.tscn" id="5"]
 
 [sub_resource type="BoxShape3D" id="1"]
 size = Vector3(20, 0.4, 20)
@@ -304,3 +305,9 @@ position = Vector3(-5.0, 1.2, 4.0)
 
 [node name="EnemyJumperB" parent="." instance=ExtResource("4")]
 position = Vector3(5.0, 1.2, 4.0)
+
+[node name="HealthPackA" parent="." instance=ExtResource("5")]
+position = Vector3(7, 0.6, 5)
+
+[node name="HealthPackB" parent="." instance=ExtResource("5")]
+position = Vector3(-7, 0.6, -7)

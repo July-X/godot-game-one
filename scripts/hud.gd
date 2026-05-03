@@ -72,6 +72,21 @@ func show_achievement_unlocks(achievement_ids: Array) -> void:
 			_active_toasts.erase(toast)
 		)
 
+func show_boss_result_screen(story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
+	title_label.text = "FINAL BOSS DEFEATED"
+	title_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.2, 1.0))  # 橙色高亮
+	story_result_label.text = story
+	stats_label.text = "Enemies eliminated: %d / %d" % [kills, total_enemies]
+	if elapsed_time != "":
+		time_label.text = "Time: %s" % elapsed_time
+	else:
+		time_label.text = ""
+	var best_time_str: String = SaveSystem.get_best_time_string()
+	if record_label != null:
+		record_label.text = "Best Time: %s  |  Total Kills: %d" % [best_time_str, SaveSystem.total_kills]
+	restart_hint.text = "Press ENTER to return to title"
+	result_panel.visible = true
+
 func show_result_screen(state: String, story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
 	var is_success = state == "finished"
 	title_label.text = "MISSION COMPLETE" if is_success else "MISSION FAILED"

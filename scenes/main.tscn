@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/levels/level_01.tscn" id="2"]
@@ -9,17 +9,17 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/screen_transition.tscn" id="7"]
 
 [sub_resource type="Environment" id="1"]
-ambient_light_color = Color(0.25, 0.28, 0.35, 1)
-ambient_light_energy = 0.8
+ambient_light_color = Color(0.12, 0.15, 0.22, 1)
+ambient_light_energy = 0.4
 background_mode = 2
-background_color = Color(0.05, 0.05, 0.1, 1)
+background_color = Color(0.02, 0.02, 0.06, 1)
 fog_enabled = false
 tonemap_mode = 2
-tonemap_white = 0.9
+tonemap_white = 0.85
 glow_enabled = true
-glow_intensity = 0.3
-glow_strength = 0.8
-glow_bloom = 0.15
+glow_intensity = 0.6
+glow_strength = 1.0
+glow_bloom = 0.3
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1")
@@ -38,9 +38,30 @@ environment = SubResource("1")
 
 [node name="FillLight" type="DirectionalLight3D" parent="."]
 	rotation_degrees = Vector3(-10, -120, 0)
-	light_energy = 0.6
-	light_indirect_energy = 0.3
+	light_energy = 0.3
+	light_indirect_energy = 0.15
 	shadow_enabled = false
+
+[node name="OmniLight_Blue" type="OmniLight3D" parent="."]
+position = Vector3(0, 6, -10)
+light_color = Color(0.2, 0.5, 0.95, 1)
+light_energy = 4.0
+omni_attenuation = 2.5
+shadow_enabled = false
+
+[node name="OmniLight_Red1" type="OmniLight3D" parent="."]
+position = Vector3(-8, 4, -8)
+light_color = Color(0.9, 0.3, 0.2, 1)
+light_energy = 3.0
+omni_attenuation = 3.0
+shadow_enabled = false
+
+[node name="OmniLight_Red2" type="OmniLight3D" parent="."]
+position = Vector3(8, 4, -8)
+light_color = Color(0.9, 0.3, 0.2, 1)
+light_energy = 3.0
+omni_attenuation = 3.0
+shadow_enabled = false
 
 [node name="Level" parent="." instance=ExtResource("2")]
 

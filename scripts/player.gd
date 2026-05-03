@@ -209,6 +209,22 @@ func take_damage(amount: int = 1) -> void:
 	if current_health == 0:
 		died.emit()
 
+func heal(amount: int) -> void:
+	"""恢复生命值，不超过 max_health"""
+	if current_health >= max_health:
+		return
+	current_health = min(current_health + amount, max_health)
+	took_damage.emit(current_health, max_health)
+	SFX.play_pickup()
+	_spawn_heal_number(amount)
+
+func _spawn_heal_number(amount: int) -> void:
+	"""显示绿色治疗数字"""
+	var heal_dn := _damage_number_scene.instantiate()
+	get_tree().current_scene.add_child(heal_dn)
+	heal_dn.global_position = global_position + Vector3(0, 1.2, 0)
+	heal_dn.setup(amount, true, Color(0.2, 0.9, 0.3, 1.0))
+
 func _update_damage_flash() -> void:
 	## 第一人称不需要隐藏身体，改为屏幕震动
 	pass

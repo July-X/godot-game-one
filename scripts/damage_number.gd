@@ -26,9 +26,11 @@ func _process(delta: float) -> void:
 	if _life >= LIFETIME:
 		queue_free()
 
-func setup(amount: int, is_player: bool = false) -> void:
+func setup(amount: int, is_player: bool = false, custom_color: Color = Color.TRANSPARENT) -> void:
 	label.text = str(amount)
-	if is_player:
+	if custom_color != Color.TRANSPARENT:
+		label.modulate = custom_color
+	elif is_player:
 		label.modulate = Color(1.0, 0.3, 0.2, 1.0)
 	else:
 		label.modulate = Color(1.0, 0.85, 0.3, 1.0)
