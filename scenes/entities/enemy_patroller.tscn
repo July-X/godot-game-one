@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemy.gd" id="1"]
 
@@ -20,31 +20,37 @@ size = Vector3(0.13, 0.45, 0.13)
 size = Vector3(0.12, 0.4, 0.12)
 
 [sub_resource type="StandardMaterial3D" id="6"]
-albedo_color = Color(0.8, 0.22, 0.18, 1)
-shading_mode = 1
-metallic = 0.5
-roughness = 0.4
-emission_enabled = true
-emission = Color(0.3, 0.05, 0.03, 1)
-emission_energy_multiplier = 0.3
-
-[sub_resource type="StandardMaterial3D" id="7"]
-albedo_color = Color(0.6, 0.15, 0.12, 1)
+albedo_color = Color(0.75, 0.18, 0.12, 1)
 shading_mode = 1
 metallic = 0.6
 roughness = 0.35
 emission_enabled = true
-emission = Color(0.2, 0.03, 0.02, 1)
-emission_energy_multiplier = 0.2
+emission = Color(0.35, 0.04, 0.02, 1)
+emission_energy_multiplier = 0.4
 
-[sub_resource type="StandardMaterial3D" id="8"]
-albedo_color = Color(0.9, 0.85, 0.3, 1)
+[sub_resource type="StandardMaterial3D" id="7"]
+albedo_color = Color(0.55, 0.12, 0.08, 1)
 shading_mode = 1
 metallic = 0.7
-roughness = 0.2
+roughness = 0.3
 emission_enabled = true
-emission = Color(0.4, 0.35, 0.1, 1)
-emission_energy_multiplier = 0.5
+emission = Color(0.2, 0.03, 0.01, 1)
+emission_energy_multiplier = 0.25
+
+[sub_resource type="StandardMaterial3D" id="8"]
+albedo_color = Color(0.95, 0.85, 0.25, 1)
+shading_mode = 1
+metallic = 0.8
+roughness = 0.15
+emission_enabled = true
+emission = Color(0.5, 0.4, 0.1, 1)
+emission_energy_multiplier = 0.8
+
+[sub_resource type="StandardMaterial3D" id="9"]
+albedo_color = Color(0.15, 0.15, 0.18, 1)
+shading_mode = 1
+metallic = 0.9
+roughness = 0.1
 
 [node name="EnemyPatroller" type="CharacterBody3D"]
 script = ExtResource("1")
@@ -68,7 +74,7 @@ material_override = SubResource("6")
 
 [node name="Visor" type="MeshInstance3D" parent="ModelRoot/Head"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0.12)
-mesh = SubResource("8")
+mesh = SubResource("9")
 material_override = SubResource("8")
 
 [node name="ArmL" type="MeshInstance3D" parent="ModelRoot"]
@@ -90,3 +96,13 @@ material_override = SubResource("7")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, -0.45, 0)
 mesh = SubResource("5")
 material_override = SubResource("7")
+
+[node name="EyeGlowL" type="MeshInstance3D" parent="ModelRoot/Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.05, 0.02, 0.14)
+mesh = SubResource("4")
+material_override = SubResource("8")
+
+[node name="EyeGlowR" type="MeshInstance3D" parent="ModelRoot/Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.05, 0.02, 0.14)
+mesh = SubResource("4")
+material_override = SubResource("8")
