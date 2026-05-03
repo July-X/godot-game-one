@@ -3,3 +3,4 @@
 logs/
 *.import
 addons/
+*.uid

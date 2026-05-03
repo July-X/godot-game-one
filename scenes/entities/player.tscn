@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1"]
 
@@ -26,16 +26,34 @@ size = Vector3(0.55, 0.2, 0.35)
 size = Vector3(0.16, 0.16, 0.8)
 
 [sub_resource type="StandardMaterial3D" id="8"]
-albedo_color = Color(0.3, 0.55, 0.9, 1)
+albedo_color = Color(0.25, 0.5, 0.85, 1)
 shading_mode = 1
+metallic = 0.6
+roughness = 0.35
+emission_enabled = true
+emission = Color(0.08, 0.15, 0.35, 1)
+emission_energy_multiplier = 0.4
 
 [sub_resource type="StandardMaterial3D" id="9"]
-albedo_color = Color(0.2, 0.45, 0.75, 1)
+albedo_color = Color(0.18, 0.4, 0.7, 1)
 shading_mode = 1
+metallic = 0.7
+roughness = 0.3
+emission_enabled = true
+emission = Color(0.05, 0.1, 0.25, 1)
+emission_energy_multiplier = 0.3
 
 [sub_resource type="StandardMaterial3D" id="10"]
-albedo_color = Color(0.7, 0.7, 0.75, 1)
+albedo_color = Color(0.6, 0.6, 0.65, 1)
 shading_mode = 1
+metallic = 0.9
+roughness = 0.15
+
+[sub_resource type="StandardMaterial3D" id="17"]
+albedo_color = Color(0.15, 0.15, 0.2, 1)
+shading_mode = 1
+metallic = 0.8
+roughness = 0.25
 
 [node name="Player" type="CharacterBody3D"]
 script = ExtResource("1")
@@ -61,6 +79,11 @@ material_override = SubResource("8")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.12, -0.02)
 mesh = SubResource("6")
 material_override = SubResource("9")
+
+[node name="Visor" type="MeshInstance3D" parent="ModelRoot/Head"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.02, 0.14)
+mesh = SubResource("4")
+material_override = SubResource("17")
 
 [node name="ArmL" type="MeshInstance3D" parent="ModelRoot"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.35, 0.05, 0)

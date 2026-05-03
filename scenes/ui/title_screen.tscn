@@ -29,37 +29,37 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 
 [node name="VBox" type="VBoxContainer" parent="Root/CenterContainer"]
-theme_override_constants/separation = 20
+theme_override_constants/separation = 60
 
 [node name="TitleLabel" type="Label" parent="Root/CenterContainer/VBox"]
 text = "GODOT GAME ONE"
-theme_override_font_sizes/font_size = 22
+theme_override_font_sizes/font_size = 72
 theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
 horizontal_alignment = 1
 
 [node name="SubtitleLabel" type="Label" parent="Root/CenterContainer/VBox"]
 text = "A SHORT SCI-FI MISSION"
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 32
 theme_override_colors/font_color = Color(0.5, 0.55, 0.7, 1)
 horizontal_alignment = 1
 
 [node name="Spacer" type="Control" parent="Root/CenterContainer/VBox"]
-custom_minimum_size = Vector2(0, 30)
+custom_minimum_size = Vector2(0, 80)
 
 [node name="StartHint" type="Label" parent="Root/CenterContainer/VBox"]
 text = "PRESS ENTER TO START"
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 36
 theme_override_colors/font_color = Color(0.8, 0.8, 0.3, 1)
 horizontal_alignment = 1
 
 [node name="RecordHint" type="Label" parent="Root/CenterContainer/VBox"]
-	text = "NO RECORD YET"
-	theme_override_font_sizes/font_size = 8
-	theme_override_colors/font_color = Color(0.4, 0.45, 0.6, 1)
-	horizontal_alignment = 1
+text = "NO RECORD YET"
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.4, 0.45, 0.6, 1)
+horizontal_alignment = 1
 
 [node name="CreditLabel" type="Label" parent="Root/CenterContainer/VBox"]
-	text = "Godot 4 - GDScript"
-	theme_override_font_sizes/font_size = 7
-	theme_override_colors/font_color = Color(0.3, 0.3, 0.4, 1)
-	horizontal_alignment = 1
+text = "Godot 4 - GDScript"
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.3, 0.3, 0.4, 1)
+horizontal_alignment = 1

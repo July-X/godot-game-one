@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemy_jumper.gd" id="1"]
 
@@ -20,16 +20,31 @@ size = Vector3(0.14, 0.5, 0.14)
 size = Vector3(0.16, 0.55, 0.16)
 
 [sub_resource type="StandardMaterial3D" id="6"]
-albedo_color = Color(0.2, 0.7, 0.35, 1)
+albedo_color = Color(0.18, 0.65, 0.3, 1)
 shading_mode = 1
+metallic = 0.5
+roughness = 0.4
+emission_enabled = true
+emission = Color(0.05, 0.25, 0.1, 1)
+emission_energy_multiplier = 0.3
 
 [sub_resource type="StandardMaterial3D" id="7"]
-albedo_color = Color(0.15, 0.5, 0.25, 1)
+albedo_color = Color(0.12, 0.45, 0.2, 1)
 shading_mode = 1
+metallic = 0.6
+roughness = 0.35
+emission_enabled = true
+emission = Color(0.03, 0.15, 0.06, 1)
+emission_energy_multiplier = 0.2
 
 [sub_resource type="StandardMaterial3D" id="8"]
-albedo_color = Color(0.9, 0.7, 0.2, 1)
+albedo_color = Color(0.85, 0.65, 0.15, 1)
 shading_mode = 1
+metallic = 0.7
+roughness = 0.2
+emission_enabled = true
+emission = Color(0.35, 0.25, 0.05, 1)
+emission_energy_multiplier = 0.5
 
 [node name="EnemyJumper" type="CharacterBody3D"]
 script = ExtResource("1")
@@ -66,7 +81,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, -0.02, 0)
 mesh = SubResource("4")
 material_override = SubResource("7")
 
-## 跳跃型敌人腿更长
 [node name="LegL" type="MeshInstance3D" parent="ModelRoot"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, -0.5, 0)
 mesh = SubResource("5")
