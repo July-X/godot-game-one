@@ -1,5 +1,24 @@
 # 更新日志
 
+## [1.0.0] - 2026-05-02
+
+### 新增
+- **成就系统** (`achievement_system.gd`，Autoload)：6个成就
+  - First Blood：首次击杀
+  - Clean Sweep：单局全灭敌人
+  - Speed Runner：60秒内通关
+  - Survivor：无伤通关
+  - Veteran：完成5次任务
+  - Elite Operator：累计50击杀
+- **成就解锁提示** (`achievement_toast.tscn`)：结算画面右上角弹出，3秒后渐隐
+- **标题画面成就进度**：显示已解锁/总数
+
+### 修改
+- `main.gd`：新增 `_hp_lost` 追踪，结算时调用 `Achievements.check_achievements()`
+- `hud.gd`：新增 `show_achievement_unlocks()`，显示成就解锁提示
+- `title_screen.gd`：显示成就进度
+- `project.godot`：新增 Achievements Autoload
+
 ## [0.9.0] - 2026-05-02
 
 ### 新增
