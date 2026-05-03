@@ -1,6 +1,8 @@
 extends Node3D
 
 @onready var level = $Level
+var _current_level: int = 1
+var _level_scenes: Dictionary = {}
 @onready var player = $Player
 @onready var hud = $HUD
 @onready var title_screen = $TitleScreen
@@ -19,6 +21,11 @@ var _story_texts: Dictionary = {}
 
 func _ready() -> void:
 	GameState.reset_run()
+	_level_scenes = {
+		1: preload("res://scenes/levels/level_01.tscn"),
+		2: preload("res://scenes/levels/level_02.tscn")
+	}
+	_current_level = 1
 	briefing_screen.visible = false
 	_show_title()
 
@@ -43,6 +50,16 @@ func _start_briefing() -> void:
 	await screen_transition.transition_finished
 
 func _start_game() -> void:
+	## 如果关卡已存在且不是当前关卡，替换
+	if level != null and level.has_method("get_groups") == false:
+		pass
+	## 切换到下一关
+	if level != null:
+		level.queue_free()
+	if _level_scenes.has(_current_level):
+		level = _level_scenes[_current_level].instantiate()
+		add_child(level)
+
 	BGM.play_game_music()
 	screen_transition.fade_out(0.4)
 	await screen_transition.transition_finished
@@ -57,9 +74,13 @@ func _start_game() -> void:
 	_ensure_camera_current()
 	_refresh_enemy_count()
 	_place_player_at_spawn()
+	_hp_lost = 0
 	_start_time = Time.get_ticks_msec() / 1000.0
-	GameState.set_objective("Neutralize the patrol and reach the relay terminal")
-	GameState.set_story_line("Briefing: the outpost is silent, but the corridor is not empty.")
+	var level_name: String = "Neutralize the patrol and reach the relay terminal"
+	if _current_level == 2:
+		level_name = "Clear the forward base and secure the data core"
+	GameState.set_objective(level_name)
+	GameState.set_story_line("Eliminate all hostiles to open the terminal room.")
 	_update_exit_state()
 	GameState.set_run_state("running")
 	screen_transition.fade_in(0.5)
@@ -76,11 +97,18 @@ func _bind_level() -> void:
 	if level.has_signal("player_reached_story_trigger"):
 		level.player_reached_story_trigger.connect(_on_player_reached_story_trigger)
 	## 多段剧情文本，按触发器索引映射
-	_story_texts = {
-		1: "Corridor ahead is quiet. Stay alert.",
-		2: "Signal is getting stronger. The terminal is close.",
-		3: "Warning: heavy resistance near the exit. Prepare for combat."
-	}
+	if _current_level == 1:
+		_story_texts = {
+			1: "Corridor ahead is quiet. Stay alert.",
+			2: "Signal is getting stronger. The terminal is close.",
+			3: "Warning: heavy resistance near the exit. Prepare for combat."
+		}
+	else:
+		_story_texts = {
+			1: "Forward base ahead. Multiple hostiles detected.",
+			2: "Shooter units spotted. Use cover wisely.",
+			3: "The data core is just ahead. Clear the area."
+		}
 	if level.has_method("register_enemy"):
 		for enemy in get_tree().get_nodes_in_group("enemies"):
 			level.register_enemy(enemy)
@@ -185,10 +213,6 @@ func _on_player_reached_exit() -> void:
 	if _result_shown:
 		return
 	_result_shown = true
-	BGM.play_result_music()
-	GameState.set_story_line("Extraction complete. The relay data is secured.")
-	GameState.set_run_state("finished")
-	_hide_game_hud()
 	## 记录存档（成功通关）
 	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
 	SaveSystem.record_run(_kill_count, elapsed, true)
@@ -196,6 +220,25 @@ func _on_player_reached_exit() -> void:
 	var new_achievements: Array = Achievements.check_achievements(_kill_count, _total_enemies, elapsed, true, _hp_lost)
 	if new_achievements.size() > 0:
 		hud.show_achievement_unlocks(new_achievements)
+
+	## 检查是否还有下一关
+	if _current_level < _level_scenes.size():
+		## 进入下一关
+		_current_level += 1
+		BGM.stop_music()
+		screen_transition.fade_out(0.5)
+		await screen_transition.transition_finished
+		_result_shown = false
+		_kill_count = 0
+		_exit_open = false
+		_start_game()
+		return
+
+	## 全部关卡完成，显示结算
+	BGM.play_result_music()
+	GameState.set_story_line("Extraction complete. The relay data is secured.")
+	GameState.set_run_state("finished")
+	_hide_game_hud()
 	screen_transition.fade_out(0.3)
 	await screen_transition.transition_finished
 	hud.show_result_screen(GameState.run_state, GameState.story_line, _kill_count, _total_enemies, _get_elapsed_time())
@@ -232,6 +275,7 @@ func _process(_delta: float) -> void:
 	_update_debug_overlay()
 
 func _return_to_title() -> void:
+	_current_level = 1
 	get_tree().reload_current_scene()
 
 func _update_debug_overlay() -> void:

@@ -49,7 +49,7 @@ func show_damage_feed(text: String) -> void:
 	tween.tween_property(feed_label, "modulate:a", 0.0, 1.2)
 
 var _achievement_scene = preload("res://scenes/ui/achievement_toast.tscn")
-var _active_toasts: Array[Control] = []
+var _active_toasts: Array = []
 
 func show_achievement_unlocks(achievement_ids: Array) -> void:
 	for id in achievement_ids:

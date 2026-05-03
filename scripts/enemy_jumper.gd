@@ -60,7 +60,7 @@ func _physics_process(delta: float) -> void:
 		if is_on_floor() and _jump_timer <= 0.0:
 			_jump_timer = jump_cooldown
 			velocity.y = jump_force
-			SFX.play_enemy_hurt()  ## 用敌人受伤音效作为跳跃音效
+			SFX.play_ui_select()
 	else:
 		velocity.x = 0.0
 		velocity.z = 0.0
