@@ -1,4 +1,4 @@
-[gd_scene load_steps=39 format=3]
+[gd_scene load_steps=40 format=3]
 
 [ext_resource type="Script" path="res://scripts/level_01.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/entities/enemy_patroller.tscn" id="2"]
@@ -22,6 +22,18 @@ size = Vector3(0.6, 4, 20)
 
 [sub_resource type="BoxMesh" id="6"]
 size = Vector3(0.6, 4, 20)
+
+[sub_resource type="BoxShape3D" id="27"]
+size = Vector3(20, 12, 0.6)
+
+[sub_resource type="BoxMesh" id="28"]
+size = Vector3(20, 12, 0.6)
+
+[sub_resource type="BoxShape3D" id="29"]
+size = Vector3(0.6, 12, 20)
+
+[sub_resource type="BoxMesh" id="30"]
+size = Vector3(0.6, 12, 20)
 
 [sub_resource type="BoxShape3D" id="7"]
 size = Vector3(2.0, 0.4, 2.0)
@@ -98,29 +110,37 @@ material_override = SubResource("12")
 position = Vector3(0, 0.05, 5.0)
 
 [node name="BackWall" type="StaticBody3D" parent="."]
-position = Vector3(0, 2.0, -10.0)
+position = Vector3(0, 5.0, -10.0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="BackWall"]
-shape = SubResource("3")
+shape = SubResource("27")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="BackWall"]
-mesh = SubResource("4")
+mesh = SubResource("28")
+material_override = SubResource("12")
+
+[node name="FrontWall" type="StaticBody3D" parent="."]
+position = Vector3(0, 5.0, 10.0)
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FrontWall"]
+shape = SubResource("27")
+[node name="MeshInstance3D" type="MeshInstance3D" parent="FrontWall"]
+mesh = SubResource("28")
 material_override = SubResource("12")
 
 [node name="LeftWall" type="StaticBody3D" parent="."]
-position = Vector3(-10.0, 2.0, 0)
+position = Vector3(-10.0, 5.0, 0)
 rotation_degrees = Vector3(0, 90, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="LeftWall"]
-shape = SubResource("5")
+shape = SubResource("29")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="LeftWall"]
-mesh = SubResource("6")
+mesh = SubResource("30")
 material_override = SubResource("12")
 
 [node name="RightWall" type="StaticBody3D" parent="."]
-position = Vector3(10.0, 2.0, 0)
+position = Vector3(10.0, 5.0, 0)
 rotation_degrees = Vector3(0, 90, 0)
 [node name="CollisionShape3D" type="CollisionShape3D" parent="RightWall"]
-shape = SubResource("5")
+shape = SubResource("29")
 [node name="MeshInstance3D" type="MeshInstance3D" parent="RightWall"]
-mesh = SubResource("6")
+mesh = SubResource("30")
 material_override = SubResource("12")
 
 ## 中央立柱

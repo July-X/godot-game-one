@@ -13,6 +13,7 @@ signal died
 @export var shake_intensity: float = 0.18
 @export var shake_decay: float = 8.0
 @export var turn_speed: float = 8.0
+@export var fall_damage_height: float = -5.0
 
 @onready var muzzle = $CameraRig/Muzzle
 @onready var body_mesh = $MeshInstance3D
@@ -104,11 +105,31 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
+	## 掉落检测：超出地图边界时重置到出生点
+	if global_position.y < fall_damage_height:
+		_respawn_at_spawn()
+
 	if _is_moving:
 		_walk_cycle += delta * 8.0
 		_update_walk_animation()
 	else:
 		_reset_pose()
+
+func _respawn_at_spawn() -> void:
+	## 掉落重置：回到出生点并恢复部分血量
+	if has_node("/root/Main"):
+		var main_node = get_node("/root/Main")
+		if main_node.has_node("Level"):
+			var lvl = main_node.get_node("Level")
+			if lvl.has_node("PlayerSpawn"):
+				global_position = lvl.get_node("PlayerSpawn").global_position
+				velocity = Vector3.ZERO
+				current_health = max(current_health, 1)
+				return
+	## 备用：重置到原点
+	global_position = Vector3(0, 2, 0)
+	velocity = Vector3.ZERO
+	current_health = max(current_health, 1)
 
 func _update_walk_animation() -> void:
 	var swing: float = sin(_walk_cycle) * 0.3
