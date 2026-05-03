@@ -12,35 +12,48 @@ signal died
 @export var hit_invincibility: float = 0.5
 @export var shake_intensity: float = 0.18
 @export var shake_decay: float = 8.0
-@export var turn_speed: float = 8.0
+@export var mouse_sensitivity: float = 0.002
 @export var fall_damage_height: float = -5.0
 
-@onready var muzzle = $CameraRig/Muzzle
-@onready var body_mesh = $MeshInstance3D
-@onready var camera_rig = $CameraRig
-@onready var model_root = $ModelRoot
+var muzzle: Marker3D
+var camera: Camera3D
+var fp_model: Node3D
 
 var current_health: int = max_health
 var _fire_timer: float = 0.0
 var _invincibility_timer: float = 0.0
 var _flash_timer: float = 0.0
 var _shake_strength: float = 0.0
-var _camera_rest_pos: Vector3
 var _walk_cycle: float = 0.0
 var _is_moving: bool = false
-var _target_rotation: float = 0.0
+var _pitch: float = 0.0
 
-@onready var _leg_l: Node3D = $ModelRoot/LegL
-@onready var _leg_r: Node3D = $ModelRoot/LegR
-@onready var _arm_l: Node3D = $ModelRoot/ArmL
-@onready var _arm_r: Node3D = $ModelRoot/ArmR
-@onready var _blaster: Node3D = $CameraRig/Muzzle/Blaster
+var _leg_l: Node3D
+var _leg_r: Node3D
+var _arm_l: Node3D
+var _arm_r: Node3D
+var _blaster: Node3D
 
 func _ready() -> void:
 	add_to_group("player")
 	current_health = max_health
-	_camera_rest_pos = camera_rig.position
-	_target_rotation = global_rotation.y
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	muzzle = get_node("FPModel/Blaster/Muzzle") as Marker3D
+	camera = get_node("Camera3D") as Camera3D
+	fp_model = get_node("FPModel") as Node3D
+	_leg_l = get_node("FPModel/LegL") as Node3D
+	_leg_r = get_node("FPModel/LegR") as Node3D
+	_arm_l = get_node("FPModel/ArmL") as Node3D
+	_arm_r = get_node("FPModel/ArmR") as Node3D
+	_blaster = get_node("FPModel/Blaster") as Node3D
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and GameState.run_state == "running":
+		## 鼠标控制视角：Y轴旋转玩家，X轴旋转相机俯仰
+		rotate_y(-event.relative.x * mouse_sensitivity)
+		_pitch = clamp(_pitch - event.relative.y * mouse_sensitivity, -PI * 0.45, PI * 0.45)
+		if camera:
+			camera.rotation.x = _pitch
 
 func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":
@@ -62,27 +75,21 @@ func _physics_process(delta: float) -> void:
 	if input_dir.length() > 1.0:
 		input_dir = input_dir.normalized()
 
-	## 基于相机朝向计算移动方向
-	var cam_basis: Basis = camera_rig.global_transform.basis
-	var cam_forward: Vector3 = -cam_basis.z
-	cam_forward.y = 0.0
-	if cam_forward.length() > 0.01:
-		cam_forward = cam_forward.normalized()
-	var cam_right: Vector3 = cam_basis.x
-	cam_right.y = 0.0
-	if cam_right.length() > 0.01:
-		cam_right = cam_right.normalized()
+	## 基于玩家自身朝向计算移动方向（第一人称）
+	var forward: Vector3 = -global_transform.basis.z
+	forward.y = 0.0
+	if forward.length() > 0.01:
+		forward = forward.normalized()
+	var right: Vector3 = global_transform.basis.x
+	right.y = 0.0
+	if right.length() > 0.01:
+		right = right.normalized()
 
-	var move_dir: Vector3 = (cam_forward * (-input_dir.y) + cam_right * input_dir.x)
+	var move_dir: Vector3 = (forward * (-input_dir.y) + right * input_dir.x)
 	move_dir.y = 0.0
 
 	if move_dir.length() > 0.1:
 		move_dir = move_dir.normalized()
-		## 平滑转向
-		_target_rotation = atan2(move_dir.x, move_dir.z)
-		var current_rot: float = global_rotation.y
-		var diff: float = wrapf(_target_rotation - current_rot, -PI, PI)
-		global_rotation.y += clamp(diff, -turn_speed * delta, turn_speed * delta)
 		velocity.x = move_dir.x * move_speed
 		velocity.z = move_dir.z * move_speed
 		_is_moving = true
@@ -98,14 +105,13 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("shoot") and _fire_timer <= 0.0:
 		_fire_timer = fire_cooldown
-		var shoot_dir: Vector3 = -global_transform.basis.z.normalized()
+		var shoot_dir: Vector3 = -camera.global_transform.basis.z.normalized()
 		shoot_requested.emit(muzzle.global_position, shoot_dir)
 		_recoil_pose()
 		SFX.play_shoot()
 
 	move_and_slide()
 
-	## 掉落检测：超出地图边界时重置到出生点
 	if global_position.y < fall_damage_height:
 		_respawn_at_spawn()
 
@@ -116,7 +122,6 @@ func _physics_process(delta: float) -> void:
 		_reset_pose()
 
 func _respawn_at_spawn() -> void:
-	## 掉落重置：回到出生点并恢复部分血量
 	if has_node("/root/Main"):
 		var main_node = get_node("/root/Main")
 		if main_node.has_node("Level"):
@@ -126,43 +131,62 @@ func _respawn_at_spawn() -> void:
 				velocity = Vector3.ZERO
 				current_health = max(current_health, 1)
 				return
-	## 备用：重置到原点
 	global_position = Vector3(0, 2, 0)
 	velocity = Vector3.ZERO
 	current_health = max(current_health, 1)
 
 func _update_walk_animation() -> void:
-	var swing: float = sin(_walk_cycle) * 0.3
-	var bounce: float = abs(sin(_walk_cycle)) * 0.04
+	var swing: float = sin(_walk_cycle) * 0.25
+	var bounce: float = abs(sin(_walk_cycle)) * 0.03
 
+	## 手臂摆动
+	if _arm_l:
+		_arm_l.rotation.x = -swing * 0.6
+		_arm_l.position.y = -0.25 + bounce
+	if _arm_r:
+		_arm_r.rotation.x = swing * 0.6
+		_arm_r.position.y = -0.25 + bounce
+
+	## 枪随手臂摆动
+	if _blaster:
+		_blaster.rotation.x = swing * 0.3
+		_blaster.position.y = -0.35 + bounce * 0.5
+
+	## 腿部摆动
 	if _leg_l:
 		_leg_l.rotation.x = swing
 	if _leg_r:
 		_leg_r.rotation.x = -swing
-	if _arm_l:
-		_arm_l.rotation.x = -swing * 0.7
-	if _arm_r:
-		_arm_r.rotation.x = swing * 0.7
 
-	model_root.position.y = bounce
+	## 相机轻微上下起伏（呼吸感）
+	if camera:
+		camera.position.y = 0.7 + bounce * 0.5
 
 func _reset_pose() -> void:
 	_walk_cycle = 0.0
-	model_root.position.y = 0.0
+	if _arm_l:
+		_arm_l.rotation.x = 0.0
+		_arm_l.position.y = -0.25
+	if _arm_r:
+		_arm_r.rotation.x = 0.0
+		_arm_r.position.y = -0.25
+	if _blaster:
+		_blaster.rotation.x = 0.0
+		_blaster.position.y = -0.35
 	if _leg_l:
 		_leg_l.rotation.x = 0.0
 	if _leg_r:
 		_leg_r.rotation.x = 0.0
-	if _arm_l:
-		_arm_l.rotation.x = 0.0
-	if _arm_r:
-		_arm_r.rotation.x = 0.0
+	if camera:
+		camera.position.y = 0.7
 
 func _recoil_pose() -> void:
 	if _blaster:
 		var tween := create_tween()
-		tween.tween_property(_blaster, "rotation_degrees:x", -8.0, 0.05)
-		tween.tween_property(_blaster, "rotation_degrees:x", 0.0, 0.12)
+		tween.tween_property(_blaster, "rotation_degrees:x", -6.0, 0.04)
+		tween.tween_property(_blaster, "rotation_degrees:x", 0.0, 0.1)
+		tween.tween_property(_blaster, "position:z", -0.5, 0.04)
+		tween.tween_property(_blaster, "position:z", -0.55, 0.1)
 
 var _damage_number_scene = preload("res://scenes/entities/damage_number.tscn")
 
@@ -186,21 +210,19 @@ func take_damage(amount: int = 1) -> void:
 		died.emit()
 
 func _update_damage_flash() -> void:
-	if body_mesh == null:
-		return
-	if _flash_timer > 0.0 and int(Time.get_ticks_msec() / 80) % 2 == 0:
-		body_mesh.visible = false
-	else:
-		body_mesh.visible = true
+	## 第一人称不需要隐藏身体，改为屏幕震动
+	pass
 
 func _update_camera_shake(delta: float) -> void:
+	if camera == null:
+		return
 	if _shake_strength > 0.0:
 		var offset := Vector3(
 			randf_range(-_shake_strength, _shake_strength),
 			randf_range(-_shake_strength, _shake_strength),
-			randf_range(-_shake_strength * 0.5, _shake_strength * 0.5)
+			0
 		)
-		camera_rig.position = _camera_rest_pos + offset
+		camera.position = Vector3(0, 0.7, 0) + offset
 		_shake_strength = max(_shake_strength - shake_decay * delta, 0.0)
 	else:
-		camera_rig.position = _camera_rest_pos
+		camera.position.y = 0.7
