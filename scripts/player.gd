@@ -229,6 +229,12 @@ func _update_damage_flash() -> void:
 	## 第一人称不需要隐藏身体，改为屏幕震动
 	pass
 
+func add_screen_shake(strength: float, decay: float = -1.0) -> void:
+	## 外部调用接口：触发屏幕震动
+	_shake_strength = strength
+	if decay > 0.0:
+		shake_decay = decay
+
 func _update_camera_shake(delta: float) -> void:
 	if camera == null:
 		return
