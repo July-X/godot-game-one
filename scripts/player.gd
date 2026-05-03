@@ -38,14 +38,40 @@ func _ready() -> void:
 	add_to_group("player")
 	current_health = max_health
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	muzzle = get_node("FPModel/Blaster/Muzzle") as Marker3D
+	muzzle = get_node("FPModel/Muzzle") as Marker3D
 	camera = get_node("Camera3D") as Camera3D
 	fp_model = get_node("FPModel") as Node3D
 	_leg_l = get_node("FPModel/LegL") as Node3D
 	_leg_r = get_node("FPModel/LegR") as Node3D
 	_arm_l = get_node("FPModel/ArmL") as Node3D
 	_arm_r = get_node("FPModel/ArmR") as Node3D
-	_blaster = get_node("FPModel/Blaster") as Node3D
+	_blaster = get_node("FPModel/Blaster_Body") as Node3D
+	_apply_procedural_textures()
+
+func _apply_procedural_textures() -> void:
+	## 为所有 FPModel 子节点的材质添加程序化纹理
+	var noise = FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.04
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 4
+	var grad = GradientTexture2D.new()
+	grad.width = 256
+	grad.height = 256
+	var g = Gradient.new()
+	g.colors = [Color(0.35, 0.35, 0.4, 1), Color(0.12, 0.12, 0.15, 1)]
+	g.offsets = [0.0, 1.0]
+	grad.gradient = g
+	var noise_tex = NoiseTexture2D.new()
+	noise_tex.noise = noise
+	noise_tex.width = 256
+	noise_tex.height = 256
+	for child in fp_model.get_children():
+		if child is MeshInstance3D:
+			var mat = child.material_override as StandardMaterial3D
+			if mat and mat.albedo_color.r < 0.5:
+				mat.albedo_texture = noise_tex
+				mat.roughness_texture = grad
 
 func _unhandled_input(event: InputEvent) -> void:
 	# ESC 释放鼠标，方便操作界面或切换窗口

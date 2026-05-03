@@ -18,38 +18,53 @@ size = Vector3(0.22, 0.18, 0.85)
 [sub_resource type="BoxMesh" id="5"]
 size = Vector3(0.5, 0.35, 0.25)
 
-[sub_resource type="StandardMaterial3D" id="8"]
-albedo_color = Color(0.25, 0.5, 0.85, 1)
+[sub_resource type="StandardMaterial3D" id="6"]
+albedo_color = Color(0.22, 0.45, 0.78, 1)
 shading_mode = 1
-metallic = 0.6
+metallic = 0.75
 roughness = 0.35
 emission_enabled = true
-emission = Color(0.08, 0.15, 0.35, 1)
+emission = Color(0.05, 0.1, 0.25, 1)
 emission_energy_multiplier = 0.4
 
-[sub_resource type="StandardMaterial3D" id="9"]
-albedo_color = Color(0.18, 0.4, 0.7, 1)
+[sub_resource type="StandardMaterial3D" id="7"]
+albedo_color = Color(0.12, 0.28, 0.55, 1)
 shading_mode = 1
-metallic = 0.7
-roughness = 0.3
+metallic = 0.8
+roughness = 0.25
 emission_enabled = true
-emission = Color(0.05, 0.1, 0.25, 1)
+emission = Color(0.03, 0.06, 0.15, 1)
 emission_energy_multiplier = 0.3
 
-[sub_resource type="StandardMaterial3D" id="10"]
-albedo_color = Color(0.6, 0.6, 0.65, 1)
+[sub_resource type="StandardMaterial3D" id="8"]
+albedo_color = Color(0.65, 0.65, 0.7, 1)
 shading_mode = 1
-metallic = 0.9
-roughness = 0.15
+metallic = 0.95
+roughness = 0.1
 
-[sub_resource type="StandardMaterial3D" id="11"]
-albedo_color = Color(0.12, 0.3, 0.6, 1)
+[sub_resource type="StandardMaterial3D" id="9"]
+albedo_color = Color(0.1, 0.25, 0.5, 1)
 shading_mode = 1
 metallic = 0.5
 roughness = 0.45
 emission_enabled = true
 emission = Color(0.03, 0.08, 0.18, 1)
 emission_energy_multiplier = 0.2
+
+[sub_resource type="StandardMaterial3D" id="10"]
+albedo_color = Color(0.85, 0.75, 0.2, 1)
+shading_mode = 1
+metallic = 0.3
+roughness = 0.5
+
+[sub_resource type="StandardMaterial3D" id="11"]
+albedo_color = Color(0.9, 0.4, 0.1, 1)
+shading_mode = 1
+metallic = 0.85
+roughness = 0.2
+emission_enabled = true
+emission = Color(0.9, 0.4, 0.1, 1)
+emission_energy_multiplier = 1.2
 
 [node name="Player" type="CharacterBody3D"]
 script = ExtResource("1")
@@ -63,35 +78,80 @@ position = Vector3(0, 0.7, 0)
 
 [node name="FPModel" type="Node3D" parent="."]
 
+[node name="TorsoLower" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.45, -0.05)
+mesh = SubResource("5")
+material_override = SubResource("6")
+
 [node name="ArmR" type="MeshInstance3D" parent="FPModel"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.3, -0.25, -0.15)
 mesh = SubResource("2")
-material_override = SubResource("9")
+material_override = SubResource("6")
 
 [node name="ArmL" type="MeshInstance3D" parent="FPModel"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, -0.25, -0.15)
 mesh = SubResource("2")
-material_override = SubResource("9")
-
-[node name="Blaster" type="MeshInstance3D" parent="FPModel"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, -0.35, -0.55)
-mesh = SubResource("4")
-material_override = SubResource("10")
-
-[node name="Muzzle" type="Marker3D" parent="FPModel/Blaster"]
-position = Vector3(0, 0, -0.45)
+material_override = SubResource("6")
 
 [node name="LegL" type="MeshInstance3D" parent="FPModel"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.12, -0.75, 0.05)
 mesh = SubResource("3")
-material_override = SubResource("11")
+material_override = SubResource("9")
 
 [node name="LegR" type="MeshInstance3D" parent="FPModel"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.12, -0.75, 0.05)
 mesh = SubResource("3")
+material_override = SubResource("9")
+
+[node name="Chest" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0.02)
+mesh = SubResource("5")
+material_override = SubResource("7")
+
+[node name="ShoulderR" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.35, -0.05, 0)
+mesh = SubResource("3")
+material_override = SubResource("7")
+
+[node name="ShoulderL" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.35, -0.05, 0)
+mesh = SubResource("3")
+material_override = SubResource("7")
+
+[node name="Blaster_Body" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, -0.45, -0.45)
+mesh = SubResource("4")
+material_override = SubResource("8")
+
+[node name="Blaster_Barrel" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, -0.43, -0.72)
+mesh = SubResource("4")
+material_override = SubResource("8")
+
+[node name="Blaster_Stock" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, -0.47, -0.25)
+mesh = SubResource("5")
+material_override = SubResource("7")
+
+[node name="Muzzle" type="Marker3D" parent="FPModel"]
+position = Vector3(0.22, -0.43, -1.0)
+
+[node name="MuzzleGlow" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, -0.43, -0.98)
+mesh = SubResource("3")
 material_override = SubResource("11")
 
-[node name="TorsoLower" type="MeshInstance3D" parent="FPModel"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.45, -0.05)
+[node name="StripeR" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.24, -0.35, -0.08)
+mesh = SubResource("3")
+material_override = SubResource("10")
+
+[node name="StripeL" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.24, -0.35, -0.08)
+mesh = SubResource("3")
+material_override = SubResource("10")
+
+[node name="BeltGlow" type="MeshInstance3D" parent="FPModel"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
 mesh = SubResource("5")
-material_override = SubResource("8")
+material_override = SubResource("11")

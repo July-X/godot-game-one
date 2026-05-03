@@ -24,6 +24,28 @@ func _ready() -> void:
 	if players.size() > 0:
 		_target = players[0]
 	_model_root = $ModelRoot
+	_apply_procedural_textures()
+
+func _apply_procedural_textures() -> void:
+	if _model_root == null:
+		return
+	for child in _model_root.get_children():
+		if child is MeshInstance3D:
+			var mat = child.material_override as StandardMaterial3D
+			if mat:
+				var noise = FastNoiseLite.new()
+				noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+				noise.frequency = randf_range(0.03, 0.08)
+				noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+				noise.fractal_octaves = randi_range(3, 5)
+				var noise_tex = NoiseTexture2D.new()
+				noise_tex.noise = noise
+				noise_tex.width = 128
+				noise_tex.height = 128
+				mat.albedo_texture = noise_tex
+				mat.normal_enabled = true
+				mat.normal_texture = noise_tex
+				mat.normal_scale = 0.2
 
 func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":

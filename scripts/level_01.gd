@@ -24,6 +24,33 @@ func _ready() -> void:
 	_set_exit_visual_state()
 	_discover_story_triggers()
 	_start_beacon_pulse()
+	_apply_procedural_textures()
+
+func _apply_procedural_textures() -> void:
+	## 为所有 MeshInstance3D 添加程序化噪声纹理
+	for child in get_children():
+		_apply_texture_recursive(child)
+
+func _apply_texture_recursive(node: Node) -> void:
+	for child in node.get_children():
+		if child is MeshInstance3D:
+			var mat = child.material_override as StandardMaterial3D
+			if mat:
+				var noise = FastNoiseLite.new()
+				noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+				noise.frequency = randf_range(0.02, 0.06)
+				noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+				noise.fractal_octaves = randi_range(3, 5)
+				var noise_tex = NoiseTexture2D.new()
+				noise_tex.noise = noise
+				noise_tex.width = 256
+				noise_tex.height = 256
+				mat.albedo_texture = noise_tex
+				## 添加法线贴图效果
+				mat.normal_enabled = true
+				mat.normal_texture = noise_tex
+				mat.normal_scale = 0.3
+		_apply_texture_recursive(child)
 
 ## 自动发现所有 StoryTrigger* 节点并注册
 func _discover_story_triggers() -> void:
