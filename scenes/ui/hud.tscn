@@ -32,8 +32,9 @@ offset_right = 356.0
 offset_bottom = 176.0
 theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(0.6, 0.65, 0.75, 1)
-text = "WASD / ARROWS - MOVE
-ENTER - SHOOT / CONFIRM
+text = "WASD - MOVE
+MOUSE - AIM
+LEFT CLICK - SHOOT
 SPACE - JUMP
 F3 - DEBUG
 F5 - RESTART"

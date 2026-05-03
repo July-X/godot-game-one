@@ -8,6 +8,7 @@ var _level_scenes: Dictionary = {}
 @onready var title_screen = $TitleScreen
 @onready var briefing_screen = $BriefingScreen
 @onready var screen_transition = $ScreenTransition
+@onready var camera = $Camera3D
 
 var _enemy_count: int = 0
 var _kill_count: int = 0
@@ -296,10 +297,24 @@ func _process(_delta: float) -> void:
 	if GameState.run_state in ["finished", "failed"] and Input.is_action_just_pressed("ui_accept"):
 		_return_to_title()
 	_update_debug_overlay()
+	_update_camera(_delta)
 
 func _return_to_title() -> void:
 	_current_level = 1
 	get_tree().reload_current_scene()
+
+var _camera_follow_speed: float = 4.0
+var _camera_offset: Vector3 = Vector3(0, 6, -8)
+
+func _update_camera(_delta: float) -> void:
+	if camera == null or player == null:
+		return
+	if GameState.run_state != "running":
+		return
+	var target_pos: Vector3 = player.global_position + _camera_offset
+	camera.global_position = camera.global_position.lerp(target_pos, _camera_follow_speed * _delta)
+	var look_target: Vector3 = player.global_position + Vector3(0, 1, 0)
+	camera.look_at(look_target, Vector3.UP)
 
 func _update_debug_overlay() -> void:
 	if not _debug_visible:

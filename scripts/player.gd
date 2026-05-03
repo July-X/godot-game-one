@@ -12,6 +12,7 @@ signal died
 @export var hit_invincibility: float = 0.5
 @export var shake_intensity: float = 0.18
 @export var shake_decay: float = 8.0
+@export var turn_speed: float = 8.0
 
 @onready var muzzle = $CameraRig/Muzzle
 @onready var body_mesh = $MeshInstance3D
@@ -19,13 +20,14 @@ signal died
 @onready var model_root = $ModelRoot
 
 var current_health: int = max_health
-var _fire_timer = 0.0
-var _invincibility_timer = 0.0
-var _flash_timer = 0.0
-var _shake_strength = 0.0
+var _fire_timer: float = 0.0
+var _invincibility_timer: float = 0.0
+var _flash_timer: float = 0.0
+var _shake_strength: float = 0.0
 var _camera_rest_pos: Vector3
 var _walk_cycle: float = 0.0
 var _is_moving: bool = false
+var _target_rotation: float = 0.0
 
 @onready var _leg_l: Node3D = $ModelRoot/LegL
 @onready var _leg_r: Node3D = $ModelRoot/LegR
@@ -37,6 +39,7 @@ func _ready() -> void:
 	add_to_group("player")
 	current_health = max_health
 	_camera_rest_pos = camera_rig.position
+	_target_rotation = global_rotation.y
 
 func _physics_process(delta: float) -> void:
 	if GameState.run_state != "running":
@@ -51,15 +54,39 @@ func _physics_process(delta: float) -> void:
 	_update_damage_flash()
 	_update_camera_shake(delta)
 
-	var input_x := Input.get_axis("move_left", "move_right")
-	var input_z := Input.get_axis("move_up", "move_down")
-	var movement := Vector3(input_x, 0.0, input_z)
+	var input_x: float = Input.get_axis("move_left", "move_right")
+	var input_z: float = Input.get_axis("move_up", "move_down")
+	var input_dir := Vector2(input_x, input_z)
 
-	if movement.length() > 1.0:
-		movement = movement.normalized()
+	if input_dir.length() > 1.0:
+		input_dir = input_dir.normalized()
 
-	velocity.x = movement.x * move_speed
-	velocity.z = movement.z * move_speed
+	## 基于相机朝向计算移动方向
+	var cam_basis: Basis = camera_rig.global_transform.basis
+	var cam_forward: Vector3 = -cam_basis.z
+	cam_forward.y = 0.0
+	if cam_forward.length() > 0.01:
+		cam_forward = cam_forward.normalized()
+	var cam_right: Vector3 = cam_basis.x
+	cam_right.y = 0.0
+	if cam_right.length() > 0.01:
+		cam_right = cam_right.normalized()
+
+	var move_dir: Vector3 = (cam_forward * (-input_dir.y) + cam_right * input_dir.x)
+	move_dir.y = 0.0
+
+	if move_dir.length() > 0.1:
+		move_dir = move_dir.normalized()
+		## 平滑转向
+		_target_rotation = atan2(move_dir.x, move_dir.z)
+		var current_rot: float = global_rotation.y
+		var diff: float = wrapf(_target_rotation - current_rot, -PI, PI)
+		global_rotation.y += clamp(diff, -turn_speed * delta, turn_speed * delta)
+		velocity.x = move_dir.x * move_speed
+		velocity.z = move_dir.z * move_speed
+		_is_moving = true
+	else:
+		_is_moving = false
 
 	if not is_on_floor():
 		velocity.y -= gravity * delta
@@ -70,25 +97,20 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("shoot") and _fire_timer <= 0.0:
 		_fire_timer = fire_cooldown
-		shoot_requested.emit(muzzle.global_position, -global_transform.basis.z.normalized())
+		var shoot_dir: Vector3 = -global_transform.basis.z.normalized()
+		shoot_requested.emit(muzzle.global_position, shoot_dir)
 		_recoil_pose()
 		SFX.play_shoot()
 
 	move_and_slide()
 
-	_is_moving = movement.length() > 0.1
 	if _is_moving:
 		_walk_cycle += delta * 8.0
 		_update_walk_animation()
 	else:
 		_reset_pose()
 
-	if _is_moving:
-		var flat_dir := Vector3(movement.x, 0.0, movement.z)
-		look_at(global_position + flat_dir, Vector3.UP)
-
 func _update_walk_animation() -> void:
-	## 奔跑时腿臂摆动
 	var swing: float = sin(_walk_cycle) * 0.3
 	var bounce: float = abs(sin(_walk_cycle)) * 0.04
 
@@ -101,11 +123,9 @@ func _update_walk_animation() -> void:
 	if _arm_r:
 		_arm_r.rotation.x = swing * 0.7
 
-	## 身体上下起伏
 	model_root.position.y = bounce
 
 func _reset_pose() -> void:
-	## 静止时恢复默认姿态
 	_walk_cycle = 0.0
 	model_root.position.y = 0.0
 	if _leg_l:
@@ -118,7 +138,6 @@ func _reset_pose() -> void:
 		_arm_r.rotation.x = 0.0
 
 func _recoil_pose() -> void:
-	## 射击时枪口上跳，然后恢复
 	if _blaster:
 		var tween := create_tween()
 		tween.tween_property(_blaster, "rotation_degrees:x", -8.0, 0.05)

@@ -42,6 +42,11 @@ environment = SubResource("1")
 	light_indirect_energy = 0.3
 	shadow_enabled = false
 
+[node name="Camera3D" type="Camera3D" parent="."]
+current = true
+position = Vector3(0, 6, -8)
+rotation_degrees = Vector3(-15, 0, 0)
+
 [node name="Level" parent="." instance=ExtResource("2")]
 
 [node name="Player" parent="." instance=ExtResource("3")]
