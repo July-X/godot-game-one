@@ -4,12 +4,14 @@ signal boss_died
 
 const MAX_SHIELD: int = 80
 const DODGE_RANGE: float = 280.0
-const BASE_SPEED: float = 50.0
-const CHASE_SPEED: float = 65.0
+var BASE_SPEED: float = 50.0
+var CHASE_SPEED: float = 65.0
 const SHIELD_REGEN_TIME: float = 3.0
 
 var _health: int = 50
+var _max_health: int = 50
 var _shield: int = MAX_SHIELD
+var _max_shield: int = MAX_SHIELD
 var _target: Node2D = null
 var _shoot_timer: float = 0.0
 var _attack_pattern: int = 0
@@ -45,6 +47,14 @@ func _ready() -> void:
 
 func set_target(target: Node2D) -> void:
 	_target = target
+
+func set_difficulty(mult: float) -> void:
+	_health = int(50.0 * mult)
+	_max_health = _health
+	_shield = int(80.0 * mult)
+	_max_shield = _shield
+	BASE_SPEED = 50.0 * mult
+	CHASE_SPEED = 65.0 * mult
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running or _dead:
@@ -197,7 +207,7 @@ func _on_minion_died() -> void:
 	pass
 
 func _update_angry_mode() -> void:
-	_angry_mode = _health <= 25 and _shield <= 0
+	_angry_mode = _health <= _max_health * 0.5 and _shield <= 0
 
 func _update_shield(delta: float) -> void:
 	if _dead:
@@ -205,7 +215,7 @@ func _update_shield(delta: float) -> void:
 	if _shield <= 0 and _health > 0:
 		_shield_regen_timer -= delta
 		if _shield_regen_timer <= 0:
-			_shield = min(_shield + 5, MAX_SHIELD)
+			_shield = min(_shield + 5, _max_shield)
 			_shield_regen_timer = SHIELD_REGEN_TIME
 			_shield_sprite.visible = true
 			var tween := create_tween()
@@ -213,7 +223,7 @@ func _update_shield(delta: float) -> void:
 	if _shield > 0:
 		_shield_sprite.visible = true
 		var alpha: float = 0.25 + 0.25 * abs(sin(Time.get_ticks_msec() * 0.003))
-		var shield_ratio: float = float(_shield) / float(MAX_SHIELD)
+		var shield_ratio: float = float(_shield) / float(_max_shield)
 		var r: float = 0.3 + (1.0 - shield_ratio) * 0.5
 		_shield_sprite.modulate = Color(r, 0.4 + shield_ratio * 0.3, 1.0, alpha)
 		_shield_sprite.scale = Vector2(1.0, 1.0) * (0.9 + 0.1 * abs(sin(Time.get_ticks_msec() * 0.002)))
@@ -255,7 +265,7 @@ func _shield_break_effect() -> void:
 
 func _update_health_bar() -> void:
 	if _health_bar:
-		_health_bar.max_value = _health
+		_health_bar.max_value = _max_health
 		_health_bar.value = _health
 
 func _die() -> void:

@@ -13,6 +13,8 @@ var level: int = 1
 var kills: int = 0
 var total_kills: int = 0
 var last_boss_threshold: int = 0
+var boss_encounter_count: int = 0
+var post_boss_multiplier: float = 1.0
 var current_health: int = 3
 var max_health: int = 3
 var shield_layers: int = 0
@@ -29,6 +31,8 @@ func reset_game() -> void:
 	kills = 0
 	total_kills = 0
 	last_boss_threshold = 0
+	boss_encounter_count = 0
+	post_boss_multiplier = 1.0
 	current_health = 3
 	max_health = 3
 	shield_layers = 0
