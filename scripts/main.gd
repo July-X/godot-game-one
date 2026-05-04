@@ -2,10 +2,12 @@ extends Node2D
 
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
+var _boss_scene = preload("res://scenes/entities/boss.tscn")
 var _hud_scene = preload("res://scenes/ui/hud.tscn")
 
 var _player: Node2D = null
 var _hud: Node = null
+var _boss: Node2D = null
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
 var _stars: Array[Node2D] = []
@@ -20,6 +22,7 @@ func _ready() -> void:
 	_start_bgm()
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
+	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
 
 func _create_starfield() -> void:
 	if _bg_color:
@@ -171,6 +174,10 @@ func _process(delta: float) -> void:
 			star.position.y = -40.0
 			star.position.x = randf_range(0, 1280)
 
+	## Boss 存活时不生成普通敌人
+	if _boss != null and is_instance_valid(_boss):
+		return
+
 	## 敌人生成
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
@@ -206,6 +213,41 @@ func _spawn_enemy() -> void:
 
 func _on_enemy_died() -> void:
 	pass
+
+func _on_boss_spawn_requested() -> void:
+	if _boss != null and is_instance_valid(_boss):
+		return
+	_spawn_boss()
+
+func _spawn_boss() -> void:
+	_show_boss_warning()
+	_boss = _boss_scene.instantiate()
+	_boss.position = Vector2(640, -60)
+	if _player and is_instance_valid(_player):
+		_boss.set_target(_player)
+	_boss.boss_died.connect(_on_boss_died)
+	add_child(_boss)
+	var tween := create_tween()
+	tween.tween_property(_boss, "position", Vector2(640, 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _show_boss_warning() -> void:
+	var warning := Label.new()
+	warning.text = "WARNING: BOSS INCOMING"
+	warning.add_theme_font_size_override("font_size", 32)
+	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.1, 1.0))
+	warning.horizontal_alignment = 1
+	warning.vertical_alignment = 1
+	warning.position = Vector2(340, 300)
+	warning.z_index = 100
+	add_child(warning)
+	var tween := create_tween()
+	tween.tween_property(warning, "modulate:a", 1.0, 0.3)
+	tween.tween_interval(1.0)
+	tween.tween_property(warning, "modulate:a", 0.0, 0.5)
+	tween.tween_callback(warning.queue_free)
+
+func _on_boss_died() -> void:
+	_boss = null
 
 func _on_player_died() -> void:
 	GameState.game_running = false

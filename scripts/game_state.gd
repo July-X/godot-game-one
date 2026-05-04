@@ -5,10 +5,13 @@ signal level_changed(new_level)
 signal health_changed(current_health, max_health)
 signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
+signal boss_spawn_requested
 
 var score: int = 0
 var level: int = 1
 var kills: int = 0
+var total_kills: int = 0
+var last_boss_threshold: int = 0
 var current_health: int = 3
 var max_health: int = 3
 var game_running: bool = false
@@ -22,6 +25,8 @@ func reset_game() -> void:
 	score = 0
 	level = 1
 	kills = 0
+	total_kills = 0
+	last_boss_threshold = 0
 	current_health = 3
 	max_health = 3
 	game_running = true
@@ -36,9 +41,13 @@ func add_score(amount: int) -> void:
 
 func add_kill() -> void:
 	kills += 1
+	total_kills += 1
 	add_score(10 * level)
 	if kills >= kills_for_next_level:
 		level_up()
+	if total_kills > 0 and total_kills % 30 == 0 and total_kills != last_boss_threshold:
+		last_boss_threshold = total_kills
+		boss_spawn_requested.emit()
 
 func level_up() -> void:
 	level += 1

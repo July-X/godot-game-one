@@ -22,9 +22,15 @@ func setup(pos: Vector2, angle: float, damage: int, is_player: bool, level: int 
 	_is_player_bullet = is_player
 	_has_bounced = false
 	_level = level
+	if is_player:
+		add_to_group("player_bullets")
 	if not is_player:
 		_speed = 780.0
 	_apply_bullet_appearance()
+
+func _exit_tree() -> void:
+	if _is_player_bullet:
+		remove_from_group("player_bullets")
 
 func _apply_bullet_appearance() -> void:
 	if _is_player_bullet:
