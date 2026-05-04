@@ -6,6 +6,7 @@ signal enemy_died
 @export var health: int = 2
 @export var move_speed: float = 60.0
 @export var shoot_cooldown: float = 2.0
+@export var drop_chance: float = 0.20
 
 var _shoot_timer: float = 0.0
 var _target: Node2D = null
@@ -142,7 +143,7 @@ func _spawn_explosion() -> void:
 	SFX.play_enemy_death()
 
 func _try_spawn_powerup() -> void:
-	if randf() < 0.15 + enemy_type * 0.05:
+	if randf() < drop_chance:
 		var pu = _powerup_scene.instantiate()
 		get_tree().current_scene.add_child(pu)
 		pu.global_position = global_position

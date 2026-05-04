@@ -22,12 +22,20 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 
 func _create_starfield() -> void:
-	## 双层视差星空
+	## 双层视差星空 — 使用 region_rect 实现平铺
 	if _bg:
-		_bg.texture = SpriteFactory.create_star_field(1280, 720, 400)
+		var tex := SpriteFactory.create_star_field(512, 512, 200)
+		_bg.texture = tex
+		_bg.region_enabled = true
+		_bg.region_rect = Rect2(0, 0, 1280, 720)
+		_bg.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 		_bg.position = Vector2(0, 0)
 	if _bg2:
-		_bg2.texture = SpriteFactory.create_star_field(1280, 720, 200)
+		var tex2 := SpriteFactory.create_star_field(512, 512, 100)
+		_bg2.texture = tex2
+		_bg2.region_enabled = true
+		_bg2.region_rect = Rect2(0, 0, 1280, 720)
+		_bg2.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 		_bg2.position = Vector2(0, 0)
 		_bg2.modulate = Color(0.6, 0.6, 0.8, 0.5)
 
@@ -48,9 +56,9 @@ func _process(delta: float) -> void:
 	## 星空滚动
 	_bg_scroll += delta * 30.0
 	if _bg:
-		_bg.region_rect.position.y = fmod(_bg_scroll, 720.0)
+		_bg.region_rect.position = Vector2(fmod(_bg_scroll * 0.3, 512.0), fmod(_bg_scroll, 512.0))
 	if _bg2:
-		_bg2.region_rect.position.y = fmod(_bg_scroll * 0.5, 720.0)
+		_bg2.region_rect.position = Vector2(fmod(_bg_scroll * 0.15, 512.0), fmod(_bg_scroll * 0.5, 512.0))
 
 	## 敌人生成
 	_enemy_spawn_timer -= delta
@@ -66,7 +74,6 @@ func _process(delta: float) -> void:
 
 func _spawn_enemy() -> void:
 	var enemy = _enemy_scene.instantiate()
-	## 随机屏幕边缘
 	var side := randi() % 4
 	var pos := Vector2.ZERO
 	var screen := get_viewport_rect().size
@@ -76,12 +83,13 @@ func _spawn_enemy() -> void:
 		2: pos = Vector2(-30, randf_range(0, screen.y))
 		3: pos = Vector2(screen.x + 30, randf_range(0, screen.y))
 	enemy.position = pos
-	## 随机敌人类型
 	var enemy_type: int = randi() % 3
 	enemy.enemy_type = enemy_type
 	enemy.health = 1 + GameState.level / 2 + enemy_type
 	enemy.move_speed = 40.0 + GameState.level * 6.0 + enemy_type * 10.0
 	enemy.shoot_cooldown = max(2.0 - GameState.level * 0.12, 0.6)
+	## 不同怪物不同掉落率：type0=20%, type1=30%, type2=45%
+	enemy.drop_chance = 0.20 + enemy_type * 0.12
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	enemy.enemy_died.connect(_on_enemy_died)
