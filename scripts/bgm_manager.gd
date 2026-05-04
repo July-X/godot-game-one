@@ -11,7 +11,7 @@ func play_bgm() -> void:
 	if _bgm_player == null:
 		return
 	_bgm_player.stream = _generate_bgm()
-	_bgm_player.bus = "Master"
+	## 使用默认 bus
 	_bgm_player.volume_db = -12.0
 	_bgm_player.play()
 	_is_playing = true
