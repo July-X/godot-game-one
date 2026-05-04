@@ -10,8 +10,8 @@ var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
 var _bg_scroll: float = 0.0
 
-@onready var _bg: Sprite2D = $Background
-@onready var _bg2: Sprite2D = $Background2
+@onready var _bg1: Sprite2D = $Starfield1
+@onready var _bg2: Sprite2D = $Starfield2
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -22,22 +22,14 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 
 func _create_starfield() -> void:
-	## 双层视差星空 — 使用 region_rect 实现平铺
-	if _bg:
-		var tex := SpriteFactory.create_star_field(512, 512, 200)
-		_bg.texture = tex
-		_bg.region_enabled = true
-		_bg.region_rect = Rect2(0, 0, 1280, 720)
-		_bg.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-		_bg.position = Vector2(0, 0)
+	## 生成 1280x720 的星空纹理，直接铺满全屏
+	if _bg1:
+		_bg1.texture = SpriteFactory.create_star_field(1280, 720, 500)
+		_bg1.position = Vector2(640, 360)
 	if _bg2:
-		var tex2 := SpriteFactory.create_star_field(512, 512, 100)
-		_bg2.texture = tex2
-		_bg2.region_enabled = true
-		_bg2.region_rect = Rect2(0, 0, 1280, 720)
-		_bg2.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-		_bg2.position = Vector2(0, 0)
-		_bg2.modulate = Color(0.6, 0.6, 0.8, 0.5)
+		_bg2.texture = SpriteFactory.create_star_field(1280, 720, 200)
+		_bg2.position = Vector2(640, 360)
+		_bg2.modulate = Color(0.5, 0.5, 0.7, 0.4)
 
 func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
@@ -53,12 +45,12 @@ func _process(delta: float) -> void:
 	if not GameState.game_running:
 		return
 
-	## 星空滚动
-	_bg_scroll += delta * 30.0
-	if _bg:
-		_bg.region_rect.position = Vector2(fmod(_bg_scroll * 0.3, 512.0), fmod(_bg_scroll, 512.0))
+	## 星空缓慢滚动
+	_bg_scroll += delta * 15.0
+	if _bg1:
+		_bg1.position.y = 360.0 + sin(_bg_scroll * 0.01) * 20.0
 	if _bg2:
-		_bg2.region_rect.position = Vector2(fmod(_bg_scroll * 0.15, 512.0), fmod(_bg_scroll * 0.5, 512.0))
+		_bg2.position.y = 360.0 + cos(_bg_scroll * 0.007) * 15.0
 
 	## 敌人生成
 	_enemy_spawn_timer -= delta
@@ -88,7 +80,6 @@ func _spawn_enemy() -> void:
 	enemy.health = 1 + GameState.level / 2 + enemy_type
 	enemy.move_speed = 40.0 + GameState.level * 6.0 + enemy_type * 10.0
 	enemy.shoot_cooldown = max(2.0 - GameState.level * 0.12, 0.6)
-	## 不同怪物不同掉落率：type0=20%, type1=30%, type2=45%
 	enemy.drop_chance = 0.20 + enemy_type * 0.12
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)

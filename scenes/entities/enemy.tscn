@@ -8,13 +8,13 @@ offsets = PackedFloat32Array(0.0, 1.0)
 
 [sub_resource type="GradientTexture2D" id="3"]
 gradient = SubResource("2")
-width = 28
-height = 28
+width = 48
+height = 48
 fill = 1
 fill_from = Vector2(0.5, 0.5)
 
 [sub_resource type="CircleShape2D" id="4"]
-radius = 12.0
+radius = 20.0
 
 [node name="Enemy" type="CharacterBody2D"]
 collision_layer = 4

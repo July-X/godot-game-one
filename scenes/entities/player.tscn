@@ -8,8 +8,8 @@ offsets = PackedFloat32Array(0.0, 1.0)
 
 [sub_resource type="GradientTexture2D" id="3"]
 gradient = SubResource("2")
-width = 32
-height = 48
+width = 64
+height = 96
 fill = 1
 fill_from = Vector2(0.5, 1.0)
 fill_to = Vector2(0.5, 0.0)
@@ -20,13 +20,13 @@ offsets = PackedFloat32Array(0.0, 1.0)
 
 [sub_resource type="GradientTexture2D" id="5"]
 gradient = SubResource("4")
-width = 8
-height = 8
+width = 12
+height = 12
 fill = 1
 fill_from = Vector2(0.5, 0.5)
 
 [sub_resource type="CircleShape2D" id="6"]
-radius = 6.0
+radius = 12.0
 
 [sub_resource type="CircleShape2D" id="7"]
 radius = 80.0
@@ -40,17 +40,17 @@ script = ExtResource("1")
 texture = SubResource("3")
 
 [node name="EngineGlow" type="Sprite2D" parent="."]
-position = Vector2(0, 16)
+position = Vector2(0, 32)
 texture = SubResource("5")
 modulate = Color(1.0, 0.6, 0.2, 0.4)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, 4)
+position = Vector2(0, 8)
 shape = SubResource("6")
 
 [node name="MuzzleFlash" type="Sprite2D" parent="."]
 visible = false
-position = Vector2(0, -20)
+position = Vector2(0, -40)
 texture = SubResource("5")
 
 [node name="PickupArea" type="Area2D" parent="."]
