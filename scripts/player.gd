@@ -5,8 +5,8 @@ signal died
 @export var move_speed: float = 260.0
 @export var acceleration: float = 1000.0
 @export var friction: float = 500.0
-@export var mouse_sensitivity: float = 0.0008
-@export var mouse_smoothing: float = 0.08
+@export var mouse_sensitivity: float = 0.0005
+@export var mouse_smoothing: float = 0.06
 
 var _shoot_timer: float = 0.0
 var _invincible_timer: float = 0.0

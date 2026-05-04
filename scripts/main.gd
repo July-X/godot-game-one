@@ -22,55 +22,80 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 
 func _create_starfield() -> void:
-	## 深蓝底色（更亮）
+	## 深蓝紫色底色
 	if _bg_color:
-		_bg_color.color = Color(0.04, 0.06, 0.12, 1.0)
+		_bg_color.color = Color(0.06, 0.08, 0.18, 1.0)
 		_bg_color.size = Vector2(1280, 720)
 		_bg_color.position = Vector2(0, 0)
-	## 大星星（2-4像素，更亮更多）
-	for i in range(150):
+	## 大星星（6-12像素，非常亮）
+	for i in range(80):
 		var star := Sprite2D.new()
-		var brightness: float = randf_range(0.6, 1.0)
-		var pix_size: int = 2 if randf() < 0.6 else 3
-		if randf() < 0.1:
-			pix_size = 4
+		var brightness: float = randf_range(0.8, 1.0)
+		var pix_size: int = randi_range(6, 12)
 		var img := Image.create(pix_size, pix_size, false, Image.FORMAT_RGBA8)
-		## 彩色星星
-		var star_type: int = randi() % 4
+		var star_type: int = randi() % 5
 		var col: Color
 		match star_type:
 			0: col = Color(brightness, brightness, brightness, 1.0)
-			1: col = Color(brightness, brightness * 0.8, brightness * 0.6, 1.0)
-			2: col = Color(brightness * 0.7, brightness * 0.8, brightness, 1.0)
-			_: col = Color(brightness, brightness * 0.9, brightness * 0.7, 1.0)
-		img.fill(col)
+			1: col = Color(brightness, brightness * 0.7, brightness * 0.5, 1.0)
+			2: col = Color(brightness * 0.6, brightness * 0.8, brightness, 1.0)
+			3: col = Color(brightness, brightness * 0.9, brightness * 0.6, 1.0)
+			_: col = Color(brightness * 0.8, brightness, brightness * 0.9, 1.0)
+		## 画带光晕的星星
+		var cx2: int = pix_size / 2
+		var cy2: int = pix_size / 2
+		for y in range(pix_size):
+			for x in range(pix_size):
+				var d: float = sqrt(float(x - cx2) * float(x - cx2) + float(y - cy2) * float(y - cy2))
+				var max_r: float = float(pix_size) / 2.0
+				if d < max_r:
+					var t: float = d / max_r
+					var a: float = 1.0 - t * t
+					img.set_pixel(x, y, Color(col.r, col.g, col.b, a))
 		var tex := ImageTexture.create_from_image(img)
 		star.texture = tex
 		star.position = Vector2(randf_range(0, 1280), randf_range(0, 720))
 		star.z_index = -10
 		add_child(star)
 		_stars.append(star)
-	## 小星星（密密麻麻）
-	for i in range(400):
+	## 中等星星（3-5像素）
+	for i in range(200):
 		var star := Sprite2D.new()
-		var brightness: float = randf_range(0.3, 0.9)
-		var img := Image.create(1, 1, false, Image.FORMAT_RGBA8)
-		img.set_pixel(0, 0, Color(brightness, brightness, brightness * 1.1, randf_range(0.5, 1.0)))
+		var brightness: float = randf_range(0.6, 1.0)
+		var pix_size: int = randi_range(3, 5)
+		var img := Image.create(pix_size, pix_size, false, Image.FORMAT_RGBA8)
+		for y in range(pix_size):
+			for x in range(pix_size):
+				var d: float = sqrt(float(x - pix_size / 2) * float(x - pix_size / 2) + float(y - pix_size / 2) * float(y - pix_size / 2))
+				if d < float(pix_size) / 2.0:
+					img.set_pixel(x, y, Color(brightness, brightness, brightness, 1.0))
 		var tex := ImageTexture.create_from_image(img)
 		star.texture = tex
 		star.position = Vector2(randf_range(0, 1280), randf_range(0, 720))
 		star.z_index = -9
 		add_child(star)
 		_stars.append(star)
-	## 彩色星云（更大更明显）
-	for i in range(12):
+	## 小星星（1-2像素，密密麻麻）
+	for i in range(500):
+		var star := Sprite2D.new()
+		var brightness: float = randf_range(0.4, 0.9)
+		var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
+		img.fill(Color(brightness, brightness, brightness * 1.1, randf_range(0.5, 1.0)))
+		var tex := ImageTexture.create_from_image(img)
+		star.texture = tex
+		star.position = Vector2(randf_range(0, 1280), randf_range(0, 720))
+		star.z_index = -8
+		add_child(star)
+		_stars.append(star)
+	## 大型彩色星云（100-250px，高透明度）
+	for i in range(15):
 		var nebula := Sprite2D.new()
-		var neb_size: int = randi_range(60, 180)
+		var neb_size: int = randi_range(100, 250)
 		var neb_img := Image.create(neb_size, neb_size, false, Image.FORMAT_RGBA8)
-		var nc_r: float = randf_range(0.15, 0.4)
-		var nc_g: float = randf_range(0.05, 0.2)
-		var nc_b: float = randf_range(0.25, 0.5)
-		var nc_a: float = randf_range(0.04, 0.1)
+		var nc_r: float = randf_range(0.2, 0.5)
+		var nc_g: float = randf_range(0.1, 0.3)
+		var nc_b: float = randf_range(0.3, 0.6)
+		var nc_a: float = randf_range(0.08, 0.18)
 		for y in range(neb_size):
 			for x in range(neb_size):
 				var dx: float = float(x - neb_size / 2) / (neb_size / 2.0)
@@ -81,28 +106,43 @@ func _create_starfield() -> void:
 					neb_img.set_pixel(x, y, Color(nc_r, nc_g, nc_b, a))
 		var neb_tex := ImageTexture.create_from_image(neb_img)
 		nebula.texture = neb_tex
-		nebula.position = Vector2(randf_range(-50, 1330), randf_range(-50, 770))
+		nebula.position = Vector2(randf_range(-100, 1380), randf_range(-100, 820))
 		nebula.z_index = -5
 		add_child(nebula)
-	## 行星/大球体
-	for i in range(3):
+	## 行星/大球体（40-80px，带环）
+	for i in range(4):
 		var planet := Sprite2D.new()
-		var p_size: int = randi_range(20, 50)
+		var p_size: int = randi_range(40, 80)
 		var p_img := Image.create(p_size, p_size, false, Image.FORMAT_RGBA8)
-		var pc_r: float = randf_range(0.2, 0.5)
-		var pc_g: float = randf_range(0.1, 0.3)
-		var pc_b: float = randf_range(0.3, 0.6)
+		var pc_r: float = randf_range(0.25, 0.55)
+		var pc_g: float = randf_range(0.15, 0.35)
+		var pc_b: float = randf_range(0.35, 0.65)
+		var p_cx: int = p_size / 2
+		var p_cy: int = p_size / 2
 		for y in range(p_size):
 			for x in range(p_size):
-				var dx: float = float(x - p_size / 2) / (p_size / 2.0)
-				var dy: float = float(y - p_size / 2) / (p_size / 2.0)
+				var dx: float = float(x - p_cx)
+				var dy: float = float(y - p_cy)
 				var d: float = sqrt(dx * dx + dy * dy)
-				if d < 1.0:
-					var t: float = d
-					var rr: float = pc_r * (1.0 - t * 0.3)
-					var gg: float = pc_g * (1.0 - t * 0.3)
-					var bb: float = pc_b * (1.0 - t * 0.3)
-					p_img.set_pixel(x, y, Color(rr, gg, bb, 1.0))
+				var max_r: float = float(p_size) / 2.0
+				if d < max_r:
+					var t: float = d / max_r
+					## 径向渐变 + 边缘光晕
+					var rr: float = pc_r * (1.0 - t * 0.4)
+					var gg: float = pc_g * (1.0 - t * 0.4)
+					var bb: float = pc_b * (1.0 - t * 0.4)
+					var a: float = 1.0 if t < 0.8 else (1.0 - t) * 5.0
+					p_img.set_pixel(x, y, Color(rr, gg, bb, a))
+		## 行星环
+		if randf() < 0.5:
+			var ring_r: float = float(p_size) / 2.0 * 1.4
+			var ring_w: int = randi_range(2, 4)
+			for y in range(p_size):
+				for x in range(p_size):
+					var d2: float = sqrt(float(x - p_cx) * float(x - p_cx) + float(y - p_cy) * float(y - p_cy))
+					if d2 > ring_r - float(ring_w) / 2.0 and d2 < ring_r + float(ring_w) / 2.0:
+						var ring_a: float = 0.4 * (1.0 - abs(d2 - ring_r) / (float(ring_w) / 2.0))
+						p_img.set_pixel(x, y, Color(pc_r * 1.2, pc_g * 1.2, pc_b * 1.2, ring_a))
 		var p_tex := ImageTexture.create_from_image(p_img)
 		planet.texture = p_tex
 		planet.position = Vector2(randf_range(100, 1180), randf_range(100, 620))
@@ -125,17 +165,20 @@ func _spawn_hud() -> void:
 func _process(delta: float) -> void:
 	if not GameState.game_running:
 		return
+
 	## 星空缓慢滚动
 	for star in _stars:
-		star.position.y += delta * 8.0
-		if star.position.y > 740:
-			star.position.y = -20.0
+		star.position.y += delta * 6.0
+		if star.position.y > 760:
+			star.position.y = -40.0
 			star.position.x = randf_range(0, 1280)
+
 	## 敌人生成
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
 		_spawn_enemy()
 		_enemy_spawn_timer = max(1.2 - GameState.level * 0.06, 0.2)
+
 	_difficulty_timer += delta
 	if _difficulty_timer > 8.0:
 		_difficulty_timer = 0.0
