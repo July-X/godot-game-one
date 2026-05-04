@@ -32,6 +32,7 @@ var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _shield_sprite: Sprite2D = $ShieldSprite
+@onready var _health_bar: ProgressBar = $HealthBar
 @onready var _turret_l: Node2D = $TurretL
 @onready var _turret_r: Node2D = $TurretR
 
@@ -54,6 +55,7 @@ func _physics_process(delta: float) -> void:
 	_handle_attacks(delta)
 	_update_shield(delta)
 	_update_angry_mode()
+	_update_health_bar()
 	_shoot_timer -= delta
 	_pattern_timer += delta
 
@@ -250,6 +252,11 @@ func _shield_break_effect() -> void:
 		exp.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
 	_shield_sprite.visible = false
 	_shield_regen_timer = SHIELD_REGEN_TIME
+
+func _update_health_bar() -> void:
+	if _health_bar:
+		_health_bar.max_value = _health
+		_health_bar.value = _health
 
 func _die() -> void:
 	_dead = true

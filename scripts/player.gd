@@ -26,6 +26,7 @@ var _pickup_radius: float = 280.0
 @onready var _health_bar: ProgressBar = $HealthBar
 
 func _ready() -> void:
+	add_to_group("player")
 	_muzzle_flash.visible = false
 	_update_appearance()
 	_update_pickup_radius()

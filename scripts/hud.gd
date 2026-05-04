@@ -50,21 +50,28 @@ func _update_health(current: int, maximum: int) -> void:
 func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
 		child.queue_free()
-	var icons := {
-		"spread": Color(0.2, 0.8, 0.3),
-		"speed": Color(0.2, 0.5, 1.0),
-		"power": Color(1.0, 0.3, 0.2),
+	var labels := {
+		"spread": {"color": Color(0.2, 0.8, 0.3), "name": "W"},
+		"speed": {"color": Color(0.2, 0.5, 1.0), "name": "F"},
+		"power": {"color": Color(1.0, 0.3, 0.2), "name": "P"},
 	}
-	for type in icons:
+	for type in labels:
 		var level: int = 0
 		match type:
 			"spread": level = GameState.shoot_level
 			"speed": level = GameState.shoot_speed_level
 			"power": level = GameState.bullet_power_level
 		if level > 0:
+			var container := HBoxContainer.new()
+			var label := Label.new()
+			label.text = labels[type].name + ":"
+			label.add_theme_color_override("font_color", labels[type].color)
+			label.add_theme_font_size_override("font_size", 12)
+			container.add_child(label)
 			var bar := ProgressBar.new()
-			bar.custom_minimum_size = Vector2(60, 12)
+			bar.custom_minimum_size = Vector2(50, 10)
 			bar.max_value = 5
 			bar.value = level
-			bar.modulate = icons[type]
-			_powerup_display.add_child(bar)
+			bar.modulate = labels[type].color
+			container.add_child(bar)
+			_powerup_display.add_child(container)

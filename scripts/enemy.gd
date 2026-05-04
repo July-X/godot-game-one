@@ -17,11 +17,15 @@ var _move_angle: float = 0.0
 var _wobble_timer: float = 0.0
 
 @onready var _sprite: Sprite2D = $Sprite2D
+@onready var _health_bar: ProgressBar = $HealthBar
 
 func _ready() -> void:
 	add_to_group("enemies")
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_enemy_sprite(enemy_type)
+	if _health_bar:
+		_health_bar.max_value = health
+		_health_bar.value = health
 	_move_angle = randf() * TAU
 	_wobble_timer = randf() * TAU
 	_shoot_timer = randf_range(0.5, shoot_cooldown)
@@ -63,6 +67,10 @@ func _physics_process(delta: float) -> void:
 	if _shoot_timer <= 0.0 and _target and is_instance_valid(_target):
 		_shoot()
 		_shoot_timer = shoot_cooldown + randf_range(-0.3, 0.3)
+
+	## 更新血条
+	if _health_bar:
+		_health_bar.value = health
 
 func _move_chase(delta: float) -> void:
 	if _target and is_instance_valid(_target):
