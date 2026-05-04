@@ -29,7 +29,7 @@ fill_from = Vector2(0.5, 0.5)
 radius = 12.0
 
 [sub_resource type="CircleShape2D" id="7"]
-radius = 80.0
+radius = 280.0
 
 [node name="Player" type="CharacterBody2D"]
 collision_layer = 1

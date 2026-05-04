@@ -6,24 +6,32 @@ var _damage: int = 1
 var _is_player_bullet: bool = true
 var _lifetime: float = 4.0
 var _has_bounced: bool = false
+var _level: int = 1
+
+@onready var _sprite: Sprite2D = $Sprite2D
 
 func _ready() -> void:
 	connect("body_entered", _on_body_entered)
 	connect("area_entered", _on_area_entered)
 
-func setup(pos: Vector2, angle: float, damage: int, is_player: bool) -> void:
+func setup(pos: Vector2, angle: float, damage: int, is_player: bool, level: int = 1) -> void:
 	global_position = pos
 	_direction = Vector2.from_angle(angle)
 	rotation = angle + PI * 0.5
 	_damage = damage
 	_is_player_bullet = is_player
 	_has_bounced = false
+	_level = level
+	_apply_bullet_appearance()
+
+func _apply_bullet_appearance() -> void:
 	if _is_player_bullet:
-		$Sprite2D.modulate = Color(0.3, 0.7, 1.0, 1.0)
-		$Sprite2D.scale = Vector2(0.8, 0.8) + Vector2.ONE * min(damage * 0.15, 1.0)
+		_sprite.texture = SpriteFactory.create_bullet_sprite(true, _level)
+		var scale_val: float = 1.0 + min(_damage * 0.15, 1.5)
+		_sprite.scale = Vector2(scale_val, scale_val)
 	else:
-		$Sprite2D.modulate = Color(1.0, 0.3, 0.2, 0.9)
-		$Sprite2D.scale = Vector2(0.6, 0.6)
+		_sprite.texture = SpriteFactory.create_bullet_sprite(false, 1)
+		_sprite.scale = Vector2(0.8, 0.8)
 
 func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta
@@ -52,15 +60,14 @@ func _physics_process(delta: float) -> void:
 			bounced = true
 		if bounced:
 			_has_bounced = true
-			## 反弹后加速 + 变色
 			_speed *= 1.3
+			_direction = _direction.normalized()
 			rotation = _direction.angle() + PI * 0.5
 			if _is_player_bullet:
-				$Sprite2D.modulate = Color(1.0, 0.5, 0.2, 1.0)
+				_sprite.modulate = Color(1.0, 0.5, 0.2, 1.0)
 			else:
-				$Sprite2D.modulate = Color(1.0, 1.0, 0.3, 1.0)
+				_sprite.modulate = Color(1.0, 1.0, 0.3, 1.0)
 	else:
-		## 反弹后出屏即销毁
 		var screen2 := get_viewport_rect().size
 		if global_position.x < -20 or global_position.x > screen2.x + 20 or global_position.y < -20 or global_position.y > screen2.y + 20:
 			queue_free()

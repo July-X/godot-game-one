@@ -112,7 +112,7 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 					if dx * dx + dy * dy <= (r / 2) * (r / 2):
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
-func create_bullet_sprite(is_player: bool) -> ImageTexture:
+func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 	var size: int = 16 if is_player else 12
 	var h: int = size * 3
 	var img := Image.create(size, h, false, Image.FORMAT_RGBA8)
@@ -123,9 +123,30 @@ func create_bullet_sprite(is_player: bool) -> ImageTexture:
 			var t: float = 1.0 - abs(y - cy) / float(cy)
 			var alpha: float = clamp(t * 1.5, 0.0, 1.0)
 			if is_player:
-				img.set_pixel(x, y, Color(0.3 + t * 0.7, 0.6 + t * 0.4, 1.0, alpha))
+				## 随等级变化：蓝→青→紫→金
+				var r: float
+				var g: float
+				var b: float
+				if level <= 1:
+					r = 0.3 + t * 0.7; g = 0.6 + t * 0.4; b = 1.0
+				elif level <= 2:
+					r = 0.1 + t * 0.3; g = 0.8 + t * 0.2; b = 0.9
+				elif level <= 3:
+					r = 0.6 + t * 0.4; g = 0.2 + t * 0.3; b = 0.9
+				else:
+					r = 1.0; g = 0.8 + t * 0.2; b = 0.2
+				img.set_pixel(x, y, Color(r, g, b, alpha))
 			else:
 				img.set_pixel(x, y, Color(1.0, 0.3 + t * 0.3, 0.2, alpha))
+	## 等级3+ 添加核心亮线
+	if is_player and level >= 3:
+		for y in range(h):
+			var t: float = 1.0 - abs(y - cy) / float(cy)
+			var alpha: float = clamp(t * 3.0, 0.0, 1.0)
+			img.set_pixel(size / 2, y, Color(1.0, 1.0, 1.0, alpha))
+			if level >= 4:
+				img.set_pixel(size / 2 - 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
+				img.set_pixel(size / 2 + 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 

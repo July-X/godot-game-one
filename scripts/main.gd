@@ -8,10 +8,9 @@ var _player: Node2D = null
 var _hud: Node = null
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
-var _bg_scroll: float = 0.0
+var _stars: Array[Node2D] = []
 
-@onready var _bg1: Sprite2D = $Starfield1
-@onready var _bg2: Sprite2D = $Starfield2
+@onready var _bg_color: ColorRect = $BgColor
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -22,14 +21,46 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 
 func _create_starfield() -> void:
-	## 生成 1280x720 的星空纹理，直接铺满全屏
-	if _bg1:
-		_bg1.texture = SpriteFactory.create_star_field(1280, 720, 500)
-		_bg1.position = Vector2(640, 360)
-	if _bg2:
-		_bg2.texture = SpriteFactory.create_star_field(1280, 720, 200)
-		_bg2.position = Vector2(640, 360)
-		_bg2.modulate = Color(0.5, 0.5, 0.7, 0.4)
+	## 全屏底色
+	if _bg_color:
+		_bg_color.color = Color(0.01, 0.01, 0.03, 1.0)
+		_bg_color.size = Vector2(1280, 720)
+		_bg_color.position = Vector2(0, 0)
+	## 生成星星节点
+	for i in range(300):
+		var star := Sprite2D.new()
+		var brightness: float = randf_range(0.3, 1.0)
+		var pix_size: int = 1 if randf() < 0.7 else 2
+		var img := Image.create(pix_size, pix_size, false, Image.FORMAT_RGBA8)
+		img.fill(Color(brightness, brightness, brightness * 1.2, randf_range(0.4, 1.0)))
+		var tex := ImageTexture.create_from_image(img)
+		star.texture = tex
+		star.position = Vector2(randf_range(0, 1280), randf_range(0, 720))
+		star.z_index = -10
+		add_child(star)
+		_stars.append(star)
+	## 生成星云
+	for i in range(8):
+		var nebula := Sprite2D.new()
+		var neb_size: int = randi_range(40, 100)
+		var neb_img := Image.create(neb_size, neb_size, false, Image.FORMAT_RGBA8)
+		var nc_r: float = randf_range(0.1, 0.3)
+		var nc_g: float = randf_range(0.05, 0.15)
+		var nc_b: float = randf_range(0.2, 0.4)
+		for y in range(neb_size):
+			for x in range(neb_size):
+				var dx: float = float(x - neb_size / 2) / (neb_size / 2.0)
+				var dy: float = float(y - neb_size / 2) / (neb_size / 2.0)
+				var d: float = sqrt(dx * dx + dy * dy)
+				if d < 1.0:
+					var a: float = (1.0 - d) * 0.03
+					neb_img.set_pixel(x, y, Color(nc_r, nc_g, nc_b, a))
+		var neb_tex := ImageTexture.create_from_image(neb_img)
+		nebula.texture = neb_tex
+		nebula.position = Vector2(randf_range(0, 1280), randf_range(0, 720))
+		nebula.z_index = -5
+		add_child(nebula)
+		_stars.append(nebula)
 
 func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
@@ -46,21 +77,21 @@ func _process(delta: float) -> void:
 		return
 
 	## 星空缓慢滚动
-	_bg_scroll += delta * 15.0
-	if _bg1:
-		_bg1.position.y = 360.0 + sin(_bg_scroll * 0.01) * 20.0
-	if _bg2:
-		_bg2.position.y = 360.0 + cos(_bg_scroll * 0.007) * 15.0
+	for star in _stars:
+		star.position.y += delta * 8.0
+		if star.position.y > 740:
+			star.position.y = -20.0
+			star.position.x = randf_range(0, 1280)
 
-	## 敌人生成
+	## 敌人生成 — 加快速率
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
 		_spawn_enemy()
-		_enemy_spawn_timer = max(1.8 - GameState.level * 0.08, 0.3)
+		_enemy_spawn_timer = max(1.2 - GameState.level * 0.06, 0.2)
 
 	## 难度递增
 	_difficulty_timer += delta
-	if _difficulty_timer > 12.0:
+	if _difficulty_timer > 8.0:
 		_difficulty_timer = 0.0
 		_spawn_enemy()
 
