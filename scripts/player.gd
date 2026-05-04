@@ -128,6 +128,15 @@ func _physics_process(delta: float) -> void:
 	if _health_bar:
 		_health_bar.max_value = GameState.max_health
 		_health_bar.value = GameState.current_health
+		var ratio: float = float(GameState.current_health) / float(GameState.max_health)
+		var bar_color: Color
+		if ratio > 0.6:
+			bar_color = Color(0.25, 0.85, 0.35, 1.0)
+		elif ratio > 0.3:
+			bar_color = Color(0.9, 0.8, 0.15, 1.0)
+		else:
+			bar_color = Color(0.9, 0.2, 0.15, 1.0)
+		_health_bar.add_theme_stylebox_override("fill", _make_fill_style(bar_color))
 
 func _update_walk_animation() -> void:
 	var swing: float = sin(_walk_cycle) * 0.02
@@ -217,3 +226,13 @@ func on_level_up() -> void:
 	tween.set_loops(3)
 	tween.tween_property(_sprite, "modulate", Color(1.5, 1.5, 1.5, 1.0), 0.1)
 	tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1.0), 0.1)
+
+func _make_fill_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.border_color = Color(0.3, 0.3, 0.4, 1.0)
+	return style

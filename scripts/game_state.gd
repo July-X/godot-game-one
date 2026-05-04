@@ -76,7 +76,7 @@ func collect_powerup(type: String) -> void:
 			pass
 
 func get_bullet_count() -> int:
-	return min(1 + shoot_level * 2, 11)
+	return min(1 + shoot_level, 6)
 
 func get_shoot_cooldown() -> float:
 	return max(0.3 - shoot_speed_level * 0.04, 0.08)
