@@ -6,6 +6,7 @@ signal health_changed(current_health, max_health)
 signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
 signal boss_spawn_requested
+signal shield_changed(layers)
 
 var score: int = 0
 var level: int = 1
@@ -14,6 +15,7 @@ var total_kills: int = 0
 var last_boss_threshold: int = 0
 var current_health: int = 3
 var max_health: int = 3
+var shield_layers: int = 0
 var game_running: bool = false
 
 var kills_for_next_level: int = 10
@@ -29,6 +31,7 @@ func reset_game() -> void:
 	last_boss_threshold = 0
 	current_health = 3
 	max_health = 3
+	shield_layers = 0
 	game_running = true
 	shoot_level = 1
 	shoot_speed_level = 1
@@ -45,6 +48,9 @@ func add_kill() -> void:
 	add_score(10 * level)
 	if kills >= kills_for_next_level:
 		level_up()
+	if total_kills % 10 == 0:
+		shield_layers = min(shield_layers + 1, 30)
+		shield_changed.emit(shield_layers)
 	if total_kills > 0 and total_kills % 30 == 0 and total_kills != last_boss_threshold:
 		last_boss_threshold = total_kills
 		boss_spawn_requested.emit()
@@ -58,11 +64,17 @@ func level_up() -> void:
 	SFX.play_ui_confirm()
 
 func take_damage(amount: int = 1) -> void:
-	current_health = max(current_health - amount, 0)
-	health_changed.emit(current_health, max_health)
-	SFX.play_player_hurt()
-	if current_health <= 0:
-		game_over.emit(score, level)
+	if shield_layers > 0:
+		var absorbed: int = min(shield_layers, amount)
+		shield_layers -= absorbed
+		shield_changed.emit(shield_layers)
+		amount -= absorbed
+	if amount > 0:
+		current_health = max(current_health - amount, 0)
+		health_changed.emit(current_health, max_health)
+		SFX.play_player_hurt()
+		if current_health <= 0:
+			game_over.emit(score, level)
 
 func heal(amount: int = 1) -> void:
 	current_health = min(current_health + amount, max_health)

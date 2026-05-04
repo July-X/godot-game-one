@@ -24,6 +24,7 @@ var _pickup_radius: float = 280.0
 @onready var _pickup_area: Area2D = $PickupArea
 @onready var _engine_glow: Sprite2D = $EngineGlow
 @onready var _health_bar: ProgressBar = $HealthBar
+@onready var _shield_container: Node2D = $ShieldContainer
 
 func _ready() -> void:
 	add_to_group("player")
@@ -32,6 +33,7 @@ func _ready() -> void:
 	_update_pickup_radius()
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
+	GameState.shield_changed.connect(_on_shield_changed)
 
 func _update_appearance() -> void:
 	var level: int = GameState.shoot_level
@@ -187,16 +189,46 @@ func _on_pickup_body_entered(body: Node2D) -> void:
 	if body.is_in_group("powerups") and body.has_method("collect"):
 		body.collect()
 
+func _on_shield_changed(layers: int) -> void:
+	for child in _shield_container.get_children():
+		child.queue_free()
+	if layers <= 0:
+		return
+	var max_display: int = min(layers, 5)
+	var count: int = max_display
+	var base_radius: float = 32.0 + _sprite.texture.get_width() * 0.25
+	for i in range(count):
+		var shield := Sprite2D.new()
+		var radius: float = base_radius + i * 4.0
+		var img := Image.create(int(radius * 2 + 4), int(radius * 2 + 4), false, Image.FORMAT_RGBA8)
+		img.fill(Color(0, 0, 0, 0))
+		var cx: int = int(radius) + 2
+		var cy: int = int(radius) + 2
+		for y in range(img.get_height()):
+			for x in range(img.get_width()):
+				var dx: float = float(x - cx)
+				var dy: float = float(y - cy)
+				var d: float = sqrt(dx * dx + dy * dy)
+				if d > radius - 3.0 and d < radius + 1.0:
+					var a: float = 1.0 - abs(d - radius) / 3.0
+					var alpha_factor: float = 1.0 - float(i) / float(count) * 0.5
+					img.set_pixel(x, y, Color(0.2, 0.55, 1.0, a * 0.45 * alpha_factor))
+		shield.texture = ImageTexture.create_from_image(img)
+		shield.z_index = 3
+		_shield_container.add_child(shield)
+
 func take_damage(amount: float = 1.0) -> void:
 	if _invincible_timer > 0:
 		return
 	var actual_damage: int = amount as int
 	if amount > 0.0 and amount < 1.0 and randf() < amount:
 		actual_damage = 1
+	var old_health: int = GameState.current_health
 	GameState.take_damage(actual_damage)
-	_invincible_timer = 1.0
-	_spawn_hit_effect()
-	_play_hit_animation()
+	if GameState.current_health < old_health:
+		_invincible_timer = 1.0
+		_spawn_hit_effect()
+		_play_hit_animation()
 	if GameState.current_health <= 0:
 		_spawn_explosion()
 		died.emit()
