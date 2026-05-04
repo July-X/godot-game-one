@@ -22,6 +22,8 @@ func setup(pos: Vector2, angle: float, damage: int, is_player: bool, level: int 
 	_is_player_bullet = is_player
 	_has_bounced = false
 	_level = level
+	if not is_player:
+		_speed = 780.0
 	_apply_bullet_appearance()
 
 func _apply_bullet_appearance() -> void:
@@ -31,7 +33,7 @@ func _apply_bullet_appearance() -> void:
 		_sprite.scale = Vector2(scale_val, scale_val)
 	else:
 		_sprite.texture = SpriteFactory.create_bullet_sprite(false, 1)
-		_sprite.scale = Vector2(0.8, 0.8)
+		_sprite.scale = Vector2(1.0, 1.0)
 
 func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta

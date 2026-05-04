@@ -15,7 +15,7 @@ fill_from = Vector2(0.5, 1.0)
 fill_to = Vector2(0.5, 0.0)
 
 [sub_resource type="CircleShape2D" id="3"]
-radius = 4.0
+radius = 3.0
 
 [node name="Bullet" type="Area2D"]
 script = ExtResource("1")

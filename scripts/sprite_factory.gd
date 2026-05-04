@@ -7,48 +7,147 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var cx: int = w / 2
 	var cy: int = h / 2
+
 	## 机身颜色随等级变化
-	var body_r: float = 0.15 + level * 0.05
-	var body_g: float = 0.35 + level * 0.08
-	var body_b: float = 0.8 - level * 0.03
-	## 主体
-	for y in range(16, h - 16):
-		for x in range(8, w - 8):
-			var t: float = float(y - 16) / float(h - 32)
-			var rr: float = body_r + t * 0.1
-			var gg: float = body_g + t * 0.2
-			var bb: float = body_b - t * 0.15
-			var edge: float = 1.0 - abs(float(x - cx)) / (w * 0.4)
-			if edge > 0:
-				img.set_pixel(x, y, Color(rr, gg, bb, edge))
-	## 驾驶舱
-	for y in range(cy - 16, cy + 8):
-		for x in range(cx - 8, cx + 8):
-			var dx: float = float(x - cx) / 8.0
-			var dy: float = float(y - (cy - 4)) / 12.0
-			if dx * dx + dy * dy < 1.0:
-				img.set_pixel(x, y, Color(0.3, 0.9, 0.9, 0.9))
-	## 机翼
-	var wing_w: int = 12 + level * 4
-	for y in range(cy - 8, cy + 16):
+	var body_r: float = 0.12 + level * 0.04
+	var body_g: float = 0.30 + level * 0.06
+	var body_b: float = 0.75 - level * 0.02
+
+	## ===== 尾翼/垂直安定面 =====
+	for y in range(12, 24):
+		for x in range(cx - 6, cx + 6):
+			var dy: float = float(y - 12) / 12.0
+			var wing_t: float = 1.0 - dy
+			var half_w: int = int(6 * wing_t)
+			if abs(x - cx) < half_w:
+				var t: float = float(y - 12) / 12.0
+				var rr: float = body_r * 0.6 + t * 0.2
+				var gg: float = body_g * 0.6 + t * 0.15
+				var bb: float = body_b * 0.6 + t * 0.1
+				img.set_pixel(x, y, Color(rr, gg, bb, 0.8))
+
+	## ===== 主机身 =====
+	for y in range(20, h - 12):
+		for x in range(6, w - 6):
+			var t: float = float(y - 20) / float(h - 32)
+			var body_width: float = 1.0 - abs(float(x - cx)) / (w * 0.35)
+			if body_width > 0:
+				var rr: float = body_r + t * 0.15
+				var gg: float = body_g + t * 0.2
+				var bb: float = body_b - t * 0.15
+				## 机身边缘高光
+				var edge_glow: float = 1.0 - abs(float(x - cx)) / (w * 0.35)
+				var brightness: float = 0.7 + edge_glow * 0.3
+				img.set_pixel(x, y, Color(rr * brightness, gg * brightness, bb * brightness, 1.0))
+
+	## ===== 机身中线面板细节 =====
+	for y in range(30, h - 20):
+		for x in range(cx - 2, cx + 3):
+			if y % 6 < 2:
+				img.set_pixel(x, y, Color(body_r * 0.5, body_g * 0.5, body_b * 0.5, 0.4))
+
+	## ===== 机翼（后掠三角翼） =====
+	for y in range(cy - 10, cy + 20):
 		for x in range(0, w):
-			var wing_dist: int = int(wing_w - abs(y - (cy + 4)) * 1.2)
-			if wing_dist > 0 and (x < cx - wing_dist or x > cx + wing_dist):
-				img.set_pixel(x, y, Color(0.08, 0.2, 0.5, 1.0))
-	## 引擎喷口
-	for i in range(2 + level / 2):
-		var px: int = cx - (2 + level / 2) + i * 6 + 4
-		for y in range(h - 20, h - 8):
-			for x in range(px - 2, px + 4):
+			var wing_span: int = int(20 + (cy + 15 - y) * 1.4)
+			if wing_span > 0 and (x < cx - wing_span or x > cx + wing_span):
+				var outer: float = min(abs(x - cx) - wing_span, 10.0) / 10.0
+				if outer > 0:
+					var wing_r: float = 0.06 + level * 0.03
+					var wing_g: float = 0.15 + level * 0.05
+					var wing_b: float = 0.45 - level * 0.02
+					var alpha: float = 1.0
+					if outer < 0.3:
+						alpha = outer / 0.3
+					img.set_pixel(x, y, Color(wing_r, wing_g, wing_b, alpha))
+	## 翼尖灯
+	for i in range(2):
+		var wingtip_offset: int = 34
+		var lx: int = cx - wingtip_offset - 1 if i == 0 else cx + wingtip_offset + 1
+		var ly: int = cy + 5
+		for dy in range(-2, 3):
+			for dx in range(-2, 3):
+				if dx * dx + dy * dy <= 4:
+					var px: int = lx + dx
+					var py: int = ly + dy
+					if px >= 0 and px < w and py >= 0 and py < h:
+						img.set_pixel(px, py, Color(1.0, 0.2, 0.1, 0.7) if i == 0 else Color(0.1, 0.8, 0.2, 0.7))
+
+	## ===== 翼尖武器挂架 =====
+	for i in [-1, 1]:
+		var mpx: int = cx + i * (16 + level * 2)
+		var mpy: int = cy + 8
+		for dy in range(-1, 3):
+			for dx in range(-1, 2):
+				var px: int = mpx + dx * i
+				var py: int = mpy + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, Color(0.5, 0.5, 0.55, 0.9))
+
+	## ===== 驾驶舱 =====
+	var ck_cx: int = cx
+	var ck_cy: int = cy - 12
+	for y in range(ck_cy - 10, ck_cy + 8):
+		for x in range(ck_cx - 8, ck_cx + 8):
+			var dx: float = float(x - ck_cx) / 7.0
+			var dy: float = float(y - (ck_cy - 1)) / 9.0
+			if dx * dx + dy * dy < 1.0:
+				var depth: float = dx * dx + dy * dy
+				var cockpit_r: float = 0.2 + depth * 0.3
+				var cockpit_g: float = 0.7 + depth * 0.3
+				var cockpit_b: float = 0.9 + depth * 0.1
+				img.set_pixel(x, y, Color(cockpit_r, cockpit_g, cockpit_b, 0.85 - depth * 0.2))
+	## 驾驶舱反射高光
+	for i in range(3):
+		var hx: int = ck_cx - 3 + i * 3
+		var hy: int = ck_cy - 6
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var px: int = hx + dx
+				var py: int = hy + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, Color(0.8, 0.95, 1.0, 0.3 + (1.0 - abs(dx)) * 0.3))
+
+	## ===== 引擎进气口 =====
+	for y in range(h - 24, h - 12):
+		for x in range(cx - 8, cx + 8):
+			var inner: float = 1.0 - abs(float(x - cx)) / 8.0
+			if inner > 0:
+				img.set_pixel(x, y, Color(0.05, 0.05, 0.08, 0.9 * inner))
+
+	## ===== 引擎喷口+尾焰 =====
+	var nozzle_count: int = 2 + level / 2
+	for i in range(nozzle_count):
+		var px: int = cx - nozzle_count * 3 + i * 6 + 3
+		for y in range(h - 14, h - 4):
+			for x in range(px - 2, px + 3):
 				if x >= 0 and x < w:
-					var t: float = float(y - (h - 20)) / 12.0
-					img.set_pixel(x, y, Color(1.0, 0.5 + t * 0.3, 0.1, 1.0))
-	## 等级条纹
+					var t: float = float(y - (h - 14)) / 10.0
+					var flame_r: float = 1.0
+					var flame_g: float = 0.6 - t * 0.3
+					var flame_b: float = 0.2 - t * 0.15
+					var flame_a: float = 1.0 - t * 0.3
+					img.set_pixel(x, y, Color(flame_r, flame_g, flame_b, flame_a))
+	## 外焰/辉光
+	var glow_cx: int = cx
+	for y in range(h - 6, h):
+		for x in range(glow_cx - 10, glow_cx + 10):
+			var d: float = abs(float(x - glow_cx)) / 10.0
+			if d < 1.0:
+				var t: float = float(y - (h - 6)) / 6.0
+				var a: float = (1.0 - d * 0.5) * (0.12 - t * 0.08)
+				if a > 0:
+					img.set_pixel(x, y, Color(1.0, 0.7, 0.3, a))
+
+	## ===== 等级标识条纹 =====
 	if level >= 2:
-		for y in range(cy - 4, cy + 4):
-			for x in range(cx - 10, cx + 10):
-				if abs(x - cx) < level * 3:
-					img.set_pixel(x, y, Color(0.9, 0.7, 0.2, 0.8))
+		var stripe_y: int = cy + 16
+		for y in range(stripe_y, stripe_y + 6):
+			for x in range(cx - 12, cx + 12):
+				if abs(x - cx) < 5 + level * 2:
+					var stripe_alpha: float = 0.6 + 0.2 * (1.0 - abs(float(y - stripe_y - 3)) / 3.0)
+					img.set_pixel(x, y, Color(0.9, 0.7, 0.2, stripe_alpha))
+
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 
@@ -113,7 +212,7 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
 func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
-	var size: int = 16 if is_player else 12
+	var size: int = 8 if is_player else 12
 	var h: int = size * 3
 	var img := Image.create(size, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
@@ -123,7 +222,6 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 			var t: float = 1.0 - abs(y - cy) / float(cy)
 			var alpha: float = clamp(t * 1.5, 0.0, 1.0)
 			if is_player:
-				## 随等级变化：蓝→青→紫→金
 				var r: float
 				var g: float
 				var b: float
@@ -138,7 +236,6 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 				img.set_pixel(x, y, Color(r, g, b, alpha))
 			else:
 				img.set_pixel(x, y, Color(1.0, 0.3 + t * 0.3, 0.2, alpha))
-	## 等级3+ 添加核心亮线
 	if is_player and level >= 3:
 		for y in range(h):
 			var t: float = 1.0 - abs(y - cy) / float(cy)
