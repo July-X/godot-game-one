@@ -132,8 +132,9 @@ func take_damage(amount: int = 1) -> void:
 func die() -> void:
 	GameState.add_kill()
 	enemy_died.emit()
-	_spawn_explosion()
-	_try_spawn_powerup()
+	## 延迟生成特效和道具，避免物理查询冲突
+	call_deferred("_spawn_explosion")
+	call_deferred("_try_spawn_powerup")
 	queue_free()
 
 func _spawn_explosion() -> void:

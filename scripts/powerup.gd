@@ -48,7 +48,10 @@ func _bomb_effect() -> void:
 	var enemies := get_tree().get_nodes_in_group("enemies")
 	for e in enemies:
 		if e.has_method("die"):
-			e.die()
+			e.call_deferred("die")
 	SFX.play_explosion()
+	call_deferred("_spawn_shake")
+
+func _spawn_shake() -> void:
 	var screen_shake = preload("res://scenes/effects/screen_shake.tscn").instantiate()
 	get_tree().current_scene.add_child(screen_shake)
