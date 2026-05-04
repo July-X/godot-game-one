@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/boss.gd" id="1"]
 
@@ -8,14 +8,14 @@ offsets = PackedFloat32Array(0.0, 1.0)
 
 [sub_resource type="GradientTexture2D" id="2"]
 gradient = SubResource("1")
-width = 96
-height = 80
+width = 160
+height = 120
 fill = 1
 fill_from = Vector2(0.5, 1.0)
 fill_to = Vector2(0.5, 0.0)
 
 [sub_resource type="CircleShape2D" id="3"]
-radius = 32.0
+radius = 52.0
 
 [sub_resource type="Gradient" id="4"]
 colors = PackedColorArray(0.2, 0.6, 1.0, 0.6, 0.5, 0.8, 1.0, 0.0)
@@ -23,13 +23,19 @@ offsets = PackedFloat32Array(0.0, 1.0)
 
 [sub_resource type="GradientTexture2D" id="5"]
 gradient = SubResource("4")
-width = 80
-height = 80
+width = 140
+height = 140
 fill = 1
 fill_from = Vector2(0.5, 0.5)
 
 [sub_resource type="CircleShape2D" id="6"]
-radius = 26.0
+radius = 44.0
+
+[sub_resource type="RectangleShape2D" id="7"]
+size = Vector2(8, 120)
+
+[sub_resource type="RectangleShape2D" id="8"]
+size = Vector2(8, 120)
 
 [node name="Boss" type="CharacterBody2D"]
 collision_layer = 4
@@ -52,3 +58,9 @@ shape = SubResource("6")
 [node name="ShieldSprite" type="Sprite2D" parent="."]
 texture = SubResource("5")
 modulate = Color(0.3, 0.6, 1.0, 0.45)
+
+[node name="TurretL" type="Node2D" parent="."]
+position = Vector2(-30, -10)
+
+[node name="TurretR" type="Node2D" parent="."]
+position = Vector2(30, -10)

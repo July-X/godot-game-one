@@ -2,12 +2,13 @@ extends CharacterBody2D
 
 signal boss_died
 
-const MAX_SHIELD: int = 20
-const DODGE_RANGE: float = 200.0
-const BASE_SPEED: float = 55.0
-const CHASE_SPEED: float = 70.0
+const MAX_SHIELD: int = 80
+const DODGE_RANGE: float = 280.0
+const BASE_SPEED: float = 50.0
+const CHASE_SPEED: float = 65.0
+const SHIELD_REGEN_TIME: float = 3.0
 
-var _health: int = 30
+var _health: int = 50
 var _shield: int = MAX_SHIELD
 var _target: Node2D = null
 var _shoot_timer: float = 0.0
@@ -17,13 +18,22 @@ var _dodge_direction: float = 1.0
 var _dodge_timer: float = 0.0
 var _angry_mode: bool = false
 var _dead: bool = false
+var _shield_regen_timer: float = SHIELD_REGEN_TIME
+var _laser_angle: float = 0.0
+var _laser_active: bool = false
+var _laser_fire_timer: float = 0.0
+var _summon_timer: float = 0.0
+var _health_at_phase_change: bool = false
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
+var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _shield_sprite: Sprite2D = $ShieldSprite
+@onready var _turret_l: Node2D = $TurretL
+@onready var _turret_r: Node2D = $TurretR
 
 func _ready() -> void:
 	add_to_group("enemies")
@@ -42,7 +52,7 @@ func _physics_process(delta: float) -> void:
 	_handle_movement(delta)
 	_handle_dodge(delta)
 	_handle_attacks(delta)
-	_update_shield_visual(delta)
+	_update_shield(delta)
 	_update_angry_mode()
 	_shoot_timer -= delta
 	_pattern_timer += delta
@@ -64,57 +74,61 @@ func _handle_movement(delta: float) -> void:
 	var dist: float = global_position.distance_to(_target.global_position)
 	var speed: float = CHASE_SPEED if _angry_mode else BASE_SPEED
 
-	if dist > 350.0:
-		velocity = velocity.lerp(to_target * speed, 1.0 * delta)
-	elif dist < 180.0:
-		velocity = velocity.lerp(-to_target * speed * 0.6, 1.0 * delta)
+	if dist > 400.0:
+		velocity = velocity.lerp(to_target * speed, 0.8 * delta)
+	elif dist < 200.0:
+		velocity = velocity.lerp(-to_target * speed * 0.5, 0.8 * delta)
 	else:
 		var perp: Vector2 = Vector2(-to_target.y, to_target.x).normalized()
 		var strafe_dir: Vector2 = perp * _dodge_direction
-		velocity = velocity.lerp(strafe_dir * speed * 0.7, 1.0 * delta)
+		velocity = velocity.lerp(strafe_dir * speed * 0.6, 0.8 * delta)
 
 func _handle_dodge(delta: float) -> void:
 	_dodge_timer -= delta
 	if _dodge_timer <= 0:
 		_dodge_direction *= -1.0
-		_dodge_timer = randf_range(1.5, 3.0)
-
+		_dodge_timer = randf_range(1.0, 2.5)
 	dodge_nearby_bullets()
 
 func dodge_nearby_bullets() -> void:
 	if not _target or not is_instance_valid(_target):
 		return
 	var bullets := get_tree().get_nodes_in_group("player_bullets")
+	var dodge_force: Vector2 = Vector2.ZERO
 	for bullet in bullets:
 		if not bullet.is_inside_tree():
 			continue
 		var to_bullet: Vector2 = global_position.direction_to(bullet.global_position)
 		var dist: float = global_position.distance_to(bullet.global_position)
 		if dist < DODGE_RANGE:
+			var intensity: float = 1.0 - dist / DODGE_RANGE
 			var dodge_dir: Vector2 = Vector2(-to_bullet.y, to_bullet.x).normalized()
-			velocity += dodge_dir * 200.0 * get_process_delta_time()
-			_dodge_timer = randf_range(0.3, 0.8)
+			dodge_force += dodge_dir * intensity * 300.0
+	if dodge_force != Vector2.ZERO:
+		velocity += dodge_force * get_process_delta_time()
 
 func _handle_attacks(delta: float) -> void:
 	if _shoot_timer <= 0.0 and _target and is_instance_valid(_target):
 		_shoot_timer = _get_fire_rate()
 		_pattern_timer = 0.0
-		_attack_pattern = randi() % 3
+		_attack_pattern = randi() % 5
 		match _attack_pattern:
 			0: _attack_spread()
 			1: _attack_targeted_burst()
 			2: _attack_ring()
+			3: _attack_laser_sweep()
+			4: _attack_summon_minions()
 
 func _get_fire_rate() -> float:
-	var base: float = 1.8 if not _angry_mode else 1.0
+	var base: float = 1.5 if not _angry_mode else 0.8
 	return base + randf_range(-0.2, 0.3)
 
 func _attack_spread() -> void:
 	if not _target or not is_instance_valid(_target):
 		return
 	var angle: float = global_position.angle_to_point(_target.global_position)
-	var count: int = 5 if not _angry_mode else 7
-	var spread_angle: float = deg_to_rad(35.0) if not _angry_mode else deg_to_rad(50.0)
+	var count: int = 7 if not _angry_mode else 11
+	var spread_angle: float = deg_to_rad(45.0) if not _angry_mode else deg_to_rad(70.0)
 	var start_a: float = angle - spread_angle * 0.5
 	var step: float = spread_angle / max(count - 1, 1)
 	for i in range(count):
@@ -127,10 +141,10 @@ func _attack_spread() -> void:
 func _attack_targeted_burst() -> void:
 	if not _target or not is_instance_valid(_target):
 		return
-	var burst_count: int = 4 if not _angry_mode else 6
+	var burst_count: int = 6 if not _angry_mode else 10
 	for i in range(burst_count):
 		var angle: float = global_position.angle_to_point(_target.global_position)
-		var spread_offset: float = deg_to_rad(randf_range(-6.0, 6.0))
+		var spread_offset: float = deg_to_rad(randf_range(-8.0, 8.0))
 		var a: float = angle + spread_offset
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
@@ -138,18 +152,62 @@ func _attack_targeted_burst() -> void:
 	SFX.play_shoot()
 
 func _attack_ring() -> void:
-	var count: int = 8 if not _angry_mode else 12
-	for i in range(count):
-		var a: float = float(i) * TAU / float(count)
-		var bullet := _bullet_scene.instantiate()
-		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 1, false)
+	var count: int = 12 if not _angry_mode else 18
+	var rings: int = 2 if _angry_mode else 1
+	for ring in range(rings):
+		var offset: float = float(ring) * TAU / float(count) / 2.0
+		for i in range(count):
+			var a: float = float(i) * TAU / float(count) + offset
+			var bullet := _bullet_scene.instantiate()
+			get_tree().current_scene.add_child(bullet)
+			bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 1, false)
 	SFX.play_explosion()
 
-func _update_angry_mode() -> void:
-	_angry_mode = _health <= 15 and _shield <= 0
+func _attack_laser_sweep() -> void:
+	if not _target or not is_instance_valid(_target):
+		return
+	var count: int = 12 if not _angry_mode else 18
+	var spread: float = deg_to_rad(120.0) if not _angry_mode else deg_to_rad(180.0)
+	var angle: float = global_position.angle_to_point(_target.global_position) - spread * 0.5
+	var step: float = spread / float(count)
+	for i in range(count):
+		var a: float = angle + step * i
+		var bullet := _bullet_scene.instantiate()
+		get_tree().current_scene.add_child(bullet)
+		bullet.setup(global_position + Vector2.from_angle(a) * 32, a, 2, false)
 
-func _update_shield_visual(delta: float) -> void:
+func _attack_summon_minions() -> void:
+	var count: int = 2 if not _angry_mode else 4
+	for i in range(count):
+		var enemy := _enemy_scene.instantiate()
+		enemy.position = global_position + Vector2(randf_range(-40, 40), randf_range(-40, 40))
+		enemy.enemy_type = randi() % 3
+		enemy.health = 3
+		enemy.move_speed = 50.0
+		enemy.shoot_cooldown = 1.5
+		enemy.drop_chance = 0.0
+		if _target and is_instance_valid(_target):
+			enemy.set_target(_target)
+		enemy.enemy_died.connect(_on_minion_died)
+		get_tree().current_scene.add_child(enemy)
+
+func _on_minion_died() -> void:
+	pass
+
+func _update_angry_mode() -> void:
+	_angry_mode = _health <= 25 and _shield <= 0
+
+func _update_shield(delta: float) -> void:
+	if _dead:
+		return
+	if _shield <= 0 and _health > 0:
+		_shield_regen_timer -= delta
+		if _shield_regen_timer <= 0:
+			_shield = min(_shield + 5, MAX_SHIELD)
+			_shield_regen_timer = SHIELD_REGEN_TIME
+			_shield_sprite.visible = true
+			var tween := create_tween()
+			tween.tween_property(_shield_sprite, "modulate:a", 0.45, 0.3)
 	if _shield > 0:
 		_shield_sprite.visible = true
 		var alpha: float = 0.25 + 0.25 * abs(sin(Time.get_ticks_msec() * 0.003))
@@ -186,38 +244,39 @@ func _spawn_shield_hit_effect() -> void:
 
 func _shield_break_effect() -> void:
 	SFX.play_explosion()
-	for i in range(4):
+	for i in range(6):
 		var exp = _explosion_scene.instantiate()
 		get_tree().current_scene.add_child(exp)
-		exp.global_position = global_position + Vector2(randf_range(-20, 20), randf_range(-20, 20))
+		exp.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
 	_shield_sprite.visible = false
+	_shield_regen_timer = SHIELD_REGEN_TIME
 
 func _die() -> void:
 	_dead = true
 	boss_died.emit()
 	GameState.add_kill()
-	GameState.add_score(500 * GameState.level)
+	GameState.add_score(1000 * GameState.level)
 	call_deferred("_spawn_explosion")
 	call_deferred("_spawn_rewards")
 	queue_free()
 
 func _spawn_explosion() -> void:
-	for i in range(6):
+	for i in range(10):
 		var exp = _explosion_scene.instantiate()
 		get_tree().current_scene.add_child(exp)
-		exp.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
+		exp.global_position = global_position + Vector2(randf_range(-50, 50), randf_range(-50, 50))
 	SFX.play_explosion()
 
 func _spawn_rewards() -> void:
-	for type in ["heal", "bomb", "spread", "speed"]:
+	for type in ["heal", "bomb", "spread", "speed", "heal", "power"]:
 		var pu = _powerup_scene.instantiate()
 		get_tree().current_scene.add_child(pu)
-		pu.global_position = global_position + Vector2(randf_range(-20, 20), randf_range(-20, 20))
+		pu.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
 		pu.setup(type)
 
 func _screen_clamp() -> void:
 	var screen := get_viewport_rect().size
-	var margin: float = 40.0
+	var margin: float = 60.0
 	if global_position.x < margin:
 		global_position.x = margin
 		velocity.x = abs(velocity.x) * 0.5

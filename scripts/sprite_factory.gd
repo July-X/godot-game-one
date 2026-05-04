@@ -211,64 +211,114 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 					if dx * dx + dy * dy <= (r / 2) * (r / 2):
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
+func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var cx: int = size / 2
+	var cy: int = size / 2
+	var base_r: float = randf_range(0.25, 0.45)
+	var base_g: float = randf_range(0.15, 0.25)
+	var base_b: float = randf_range(0.1, 0.18)
+	for y in range(size):
+		for x in range(size):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			var max_r: float = float(size) / 2.0 * (0.7 + randf_range(-0.1, 0.1))
+			if d < max_r:
+				var noise: float = sin(x * 0.3 + y * 0.2) * 0.15 + sin(x * 0.5 - y * 0.4) * 0.1
+				var t: float = d / max_r
+				var r: float = base_r + t * 0.2 + noise * 0.1
+				var g: float = base_g + t * 0.1 + noise * 0.08
+				var b: float = base_b + t * 0.05 + noise * 0.05
+				var a: float = 1.0 - t * 0.3
+				if d > max_r - 2.0:
+					a = 1.0 - (d - (max_r - 2.0)) / 2.0
+				img.set_pixel(x, y, Color(r, g, b, a))
+	## 陨石坑
+	for i in range(size / 8):
+		var cx2: int = randi_range(size / 4, size * 3 / 4)
+		var cy2: int = randi_range(size / 4, size * 3 / 4)
+		var cr: int = randi_range(2, size / 6)
+		for dy in range(-cr, cr + 1):
+			for dx in range(-cr, cr + 1):
+				var d2: float = sqrt(float(dx * dx + dy * dy))
+				if d2 < cr:
+					var px: int = cx2 + dx
+					var py: int = cy2 + dy
+					if px >= 0 and px < size and py >= 0 and py < size:
+						var depth: float = 1.0 - d2 / float(cr)
+						img.set_pixel(px, py, Color(base_r * 0.5, base_g * 0.5, base_b * 0.5, depth * 0.7))
+	sprite.texture = ImageTexture.create_from_image(img)
+
 func create_boss_sprite() -> ImageTexture:
-	var w: int = 96
-	var h: int = 80
+	var w: int = 160
+	var h: int = 120
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var cx: int = w / 2
 	var cy: int = h / 2
 	## 主体机身（深红）
-	for y in range(12, h - 8):
-		for x in range(8, w - 8):
+	for y in range(18, h - 12):
+		for x in range(12, w - 12):
 			var body_w: float = 1.0 - abs(float(x - cx)) / (w * 0.38)
 			if body_w > 0:
-				var t: float = float(y - 12) / float(h - 20)
+				var t: float = float(y - 18) / float(h - 30)
 				var r: float = 0.45 + t * 0.2
 				var g: float = 0.08 + t * 0.12
 				var b: float = 0.05 + t * 0.08
 				img.set_pixel(x, y, Color(r, g, b, body_w))
 	## 机翼（宽大后掠翼）
-	for y in range(cy - 8, cy + 22):
+	for y in range(cy - 14, cy + 30):
 		for x in range(0, w):
-			var span: int = int(28 + (cy + 18 - y) * 1.8)
+			var span: int = int(42 + (cy + 26 - y) * 1.8)
 			if span > 0 and (x < cx - span or x > cx + span):
-				var alpha: float = min(abs(x - cx) - span, 12.0) / 12.0
+				var alpha: float = min(abs(x - cx) - span, 16.0) / 16.0
 				if alpha > 0:
 					img.set_pixel(x, y, Color(0.35, 0.06, 0.04, alpha))
 	## 驾驶舱（暗色弧面）
-	for y in range(cy - 14, cy + 2):
-		for x in range(cx - 10, cx + 10):
-			var dx: float = float(x - cx) / 9.0
-			var dy: float = float(y - (cy - 6)) / 8.0
+	for y in range(cy - 20, cy + 4):
+		for x in range(cx - 14, cx + 14):
+			var dx: float = float(x - cx) / 13.0
+			var dy: float = float(y - (cy - 8)) / 12.0
 			if dx * dx + dy * dy < 1.0:
 				var depth: float = dx * dx + dy * dy
 				img.set_pixel(x, y, Color(0.15, 0.4, 0.5, 0.7 - depth * 0.3))
-	## 武器炮管
+	## 武器炮管（加粗）
 	for i in [-1, 1]:
-		for dy in range(0, 12):
-			var px: int = cx + i * 14
-			var py: int = cy - 4 + dy
+		for dy in range(0, 18):
+			var px: int = cx + i * 22
+			var py: int = cy - 6 + dy
 			if py >= 0 and py < h:
 				img.set_pixel(px, py, Color(0.5, 0.5, 0.55, 0.9))
 				img.set_pixel(px + i, py, Color(0.4, 0.4, 0.45, 0.7))
-	## 引擎喷口
+				img.set_pixel(px + i * 2, py, Color(0.3, 0.3, 0.35, 0.5))
+	## 引擎喷口（3个大喷口）
 	for i in range(3):
-		var px: int = cx - 8 + i * 8
-		for y in range(h - 12, h - 2):
-			for x in range(px - 2, px + 3):
+		var px: int = cx - 12 + i * 12
+		for y in range(h - 18, h - 4):
+			for x in range(px - 3, px + 4):
 				if x >= 0 and x < w:
-					var t: float = float(y - (h - 12)) / 10.0
+					var t: float = float(y - (h - 18)) / 14.0
 					img.set_pixel(x, y, Color(1.0, 0.6 - t * 0.3, 0.1, 1.0 - t * 0.4))
 	## 护盾发生器环（装饰）
-	for y in range(4, h - 4):
-		for x in range(4, w - 4):
+	for y in range(6, h - 6):
+		for x in range(6, w - 6):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			if d > 35.0 and d < 38.0:
-				var a: float = 0.2 * (1.0 - abs(d - 36.5) / 1.5)
+			if d > 55.0 and d < 59.0:
+				var a: float = 0.2 * (1.0 - abs(d - 57.0) / 2.0)
 				img.set_pixel(x, y, Color(0.3, 0.6, 1.0, a))
+	## 装甲板细节
+	for i in range(3):
+		var lx: int = cx - 30 + i * 30
+		for dy in range(-14, 14):
+			var px: int = lx
+			var py: int = cy + dy
+			if px >= 0 and px < w and py >= 0 and py < h:
+				if abs(dy) % 8 < 2:
+					img.set_pixel(px, py, Color(0.2, 0.2, 0.25, 0.4))
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 

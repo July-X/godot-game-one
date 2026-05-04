@@ -3,6 +3,7 @@ extends Node2D
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _boss_scene = preload("res://scenes/entities/boss.tscn")
+var _asteroid_scene = preload("res://scenes/entities/asteroid.tscn")
 var _hud_scene = preload("res://scenes/ui/hud.tscn")
 
 var _player: Node2D = null
@@ -10,6 +11,7 @@ var _hud: Node = null
 var _boss: Node2D = null
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
+var _asteroid_timer: float = 0.0
 var _stars: Array[Node2D] = []
 
 @onready var _bg_color: ColorRect = $BgColor
@@ -178,6 +180,12 @@ func _process(delta: float) -> void:
 	if _boss != null and is_instance_valid(_boss):
 		return
 
+	## 小行星生成
+	_asteroid_timer -= delta
+	if _asteroid_timer <= 0:
+		_spawn_asteroid()
+		_asteroid_timer = randf_range(2.0, 5.0)
+
 	## 敌人生成
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
@@ -213,6 +221,15 @@ func _spawn_enemy() -> void:
 
 func _on_enemy_died() -> void:
 	pass
+
+func _spawn_asteroid() -> void:
+	var asteroid = _asteroid_scene.instantiate()
+	var side := randi() % 2
+	var screen := get_viewport_rect().size
+	match side:
+		0: asteroid.position = Vector2(randf_range(40, screen.x - 40), -30)
+		1: asteroid.position = Vector2(randf_range(40, screen.x - 40), screen.y + 30)
+	add_child(asteroid)
 
 func _on_boss_spawn_requested() -> void:
 	if _boss != null and is_instance_valid(_boss):
