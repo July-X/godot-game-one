@@ -45,13 +45,13 @@ func _update_appearance() -> void:
 		_engine_glow.scale = Vector2(1.0 + level * 0.15, 1.0 + level * 0.15)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and GameState.run_state == "running":
+	if event is InputEventMouseMotion and GameState.game_running:
 		var target_yaw: float = -event.relative.x * mouse_sensitivity
 		var target_pitch: float = -event.relative.y * mouse_sensitivity
 		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
 		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and GameState.run_state == "running":
+		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and GameState.game_running:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _physics_process(delta: float) -> void:
