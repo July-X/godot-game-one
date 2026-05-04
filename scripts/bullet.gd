@@ -84,6 +84,8 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 func _on_body_entered(body: Node2D) -> void:
+	if not GameState.game_running:
+		return
 	if _is_player_bullet:
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
 			body.take_damage(_damage)
@@ -96,6 +98,8 @@ func _on_body_entered(body: Node2D) -> void:
 			queue_free()
 
 func _on_area_entered(area: Area2D) -> void:
+	if not GameState.game_running:
+		return
 	if _is_player_bullet:
 		if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
 			area.get_parent().take_damage(_damage)

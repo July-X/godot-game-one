@@ -30,7 +30,7 @@ func _ready() -> void:
 
 func _create_parallax_background() -> void:
 	if _bg_color:
-		_bg_color.color = Color(0.005, 0.008, 0.05, 1.0)
+		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
 		_bg_color.z_index = -100
 
 	var far_layer := {nodes = [], speed = 5.0}
