@@ -30,17 +30,17 @@ func _on_health_changed(current: int, maximum: int) -> void:
 
 func _on_game_over(final_score: int, final_level: int) -> void:
 	_game_over_panel.visible = true
-	_final_score_label.text = "SCORE: %d" % final_score
-	_final_level_label.text = "LEVEL: %d" % final_level
+	_final_score_label.text = "得分: %d" % final_score
+	_final_level_label.text = "等级: %d" % final_level
 
 func _on_powerup_collected(type: String) -> void:
 	_update_powerup_display()
 
 func _update_score(score: int) -> void:
-	_score_label.text = "SCORE: %d" % score
+	_score_label.text = "得分: %d" % score
 
 func _update_level(level: int) -> void:
-	_level_label.text = "LEVEL %d" % level
+	_level_label.text = "等级 %d" % level
 
 func _update_health(current: int, maximum: int) -> void:
 	if _health_bar:
@@ -51,9 +51,9 @@ func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
 		child.queue_free()
 	var labels := {
-		"spread": {"color": Color(0.3, 1.0, 0.4, 1.0), "name": "W", "bg": Color(0.0, 0.3, 0.05, 0.4)},
-		"speed": {"color": Color(0.4, 0.7, 1.0, 1.0), "name": "F", "bg": Color(0.0, 0.1, 0.3, 0.4)},
-		"power": {"color": Color(1.0, 0.4, 0.3, 1.0), "name": "P", "bg": Color(0.3, 0.05, 0.0, 0.4)},
+		"spread": {"color": Color(0.3, 1.0, 0.4, 1.0), "name": "扩散"},
+		"speed": {"color": Color(0.4, 0.7, 1.0, 1.0), "name": "速射"},
+		"power": {"color": Color(1.0, 0.4, 0.3, 1.0), "name": "威力"},
 	}
 	for type in labels:
 		var level: int = 0
@@ -66,7 +66,7 @@ func _update_powerup_display() -> void:
 			var label := Label.new()
 			label.text = labels[type].name + ":"
 			label.add_theme_color_override("font_color", labels[type].color)
-			label.add_theme_font_size_override("font_size", 14)
+			label.add_theme_font_size_override("font_size", 13)
 			container.add_child(label)
 			var bar := ProgressBar.new()
 			bar.custom_minimum_size = Vector2(60, 14)

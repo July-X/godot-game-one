@@ -251,7 +251,7 @@ func _spawn_boss() -> void:
 
 func _show_boss_warning() -> void:
 	var warning := Label.new()
-	warning.text = "WARNING: BOSS INCOMING"
+	warning.text = "警告: BOSS 来袭"
 	warning.add_theme_font_size_override("font_size", 32)
 	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.1, 1.0))
 	warning.horizontal_alignment = 1

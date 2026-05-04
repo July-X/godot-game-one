@@ -14,7 +14,7 @@ func _ready() -> void:
 	connect("body_entered", _on_body_entered)
 	connect("area_entered", _on_area_entered)
 
-func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1) -> void:
+func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0) -> void:
 	global_position = pos
 	_direction = Vector2.from_angle(angle)
 	rotation = angle + PI * 0.5
@@ -22,10 +22,9 @@ func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: in
 	_is_player_bullet = is_player
 	_has_bounced = false
 	_level = level
+	_speed = speed
 	if is_player:
 		add_to_group("player_bullets")
-	if not is_player:
-		_speed = 700.0
 	_apply_bullet_appearance()
 
 func _exit_tree() -> void:
@@ -45,39 +44,40 @@ func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta
 	_lifetime -= delta
 
-	## 屏幕边缘反弹一次
-	if not _has_bounced:
-		var screen := get_viewport_rect().size
-		var margin: float = 10.0
-		var bounced: bool = false
-		if global_position.x < margin:
-			global_position.x = margin
-			_direction.x = abs(_direction.x)
-			bounced = true
-		elif global_position.x > screen.x - margin:
-			global_position.x = screen.x - margin
-			_direction.x = -abs(_direction.x)
-			bounced = true
-		if global_position.y < margin:
-			global_position.y = margin
-			_direction.y = abs(_direction.y)
-			bounced = true
-		elif global_position.y > screen.y - margin:
-			global_position.y = screen.y - margin
-			_direction.y = -abs(_direction.y)
-			bounced = true
-		if bounced:
-			_has_bounced = true
-			_speed *= 1.3
-			_direction = _direction.normalized()
-			rotation = _direction.angle() + PI * 0.5
-			if _is_player_bullet:
+	if _is_player_bullet:
+		if not _has_bounced:
+			var screen := get_viewport_rect().size
+			var margin: float = 10.0
+			var bounced: bool = false
+			if global_position.x < margin:
+				global_position.x = margin
+				_direction.x = abs(_direction.x)
+				bounced = true
+			elif global_position.x > screen.x - margin:
+				global_position.x = screen.x - margin
+				_direction.x = -abs(_direction.x)
+				bounced = true
+			if global_position.y < margin:
+				global_position.y = margin
+				_direction.y = abs(_direction.y)
+				bounced = true
+			elif global_position.y > screen.y - margin:
+				global_position.y = screen.y - margin
+				_direction.y = -abs(_direction.y)
+				bounced = true
+			if bounced:
+				_has_bounced = true
+				_speed *= 1.3
+				_direction = _direction.normalized()
+				rotation = _direction.angle() + PI * 0.5
 				_sprite.modulate = Color(1.0, 0.5, 0.2, 1.0)
-			else:
-				_sprite.modulate = Color(1.0, 1.0, 0.3, 1.0)
+		else:
+			var screen2 := get_viewport_rect().size
+			if global_position.x < -20 or global_position.x > screen2.x + 20 or global_position.y < -20 or global_position.y > screen2.y + 20:
+				queue_free()
 	else:
-		var screen2 := get_viewport_rect().size
-		if global_position.x < -20 or global_position.x > screen2.x + 20 or global_position.y < -20 or global_position.y > screen2.y + 20:
+		var screen3 := get_viewport_rect().size
+		if global_position.x < -20 or global_position.x > screen3.x + 20 or global_position.y < -20 or global_position.y > screen3.y + 20:
 			queue_free()
 
 	if _lifetime <= 0:
