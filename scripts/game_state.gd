@@ -70,7 +70,7 @@ func collect_powerup(type: String) -> void:
 		"power":
 			bullet_power_level = min(bullet_power_level + 1, 5)
 		"heal":
-			heal(1)
+			heal(max(ceil(max_health * 0.1), 1))
 		"bomb":
 			## 清屏炸弹，由主场景处理
 			pass

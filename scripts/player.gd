@@ -23,6 +23,7 @@ var _pickup_radius: float = 280.0
 @onready var _muzzle_flash: Sprite2D = $MuzzleFlash
 @onready var _pickup_area: Area2D = $PickupArea
 @onready var _engine_glow: Sprite2D = $EngineGlow
+@onready var _health_bar: ProgressBar = $HealthBar
 
 func _ready() -> void:
 	_muzzle_flash.visible = false
@@ -53,7 +54,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
 		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and GameState.game_running:
+		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _physics_process(delta: float) -> void:
@@ -123,6 +124,11 @@ func _physics_process(delta: float) -> void:
 	else:
 		_sprite.modulate.a = 1.0
 
+	## 更新血条
+	if _health_bar:
+		_health_bar.max_value = GameState.max_health
+		_health_bar.value = GameState.current_health
+
 func _update_walk_animation() -> void:
 	var swing: float = sin(_walk_cycle) * 0.02
 	var bounce: float = abs(sin(_walk_cycle)) * 0.01
@@ -177,10 +183,21 @@ func take_damage(amount: int = 1) -> void:
 	GameState.take_damage(amount)
 	_invincible_timer = 1.0
 	_spawn_hit_effect()
+	_play_hit_animation()
 	if GameState.current_health <= 0:
 		_spawn_explosion()
 		died.emit()
 		queue_free()
+
+func _play_hit_animation() -> void:
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(_sprite, "modulate", Color(3.0, 3.0, 3.0, 1.0), 0.04)
+	tween.tween_property(_sprite, "scale", Vector2(1.2, 1.2), 0.04)
+	tween.tween_callback(func():
+		var recover := create_tween().set_parallel(true)
+		recover.tween_property(_sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
+		recover.tween_property(_sprite, "scale", Vector2(1.0, 1.0), 0.12)
+	)
 
 func _spawn_hit_effect() -> void:
 	var hit = preload("res://scenes/effects/hit_effect.tscn").instantiate()

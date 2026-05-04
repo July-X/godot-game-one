@@ -19,7 +19,7 @@ func setup(type: String) -> void:
 		"power":
 			_sprite.modulate = Color(1.0, 0.3, 0.2)
 		"heal":
-			_sprite.modulate = Color(0.2, 1.0, 0.4)
+			_sprite.modulate = Color(1.0, 0.25, 0.2)
 		"bomb":
 			_sprite.modulate = Color(1.0, 0.8, 0.2)
 
