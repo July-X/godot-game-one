@@ -187,10 +187,13 @@ func _on_pickup_body_entered(body: Node2D) -> void:
 	if body.is_in_group("powerups") and body.has_method("collect"):
 		body.collect()
 
-func take_damage(amount: int = 1) -> void:
+func take_damage(amount: float = 1.0) -> void:
 	if _invincible_timer > 0:
 		return
-	GameState.take_damage(amount)
+	var actual_damage: int = amount as int
+	if amount > 0.0 and amount < 1.0 and randf() < amount:
+		actual_damage = 1
+	GameState.take_damage(actual_damage)
 	_invincible_timer = 1.0
 	_spawn_hit_effect()
 	_play_hit_animation()

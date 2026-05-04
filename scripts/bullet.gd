@@ -2,7 +2,7 @@ extends Area2D
 
 var _direction: Vector2 = Vector2.ZERO
 var _speed: float = 600.0
-var _damage: int = 1
+var _damage: float = 1.0
 var _is_player_bullet: bool = true
 var _lifetime: float = 4.0
 var _has_bounced: bool = false
@@ -14,7 +14,7 @@ func _ready() -> void:
 	connect("body_entered", _on_body_entered)
 	connect("area_entered", _on_area_entered)
 
-func setup(pos: Vector2, angle: float, damage: int, is_player: bool, level: int = 1) -> void:
+func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1) -> void:
 	global_position = pos
 	_direction = Vector2.from_angle(angle)
 	rotation = angle + PI * 0.5
@@ -25,7 +25,7 @@ func setup(pos: Vector2, angle: float, damage: int, is_player: bool, level: int 
 	if is_player:
 		add_to_group("player_bullets")
 	if not is_player:
-		_speed = 780.0
+		_speed = 700.0
 	_apply_bullet_appearance()
 
 func _exit_tree() -> void:
