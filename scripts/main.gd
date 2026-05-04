@@ -22,11 +22,12 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 
 func _create_starfield() -> void:
-	## 深蓝紫色底色
+	## 深蓝紫色底色 — 确保铺满全屏
 	if _bg_color:
 		_bg_color.color = Color(0.06, 0.08, 0.18, 1.0)
-		_bg_color.size = Vector2(1280, 720)
-		_bg_color.position = Vector2(0, 0)
+		_bg_color.size = Vector2(1480, 920)
+		_bg_color.position = Vector2(-100, -100)
+		_bg_color.z_index = -100
 	## 大星星（6-12像素，非常亮）
 	for i in range(80):
 		var star := Sprite2D.new()
