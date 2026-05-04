@@ -8,7 +8,10 @@ var _player: Node2D = null
 var _hud: Node = null
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
-var _enemies_alive: int = 0
+var _bg_scroll: float = 0.0
+
+@onready var _bg: Sprite2D = $Background
+@onready var _bg2: Sprite2D = $Background2
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -16,13 +19,17 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_hud()
 	GameState.reset_game()
+	GameState.level_changed.connect(_on_level_up)
 
 func _create_starfield() -> void:
-	
-	var bg := Sprite2D.new()
-	bg.texture = SpriteFactory.create_star_field(1280, 720, 300)
-	bg.z_index = -100
-	add_child(bg)
+	## 双层视差星空
+	if _bg:
+		_bg.texture = SpriteFactory.create_star_field(1280, 720, 400)
+		_bg.position = Vector2(0, 0)
+	if _bg2:
+		_bg2.texture = SpriteFactory.create_star_field(1280, 720, 200)
+		_bg2.position = Vector2(0, 0)
+		_bg2.modulate = Color(0.6, 0.6, 0.8, 0.5)
 
 func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
@@ -37,17 +44,29 @@ func _spawn_hud() -> void:
 func _process(delta: float) -> void:
 	if not GameState.game_running:
 		return
+
+	## 星空滚动
+	_bg_scroll += delta * 30.0
+	if _bg:
+		_bg.region_rect.position.y = fmod(_bg_scroll, 720.0)
+	if _bg2:
+		_bg2.region_rect.position.y = fmod(_bg_scroll * 0.5, 720.0)
+
+	## 敌人生成
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
 		_spawn_enemy()
-		_enemy_spawn_timer = max(2.0 - GameState.level * 0.1, 0.4)
+		_enemy_spawn_timer = max(1.8 - GameState.level * 0.08, 0.3)
+
+	## 难度递增
 	_difficulty_timer += delta
-	if _difficulty_timer > 15.0:
+	if _difficulty_timer > 12.0:
 		_difficulty_timer = 0.0
 		_spawn_enemy()
 
 func _spawn_enemy() -> void:
 	var enemy = _enemy_scene.instantiate()
+	## 随机屏幕边缘
 	var side := randi() % 4
 	var pos := Vector2.ZERO
 	var screen := get_viewport_rect().size
@@ -57,20 +76,26 @@ func _spawn_enemy() -> void:
 		2: pos = Vector2(-30, randf_range(0, screen.y))
 		3: pos = Vector2(screen.x + 30, randf_range(0, screen.y))
 	enemy.position = pos
-	enemy.health = 1 + GameState.level / 3
-	enemy.move_speed = 50.0 + GameState.level * 8.0
-	enemy.shoot_cooldown = max(2.5 - GameState.level * 0.15, 0.8)
+	## 随机敌人类型
+	var enemy_type: int = randi() % 3
+	enemy.enemy_type = enemy_type
+	enemy.health = 1 + GameState.level / 2 + enemy_type
+	enemy.move_speed = 40.0 + GameState.level * 6.0 + enemy_type * 10.0
+	enemy.shoot_cooldown = max(2.0 - GameState.level * 0.12, 0.6)
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	enemy.enemy_died.connect(_on_enemy_died)
 	add_child(enemy)
-	_enemies_alive += 1
 
 func _on_enemy_died() -> void:
-	_enemies_alive = max(_enemies_alive - 1, 0)
+	pass
 
 func _on_player_died() -> void:
 	GameState.game_running = false
+
+func _on_level_up(_new_level: int) -> void:
+	if _player and _player.has_method("on_level_up"):
+		_player.on_level_up()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.keycode == KEY_R and not GameState.game_running:
@@ -85,10 +110,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		else:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-		set_meta("fs_latch", true)
-	else:
-		if has_meta("fs_latch"):
-			remove_meta("fs_latch")
 
 func _restart() -> void:
 	get_tree().reload_current_scene()
