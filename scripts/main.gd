@@ -224,11 +224,13 @@ func _on_enemy_died() -> void:
 
 func _spawn_asteroid() -> void:
 	var asteroid = _asteroid_scene.instantiate()
-	var side := randi() % 2
+	var side := randi() % 4
 	var screen := get_viewport_rect().size
 	match side:
-		0: asteroid.position = Vector2(randf_range(40, screen.x - 40), -30)
-		1: asteroid.position = Vector2(randf_range(40, screen.x - 40), screen.y + 30)
+		0: asteroid.position = Vector2(randf_range(60, screen.x - 60), -40)
+		1: asteroid.position = Vector2(randf_range(60, screen.x - 60), screen.y + 40)
+		2: asteroid.position = Vector2(-40, randf_range(60, screen.y - 60))
+		3: asteroid.position = Vector2(screen.x + 40, randf_range(60, screen.y - 60))
 	add_child(asteroid)
 
 func _on_boss_spawn_requested() -> void:

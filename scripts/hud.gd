@@ -51,9 +51,9 @@ func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
 		child.queue_free()
 	var labels := {
-		"spread": {"color": Color(0.2, 0.8, 0.3), "name": "W"},
-		"speed": {"color": Color(0.2, 0.5, 1.0), "name": "F"},
-		"power": {"color": Color(1.0, 0.3, 0.2), "name": "P"},
+		"spread": {"color": Color(0.3, 1.0, 0.4, 1.0), "name": "W", "bg": Color(0.0, 0.3, 0.05, 0.4)},
+		"speed": {"color": Color(0.4, 0.7, 1.0, 1.0), "name": "F", "bg": Color(0.0, 0.1, 0.3, 0.4)},
+		"power": {"color": Color(1.0, 0.4, 0.3, 1.0), "name": "P", "bg": Color(0.3, 0.05, 0.0, 0.4)},
 	}
 	for type in labels:
 		var level: int = 0
@@ -66,10 +66,10 @@ func _update_powerup_display() -> void:
 			var label := Label.new()
 			label.text = labels[type].name + ":"
 			label.add_theme_color_override("font_color", labels[type].color)
-			label.add_theme_font_size_override("font_size", 12)
+			label.add_theme_font_size_override("font_size", 14)
 			container.add_child(label)
 			var bar := ProgressBar.new()
-			bar.custom_minimum_size = Vector2(50, 10)
+			bar.custom_minimum_size = Vector2(60, 14)
 			bar.max_value = 5
 			bar.value = level
 			bar.modulate = labels[type].color

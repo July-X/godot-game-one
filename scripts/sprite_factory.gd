@@ -212,51 +212,51 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
 func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
-	var img := Image.create(size + 6, size + 6, false, Image.FORMAT_RGBA8)
+	var img := Image.create(size + 8, size + 8, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = (size + 6) / 2
-	var cy: int = (size + 6) / 2
-	var base_r: float = randf_range(0.35, 0.55)
-	var base_g: float = randf_range(0.25, 0.35)
-	var base_b: float = randf_range(0.18, 0.28)
+	var cx: int = (size + 8) / 2
+	var cy: int = (size + 8) / 2
+	var base_r: float = randf_range(0.5, 0.7)
+	var base_g: float = randf_range(0.35, 0.5)
+	var base_b: float = randf_range(0.2, 0.35)
 	var max_r: float = float(size) / 2.0
-	## 发光外圈
-	for y in range(size + 6):
-		for x in range(size + 6):
+	## 强发光外圈（橙色辉光，更宽更亮）
+	for y in range(size + 8):
+		for x in range(size + 8):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			if d > max_r and d < max_r + 4.0:
-				var glow_a: float = (1.0 - (d - max_r) / 4.0) * 0.4
-				img.set_pixel(x, y, Color(1.0, 0.8, 0.4, glow_a))
-	## 主体
-	for y in range(size + 6):
-		for x in range(size + 6):
+			if d > max_r and d < max_r + 6.0:
+				var glow_a: float = (1.0 - (d - max_r) / 6.0) * 0.55
+				img.set_pixel(x, y, Color(1.0, 0.7, 0.2, glow_a))
+	## 主体（更亮）
+	for y in range(size + 8):
+		for x in range(size + 8):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			var body_r: float = max_r * (0.7 + randf_range(-0.1, 0.1))
+			var body_r: float = max_r * (0.75 + randf_range(-0.1, 0.1))
 			if d < body_r:
-				var noise: float = sin(x * 0.3 + y * 0.2) * 0.15 + sin(x * 0.5 - y * 0.4) * 0.1
+				var noise: float = sin(x * 0.3 + y * 0.2) * 0.12 + sin(x * 0.5 - y * 0.4) * 0.08
 				var t: float = d / body_r
-				var r: float = base_r + t * 0.2 + noise * 0.1
-				var g: float = base_g + t * 0.1 + noise * 0.08
-				var b: float = base_b + t * 0.05 + noise * 0.05
-				var a: float = 1.0 - t * 0.2
+				var r: float = base_r + t * 0.15 + noise * 0.08
+				var g: float = base_g + t * 0.08 + noise * 0.06
+				var b: float = base_b + t * 0.05 + noise * 0.04
+				var a: float = 1.0 - t * 0.15
 				if d > body_r - 2.0:
 					a = 1.0 - (d - (body_r - 2.0)) / 2.0
 				img.set_pixel(x, y, Color(r, g, b, a))
 	## 高光边缘
-	for y in range(size + 6):
-		for x in range(size + 6):
+	for y in range(size + 8):
+		for x in range(size + 8):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			if d > max_r * 0.85 and d < max_r:
-				var highlight_a: float = (1.0 - (max_r - d) / (max_r * 0.15)) * 0.5
-				img.set_pixel(x, y, Color(0.7, 0.6, 0.4, highlight_a))
+			if d > max_r * 0.8 and d < max_r:
+				var highlight_a: float = (1.0 - (max_r - d) / (max_r * 0.2)) * 0.6
+				img.set_pixel(x, y, Color(0.9, 0.8, 0.5, highlight_a))
 	## 陨石坑
-	for i in range(size / 6):
+	for i in range(size / 5):
 		var cx2: int = randi_range(size / 4, size * 3 / 4)
 		var cy2: int = randi_range(size / 4, size * 3 / 4)
 		var cr: int = randi_range(3, size / 5)
@@ -266,11 +266,12 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 				if d2 < cr:
 					var px: int = cx2 + dx
 					var py: int = cy2 + dy
-					if px >= 0 and px < size + 6 and py >= 0 and py < size + 6:
+					if px >= 0 and px < size + 8 and py >= 0 and py < size + 8:
 						var depth: float = 1.0 - d2 / float(cr)
-						img.set_pixel(px, py, Color(base_r * 0.4, base_g * 0.4, base_b * 0.4, depth * 0.8))
+						img.set_pixel(px, py, Color(base_r * 0.3, base_g * 0.3, base_b * 0.3, depth * 0.9))
 	sprite.texture = ImageTexture.create_from_image(img)
 	sprite.z_index = 1
+	sprite.self_modulate = Color(1.15, 1.05, 0.9, 1.0)
 
 func create_boss_sprite() -> ImageTexture:
 	var w: int = 160
