@@ -4,3 +4,4 @@ logs/
 *.import
 addons/
 *.uid
+backup_3d/

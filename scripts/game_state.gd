@@ -1,45 +1,88 @@
 extends Node
 
+signal score_changed(new_score)
+signal level_changed(new_level)
 signal health_changed(current_health, max_health)
-signal objective_changed(text)
-signal story_line_changed(text)
-signal run_state_changed(state)
+signal game_over(final_score, final_level)
+signal powerup_collected(powerup_type)
 
-var max_health: int = 5
-var current_health: int = 5
-var objective_text: String = "Reach the relay terminal"
-var story_line: String = "Command: hold the line and retrieve the data core."
-var run_state: String = "title"
+var score: int = 0
+var level: int = 1
+var kills: int = 0
+var current_health: int = 3
+var max_health: int = 3
+var game_running: bool = false
 
-func reset_run() -> void:
-	current_health = max_health
-	objective_text = "Reach the relay terminal"
-	story_line = "Command: hold the line and retrieve the data core."
-	run_state = "title"
-	health_changed.emit(current_health, max_health)
-	objective_changed.emit(objective_text)
-	story_line_changed.emit(story_line)
-	run_state_changed.emit(run_state)
+var kills_for_next_level: int = 10
+var shoot_level: int = 1
+var shoot_speed_level: int = 1
+var bullet_power_level: int = 1
 
-func set_run_state(state: String) -> void:
-	run_state = state
-	run_state_changed.emit(run_state)
+func reset_game() -> void:
+	score = 0
+	level = 1
+	kills = 0
+	current_health = 3
+	max_health = 3
+	game_running = true
+	shoot_level = 1
+	shoot_speed_level = 1
+	bullet_power_level = 1
+	kills_for_next_level = 10
 
-func set_objective(text: String) -> void:
-	objective_text = text
-	objective_changed.emit(objective_text)
+func add_score(amount: int) -> void:
+	score += amount
+	score_changed.emit(score)
 
-func set_story_line(text: String) -> void:
-	story_line = text
-	story_line_changed.emit(story_line)
+func add_kill() -> void:
+	kills += 1
+	add_score(10 * level)
+	if kills >= kills_for_next_level:
+		level_up()
 
-func damage_player(amount: int = 1) -> void:
+func level_up() -> void:
+	level += 1
+	kills = 0
+	kills_for_next_level = 10 + level * 5
+	level_changed.emit(level)
+	SFX.play_ui_confirm()
+
+func take_damage(amount: int = 1) -> void:
 	current_health = max(current_health - amount, 0)
 	health_changed.emit(current_health, max_health)
-	if current_health == 0:
-		run_state = "failed"
-		run_state_changed.emit(run_state)
+	SFX.play_player_hurt()
+	if current_health <= 0:
+		game_over.emit(score, level)
 
-func heal_player(amount: int = 1) -> void:
+func heal(amount: int = 1) -> void:
 	current_health = min(current_health + amount, max_health)
 	health_changed.emit(current_health, max_health)
+	SFX.play_ui_select()
+
+func collect_powerup(type: String) -> void:
+	powerup_collected.emit(type)
+	SFX.play_ui_confirm()
+	match type:
+		"spread":
+			shoot_level = min(shoot_level + 1, 5)
+		"speed":
+			shoot_speed_level = min(shoot_speed_level + 1, 5)
+		"power":
+			bullet_power_level = min(bullet_power_level + 1, 5)
+		"heal":
+			heal(1)
+		"bomb":
+			## 清屏炸弹，由主场景处理
+			pass
+
+func get_bullet_count() -> int:
+	return min(1 + shoot_level * 2, 11)
+
+func get_shoot_cooldown() -> float:
+	return max(0.3 - shoot_speed_level * 0.04, 0.08)
+
+func get_bullet_damage() -> int:
+	return bullet_power_level
+
+func get_bullet_spread_angle() -> float:
+	return max(30.0 - shoot_level * 4.0, 10.0)

@@ -1,105 +1,70 @@
 extends CanvasLayer
 
-@onready var health_label = $Root/TopBar/HealthLabel
-@onready var objective_label = $Root/TopBar/ObjectiveLabel
-@onready var story_label = $Root/DialogueBox/StoryLabel
-@onready var debug_panel = $Root/DebugPanel
-@onready var debug_label = $Root/DebugPanel/DebugLabel
-@onready var result_panel = $Root/ResultPanel
-@onready var title_label = $Root/ResultPanel/CenterBox/VBox/TitleLabel
-@onready var story_result_label = $Root/ResultPanel/CenterBox/VBox/StoryResultLabel
-@onready var stats_label = $Root/ResultPanel/CenterBox/VBox/StatsLabel
-@onready var restart_hint = $Root/ResultPanel/CenterBox/VBox/RestartHint
-@onready var time_label = $Root/ResultPanel/CenterBox/VBox/TimeLabel
-@onready var record_label = $Root/ResultPanel/CenterBox/VBox/RecordLabel
+@onready var _score_label: Label = $ScoreLabel
+@onready var _level_label: Label = $LevelLabel
+@onready var _health_bar: ProgressBar = $HealthBar
+@onready var _powerup_display: HBoxContainer = $PowerupDisplay
+@onready var _game_over_panel: Panel = $GameOverPanel
+@onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
+@onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 
-func set_health(current_health: int, max_health: int) -> void:
-	health_label.text = "HP %d/%d" % [current_health, max_health]
+func _ready() -> void:
+	_game_over_panel.visible = false
+	GameState.score_changed.connect(_on_score_changed)
+	GameState.level_changed.connect(_on_level_changed)
+	GameState.health_changed.connect(_on_health_changed)
+	GameState.game_over.connect(_on_game_over)
+	GameState.powerup_collected.connect(_on_powerup_collected)
+	_update_score(0)
+	_update_level(1)
+	_update_health(3, 3)
 
-func set_objective(text: String) -> void:
-	objective_label.text = text
+func _on_score_changed(new_score: int) -> void:
+	_update_score(new_score)
 
-func set_story_line(text: String) -> void:
-	story_label.text = text
+func _on_level_changed(new_level: int) -> void:
+	_update_level(new_level)
 
-func set_run_state(state: String) -> void:
-	if state == "running":
-		story_label.text = "Objective active"
-	elif state == "finished":
-		story_label.text = "Mission complete. Press Enter to restart."
-	elif state == "failed":
-		story_label.text = "Mission failed. Press Enter to retry."
-	else:
-		story_label.text = "Booting..."
+func _on_health_changed(current: int, maximum: int) -> void:
+	_update_health(current, maximum)
 
-func toggle_debug(visible_state: bool) -> void:
-	debug_panel.visible = visible_state
+func _on_game_over(final_score: int, final_level: int) -> void:
+	_game_over_panel.visible = true
+	_final_score_label.text = "SCORE: %d" % final_score
+	_final_level_label.text = "LEVEL: %d" % final_level
 
-func set_debug_text(text: String) -> void:
-	debug_label.text = text
+func _on_powerup_collected(type: String) -> void:
+	_update_powerup_display()
 
-func show_damage_feed(text: String) -> void:
-	## 底部伤害反馈文本，短暂显示后消失
-	var feed_label := $Root/DamageFeedLabel
-	if feed_label == null:
-		return
-	feed_label.text = text
-	feed_label.modulate.a = 1.0
-	var tween := create_tween()
-	tween.tween_property(feed_label, "modulate:a", 0.0, 1.2)
+func _update_score(score: int) -> void:
+	_score_label.text = "SCORE: %d" % score
 
-var _achievement_scene = preload("res://scenes/ui/achievement_toast.tscn")
-var _active_toasts: Array = []
+func _update_level(level: int) -> void:
+	_level_label.text = "LEVEL %d" % level
 
-func show_achievement_unlocks(achievement_ids: Array) -> void:
-	for id in achievement_ids:
-		var ach_data: Dictionary = Achievements.get_all_achievements()
-		if not ach_data.has(id):
-			continue
-		var toast = _achievement_scene.instantiate()
-		if toast.has_node("Label"):
-			toast.get_node("Label").text = "ACHIEVEMENT: %s" % ach_data[id]["name"]
-		toast.position = Vector2(280, 40 + _active_toasts.size() * 28)
-		add_child(toast)
-		_active_toasts.append(toast)
-		## 3秒后渐隐消失
-		var tween: Tween = create_tween()
-		tween.set_delay(3.0)
-		tween.tween_property(toast, "modulate:a", 0.0, 0.5)
-		tween.tween_callback(func():
-			if toast.is_inside_tree():
-				toast.queue_free()
-			_active_toasts.erase(toast)
-		)
+func _update_health(current: int, maximum: int) -> void:
+	if _health_bar:
+		_health_bar.max_value = maximum
+		_health_bar.value = current
 
-func show_boss_result_screen(story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
-	title_label.text = "FINAL BOSS DEFEATED"
-	title_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.2, 1.0))  # 橙色高亮
-	story_result_label.text = story
-	stats_label.text = "Enemies eliminated: %d / %d" % [kills, total_enemies]
-	if elapsed_time != "":
-		time_label.text = "Time: %s" % elapsed_time
-	else:
-		time_label.text = ""
-	var best_time_str: String = SaveSystem.get_best_time_string()
-	if record_label != null:
-		record_label.text = "Best Time: %s  |  Total Kills: %d" % [best_time_str, SaveSystem.total_kills]
-	restart_hint.text = "Press ENTER to return to title"
-	result_panel.visible = true
-
-func show_result_screen(state: String, story: String, kills: int, total_enemies: int, elapsed_time: String = "") -> void:
-	var is_success = state == "finished"
-	title_label.text = "MISSION COMPLETE" if is_success else "MISSION FAILED"
-	title_label.add_theme_color_override("font_color", Color(0.3, 0.85, 0.4, 1) if is_success else Color(0.85, 0.25, 0.2, 1))
-	story_result_label.text = story
-	stats_label.text = "Enemies eliminated: %d / %d" % [kills, total_enemies]
-	if elapsed_time != "":
-		time_label.text = "Time: %s" % elapsed_time
-	else:
-		time_label.text = ""
-	## 显示最佳记录
-	var best_time_str: String = SaveSystem.get_best_time_string()
-	if record_label != null:
-		record_label.text = "Best Time: %s  |  Total Kills: %d" % [best_time_str, SaveSystem.total_kills]
-	restart_hint.text = "Press ENTER to return to title"
-	result_panel.visible = true
+func _update_powerup_display() -> void:
+	for child in _powerup_display.get_children():
+		child.queue_free()
+	var icons := {
+		"spread": Color(0.2, 0.8, 0.3),
+		"speed": Color(0.2, 0.5, 1.0),
+		"power": Color(1.0, 0.3, 0.2),
+	}
+	for type in icons:
+		var level: int = 0
+		match type:
+			"spread": level = GameState.shoot_level
+			"speed": level = GameState.shoot_speed_level
+			"power": level = GameState.bullet_power_level
+		if level > 0:
+			var bar := ProgressBar.new()
+			bar.custom_minimum_size = Vector2(60, 12)
+			bar.max_value = 5
+			bar.value = level
+			bar.modulate = icons[type]
+			_powerup_display.add_child(bar)
