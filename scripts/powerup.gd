@@ -52,9 +52,11 @@ func collect() -> void:
 
 func _bomb_effect() -> void:
 	var enemies := get_tree().get_nodes_in_group("enemies")
+	var delay: float = 0.0
 	for e in enemies:
 		if e.has_method("die"):
-			e.call_deferred("die")
+			get_tree().create_timer(delay).timeout.connect(e.die)
+			delay += 0.05
 	SFX.play_explosion()
 	call_deferred("_spawn_shake")
 

@@ -67,9 +67,9 @@ offset_right = -20.0
 offset_bottom = 60.0
 theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.5, 0.55, 0.7, 1.0)
-text = "WASD - 移动
-鼠标 - 瞄准射击
-ESC - 切换鼠标
+text = "鼠标 - 移动/瞄准
+左键 - 锁定鼠标
+ESC - 释放鼠标
 R - 重新开始"
 
 [node name="GameOverPanel" type="Panel" parent="."]

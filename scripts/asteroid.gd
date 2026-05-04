@@ -43,10 +43,6 @@ func _destroy() -> void:
 	var exp = preload("res://scenes/effects/explosion.tscn").instantiate()
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
-	for i in range(3):
-		var exp2 = preload("res://scenes/effects/explosion.tscn").instantiate()
-		get_tree().current_scene.add_child(exp2)
-		exp2.global_position = global_position + Vector2(randf_range(-15, 15), randf_range(-15, 15))
 	SFX.play_explosion()
 	GameState.add_score(50)
 	queue_free()

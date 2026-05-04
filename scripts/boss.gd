@@ -268,10 +268,10 @@ func _die() -> void:
 	queue_free()
 
 func _spawn_explosion() -> void:
-	for i in range(10):
+	for i in range(4):
 		var exp = _explosion_scene.instantiate()
 		get_tree().current_scene.add_child(exp)
-		exp.global_position = global_position + Vector2(randf_range(-50, 50), randf_range(-50, 50))
+		exp.global_position = global_position + Vector2(randf_range(-40, 40), randf_range(-40, 40))
 	SFX.play_explosion()
 
 func _spawn_rewards() -> void:
