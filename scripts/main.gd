@@ -30,15 +30,16 @@ func _ready() -> void:
 
 func _create_parallax_background() -> void:
 	if _bg_color:
-		_bg_color.color = Color(0.03, 0.05, 0.2, 1.0)
+		_bg_color.color = Color(0.005, 0.008, 0.05, 1.0)
 		_bg_color.z_index = -100
 
 	var far_layer := {nodes = [], speed = 5.0}
 	for i in range(350):
 		var star := Sprite2D.new()
-		var b: float = randf_range(0.35, 0.75)
+		var b: float = randf_range(0.3, 0.7)
+		var blue_tint: float = randf_range(0.8, 1.3)
 		var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
-		img.fill(Color(b, b, b * 1.15, randf_range(0.4, 0.9)))
+		img.fill(Color(b, b * 0.85, b * blue_tint, randf_range(0.3, 0.8)))
 		star.texture = ImageTexture.create_from_image(img)
 		star.position = Vector2(randf_range(0, 1500), randf_range(-100, 820))
 		star.z_index = -10
@@ -49,14 +50,15 @@ func _create_parallax_background() -> void:
 	var mid_layer := {nodes = [], speed = 10.0}
 	for i in range(180):
 		var star := Sprite2D.new()
-		var b: float = randf_range(0.55, 0.95)
+		var b: float = randf_range(0.5, 0.9)
+		var blue_tint: float = randf_range(0.85, 1.2)
 		var size: int = randi_range(3, 5)
 		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 		for y in range(size):
 			for x in range(size):
 				var d: float = sqrt(float(x - size / 2) * float(x - size / 2) + float(y - size / 2) * float(y - size / 2))
 				if d < float(size) / 2.0:
-					img.set_pixel(x, y, Color(b, b, b, 1.0))
+					img.set_pixel(x, y, Color(b, b * 0.9, b * blue_tint, 1.0))
 		star.texture = ImageTexture.create_from_image(img)
 		star.position = Vector2(randf_range(0, 1500), randf_range(-100, 820))
 		star.z_index = -9
@@ -67,16 +69,16 @@ func _create_parallax_background() -> void:
 	var near_layer := {nodes = [], speed = 16.0}
 	for i in range(70):
 		var star := Sprite2D.new()
-		var b: float = randf_range(0.75, 1.0)
+		var b: float = randf_range(0.7, 1.0)
 		var size: int = randi_range(6, 12)
 		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 		var col: Color
 		match randi() % 5:
-			0: col = Color(b, b, b, 1.0)
-			1: col = Color(b, b * 0.7, b * 0.5, 1.0)
-			2: col = Color(b * 0.6, b * 0.8, b, 1.0)
-			3: col = Color(b, b * 0.9, b * 0.6, 1.0)
-			_: col = Color(b * 0.8, b, b * 0.9, 1.0)
+			0: col = Color(b, b * 0.9, b, 1.0)
+			1: col = Color(b, b * 0.7, b * 0.6, 1.0)
+			2: col = Color(b * 0.5, b * 0.8, b, 1.0)
+			3: col = Color(b, b * 0.85, b * 0.7, 1.0)
+			_: col = Color(b * 0.7, b * 0.8, b, 1.0)
 		var cx2: int = size / 2
 		for y in range(size):
 			for x in range(size):
@@ -91,22 +93,43 @@ func _create_parallax_background() -> void:
 		near_layer.nodes.append(star)
 	_bg_layers.append(near_layer)
 
-	for i in range(10):
+	for i in range(8):
 		var nebula := Sprite2D.new()
-		var neb_size: int = randi_range(140, 300)
-		var img := Image.create(neb_size, neb_size, false, Image.FORMAT_RGBA8)
-		var nc_r: float = randf_range(0.08, 0.35)
-		var nc_g: float = randf_range(0.05, 0.2)
-		var nc_b: float = randf_range(0.3, 0.6)
-		var nc_a: float = randf_range(0.06, 0.14)
-		for y in range(neb_size):
-			for x in range(neb_size):
-				var dx: float = float(x - neb_size / 2) / (neb_size / 2.0)
-				var dy: float = float(y - neb_size / 2) / (neb_size / 2.0)
-				var d: float = sqrt(dx * dx + dy * dy)
-				if d < 1.0:
-					var a: float = nc_a * (1.0 - d * d)
-					img.set_pixel(x, y, Color(nc_r, nc_g, nc_b, a))
+		var w: int = randi_range(200, 400)
+		var h: int = randi_range(120, 280)
+		var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0, 0, 0, 0))
+		var cx: float = w / 2.0
+		var cy: float = h / 2.0
+		var nc_r: float = randf_range(0.06, 0.25)
+		var nc_g: float = randf_range(0.03, 0.15)
+		var nc_b: float = randf_range(0.3, 0.7)
+		var nc_a: float = randf_range(0.08, 0.18)
+		var blob_count: int = randi_range(3, 6)
+		for j in range(blob_count):
+			var bx: float = randf_range(w * 0.1, w * 0.9)
+			var by: float = randf_range(h * 0.1, h * 0.9)
+			var rx: float = randf_range(w * 0.1, w * 0.35)
+			var ry: float = randf_range(h * 0.1, h * 0.35)
+			var rot: float = randf_range(0.0, PI)
+			var intensity: float = randf_range(0.5, 1.0)
+			for y in range(h):
+				for x in range(w):
+					var ldx: float = float(x) - bx
+					var ldy: float = float(y) - by
+					var cos_r: float = cos(-rot)
+					var sin_r: float = sin(-rot)
+					var local_x: float = ldx * cos_r - ldy * sin_r
+					var local_y: float = ldx * sin_r + ldy * cos_r
+					var d: float = sqrt(local_x * local_x / (rx * rx) + local_y * local_y / (ry * ry))
+					if d < 1.0:
+						var a: float = nc_a * (1.0 - d * d) * intensity
+						var existing := img.get_pixel(x, y)
+						var new_r: float = min(existing.r + nc_r * a, nc_r)
+						var new_g: float = min(existing.g + nc_g * a, nc_g)
+						var new_b: float = min(existing.b + nc_b * a, nc_b)
+						var new_a: float = min(existing.a + a, nc_a)
+						img.set_pixel(x, y, Color(new_r, new_g, new_b, new_a))
 		nebula.texture = ImageTexture.create_from_image(img)
 		nebula.position = Vector2(randf_range(-200, 1500), randf_range(-200, 900))
 		nebula.z_index = -6 + randi() % 3
