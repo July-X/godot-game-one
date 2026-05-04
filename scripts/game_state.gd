@@ -19,6 +19,7 @@ var current_health: int = 3
 var max_health: int = 3
 var shield_layers: int = 0
 var game_running: bool = false
+var death_message: String = ""
 
 var kills_for_next_level: int = 10
 var shoot_level: int = 1
@@ -36,6 +37,7 @@ func reset_game() -> void:
 	current_health = 3
 	max_health = 3
 	shield_layers = 0
+	death_message = ""
 	game_running = true
 	shoot_level = 1
 	shoot_speed_level = 1
