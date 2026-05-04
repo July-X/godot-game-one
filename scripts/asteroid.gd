@@ -1,9 +1,12 @@
 extends Area2D
 
+const MAX_HEALTH: int = 100
+
 var _speed: float = 60.0
 var _direction: Vector2 = Vector2.DOWN
 var _rotation_speed: float = 0.0
 var _size: int = 24
+var _health: int = MAX_HEALTH
 
 func _ready() -> void:
 	_size = randi_range(20, 50)
@@ -15,6 +18,7 @@ func _ready() -> void:
 	add_to_group("asteroids")
 	SpriteFactory.apply_asteroid_texture($Sprite2D, _size)
 	body_entered.connect(_on_body_entered)
+	area_entered.connect(_on_area_entered)
 
 func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta
@@ -24,13 +28,38 @@ func _physics_process(delta: float) -> void:
 	if global_position.x < -margin or global_position.x > screen.x + margin or global_position.y < -margin or global_position.y > screen.y + margin:
 		queue_free()
 
+func take_damage(amount: float) -> void:
+	_health -= amount
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property($Sprite2D, "modulate", Color(2.0, 1.8, 1.0, 1.0), 0.04)
+	tween.tween_callback(func():
+		var recover := create_tween()
+		recover.tween_property($Sprite2D, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.1)
+	)
+	if _health <= 0:
+		_destroy()
+
+func _destroy() -> void:
+	var exp = preload("res://scenes/effects/explosion.tscn").instantiate()
+	get_tree().current_scene.add_child(exp)
+	exp.global_position = global_position
+	for i in range(3):
+		var exp2 = preload("res://scenes/effects/explosion.tscn").instantiate()
+		get_tree().current_scene.add_child(exp2)
+		exp2.global_position = global_position + Vector2(randf_range(-15, 15), randf_range(-15, 15))
+	SFX.play_explosion()
+	GameState.add_score(50)
+	queue_free()
+
 func _on_body_entered(body: Node2D) -> void:
 	if body.is_in_group("player") and body.has_method("take_damage"):
 		body.take_damage(99)
+		_destroy()
+
+func _on_area_entered(area: Area2D) -> void:
+	if area.is_in_group("player_bullets") and area.has_method("setup"):
+		take_damage(area._damage)
 		var hit = preload("res://scenes/effects/hit_effect.tscn").instantiate()
 		get_tree().current_scene.add_child(hit)
 		hit.global_position = global_position
-		var exp = preload("res://scenes/effects/explosion.tscn").instantiate()
-		get_tree().current_scene.add_child(exp)
-		exp.global_position = global_position
-		queue_free()
+		area.queue_free()

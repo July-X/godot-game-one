@@ -251,9 +251,9 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 	img.fill(Color(0, 0, 0, 0))
 	var cx: int = (size + 10) / 2
 	var cy: int = (size + 10) / 2
-	var base_r: float = randf_range(0.5, 0.7)
-	var base_g: float = randf_range(0.35, 0.5)
-	var base_b: float = randf_range(0.2, 0.35)
+	var base_r: float = randf_range(0.55, 0.85)
+	var base_g: float = randf_range(0.35, 0.55)
+	var base_b: float = randf_range(0.15, 0.35)
 	var max_r: float = float(size) / 2.0
 	## 生成不规则多边形顶点
 	var vertex_count: int = randi_range(7, 12)
@@ -279,7 +279,7 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 						glow_dist = g
 					outside_glow = true
 			if outside_glow and glow_dist > 0:
-				img.set_pixel(x, y, Color(1.0, 0.7, 0.2, glow_dist * 0.5))
+				img.set_pixel(x, y, Color(1.0, 0.6, 0.15, glow_dist * 0.65))
 	## 主体填充（多边形内部）
 	for y in range(size + 10):
 		for x in range(size + 10):
@@ -311,9 +311,9 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 				for v in vertices:
 					var d: float = sqrt((dx - v.x) * (dx - v.x) + (dy - v.y) * (dy - v.y))
 					if d < max_r * 0.25:
-						var ha: float = (1.0 - d / (max_r * 0.25)) * 0.5
+						var ha: float = (1.0 - d / (max_r * 0.25)) * 0.6
 						var existing := img.get_pixel(x, y)
-						img.set_pixel(x, y, Color(min(existing.r + ha * 0.3, 1.0), min(existing.g + ha * 0.2, 1.0), min(existing.b + ha * 0.1, 1.0), existing.a))
+						img.set_pixel(x, y, Color(min(existing.r + ha * 0.4, 1.0), min(existing.g + ha * 0.3, 1.0), min(existing.b + ha * 0.15, 1.0), existing.a))
 						break
 	## 陨石坑
 	for i in range(size / 4):
@@ -333,7 +333,7 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 							img.set_pixel(px, py, Color(base_r * 0.3, base_g * 0.3, base_b * 0.3, depth * 0.85))
 	sprite.texture = ImageTexture.create_from_image(img)
 	sprite.z_index = 1
-	sprite.self_modulate = Color(1.15, 1.05, 0.9, 1.0)
+	sprite.self_modulate = Color(1.3, 1.1, 0.9, 1.0)
 
 func _point_in_polygon(point: Vector2, vertices: Array[Vector2]) -> bool:
 	var inside: bool = false
