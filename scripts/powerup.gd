@@ -5,43 +5,49 @@ var _lifetime: float = 10.0
 var _bob_timer: float = 0.0
 
 @onready var _sprite: Sprite2D = $Sprite2D
+@onready var _glow: Sprite2D = $GlowSprite
 
 func _ready() -> void:
 	add_to_group("powerups")
 
 func setup(type: String) -> void:
 	_type = type
-	match type:
-		"spread":
-			_sprite.modulate = Color(0.2, 0.8, 0.3)
-		"speed":
-			_sprite.modulate = Color(0.2, 0.5, 1.0)
-		"power":
-			_sprite.modulate = Color(1.0, 0.3, 0.2)
-		"heal":
-			_sprite.modulate = Color(1.0, 0.25, 0.2)
-		"bomb":
-			_sprite.modulate = Color(1.0, 0.8, 0.2)
+	_sprite.texture = SpriteFactory.create_powerup_sprite(type)
 
 func _physics_process(delta: float) -> void:
 	_bob_timer += delta * 3.0
-	_sprite.position.y = sin(_bob_timer) * 3.0
+	_sprite.position.y = sin(_bob_timer) * 4.0
+	_sprite.rotation += delta * 1.5
+
+	## 闪光脉冲
+	var pulse: float = 0.4 + abs(sin(Time.get_ticks_msec() * 0.005)) * 0.6
+	_sprite.modulate.a = pulse * 0.6 + 0.4
+
+	## 外发光脉动
+	if _glow:
+		var glow_a: float = 0.2 + abs(sin(Time.get_ticks_msec() * 0.004)) * 0.35
+		_glow.modulate.a = glow_a
+		var glow_s: float = 0.9 + abs(sin(Time.get_ticks_msec() * 0.003)) * 0.2
+		_glow.scale = Vector2(glow_s, glow_s)
+
 	_lifetime -= delta
 	if _lifetime <= 0:
 		queue_free()
 	## 闪烁警告
 	if _lifetime < 3.0:
-		_sprite.modulate.a = 0.3 + abs(sin(_lifetime * 10)) * 0.7
+		var blink: float = 0.3 + abs(sin(_lifetime * 12)) * 0.7
+		_sprite.modulate.a = blink
 
 func collect() -> void:
 	GameState.collect_powerup(_type)
 	if _type == "bomb":
 		_bomb_effect()
-	## 拾取特效
 	var tween := create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(_sprite, "scale", Vector2(2, 2), 0.15)
-	tween.tween_property(_sprite, "modulate:a", 0.0, 0.15)
+	tween.tween_property(_sprite, "scale", Vector2(3, 3), 0.2)
+	tween.tween_property(_sprite, "modulate:a", 0.0, 0.2)
+	tween.tween_property(_glow, "scale", Vector2(3, 3), 0.2)
+	tween.tween_property(_glow, "modulate:a", 0.0, 0.2)
 	tween.tween_callback(queue_free)
 
 func _bomb_effect() -> void:

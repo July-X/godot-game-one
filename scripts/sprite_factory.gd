@@ -454,37 +454,38 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 	return tex
 
 func create_powerup_sprite(type: String) -> ImageTexture:
-	var size: int = 20
-	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var w: int = 32
+	var h: int = 32
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
+	var cx: int = w / 2
+	var cy: int = h / 2
 	var col: Color
-	var icon: String = ""
 	match type:
-		"spread": col = Color(0.2, 0.9, 0.3); icon = "S"
-		"speed": col = Color(0.2, 0.6, 1.0); icon = "F"
-		"power": col = Color(1.0, 0.3, 0.2); icon = "P"
-		"heal": col = Color(0.2, 1.0, 0.4); icon = "+"
-		"bomb": col = Color(1.0, 0.8, 0.2); icon = "B"
-		_: col = Color(0.5, 0.5, 0.5); icon = "?"
-	## 六边形底座
-	for y in range(size):
-		for x in range(size):
-			var dx: float = abs(float(x - size / 2)) / (size * 0.45)
-			var dy: float = abs(float(y - size / 2)) / (size * 0.45)
-			if dx + dy < 1.0:
-				var t: float = (dx + dy) * 0.5
-				var b: float = 1.0 - t * 0.4
-				img.set_pixel(x, y, Color(col.r * b, col.g * b, col.b * b, 1.0))
-	## 内部高亮圆
-	for y in range(4, size - 4):
-		for x in range(4, size - 4):
-			var dx2: float = float(x - size / 2) / (size * 0.25)
-			var dy2: float = float(y - size / 2) / (size * 0.25)
-			if dx2 * dx2 + dy2 * dy2 < 1.0:
-				img.set_pixel(x, y, Color(col.r * 1.3, col.g * 1.3, col.b * 1.3, 0.8))
+		"spread": col = Color(0.2, 0.9, 0.3)
+		"speed": col = Color(0.2, 0.6, 1.0)
+		"power": col = Color(1.0, 0.3, 0.2)
+		"heal": col = Color(1.0, 0.25, 0.2)
+		"bomb": col = Color(1.0, 0.8, 0.2)
+		_: col = Color(0.5, 0.5, 0.5)
+
+	match type:
+		"heal":
+			_draw_heart(img, w, h, col)
+		"spread":
+			_draw_star(img, w, h, col)
+		"speed":
+			_draw_diamond(img, w, h, col)
+		"power":
+			_draw_hexagon(img, w, h, col)
+		"bomb":
+			_draw_bomb(img, w, h, col)
+		_:
+			_draw_hexagon(img, w, h, col)
+
 	## 发光边缘
-	for y in range(size):
-		for x in range(size):
+	for y in range(h):
+		for x in range(w):
 			if img.get_pixel(x, y).a > 0:
 				continue
 			var has_n: bool = false
@@ -492,7 +493,7 @@ func create_powerup_sprite(type: String) -> ImageTexture:
 				for dy3 in range(-1, 2):
 					var nx: int = x + dx3
 					var ny: int = y + dy3
-					if nx >= 0 and nx < size and ny >= 0 and ny < size:
+					if nx >= 0 and nx < w and ny >= 0 and ny < h:
 						if img.get_pixel(nx, ny).a > 0:
 							has_n = true
 					if has_n:
@@ -500,9 +501,114 @@ func create_powerup_sprite(type: String) -> ImageTexture:
 				if has_n:
 					break
 			if has_n:
-				img.set_pixel(x, y, Color(col.r, col.g, col.b, 0.3))
+				img.set_pixel(x, y, Color(col.r, col.g, col.b, 0.25))
 	var tex := ImageTexture.create_from_image(img)
 	return tex
+
+func _draw_heart(img: Image, w: int, h: int, col: Color) -> void:
+	var cx: int = w / 2
+	var cy: int = h / 2
+	for y in range(h):
+		for x in range(w):
+			var dx: float = float(x - cx) / 14.0
+			var dy: float = float(y - cy + 2) / 14.0
+			var eq: float = (dx * dx + dy * dy - 1.0) * (dx * dx + dy * dy - 1.0) * (dx * dx + dy * dy - 1.0) - dx * dx * dy * dy * dy
+			if eq <= 0.0:
+				var depth: float = sqrt(dx * dx + dy * dy) / 1.5
+				var r: float = col.r * (1.0 - depth * 0.3)
+				var g: float = col.g * (1.0 - depth * 0.3)
+				var b: float = col.b * (1.0 - depth * 0.3)
+				img.set_pixel(x, y, Color(r, g, b, 1.0))
+
+func _draw_star(img: Image, w: int, h: int, col: Color) -> void:
+	var cx: int = w / 2
+	var cy: int = h / 2
+	for y in range(h):
+		for x in range(w):
+			var inside: bool = false
+			var j: int = 9
+			for i in range(10):
+				var angle_i: float = float(i) * TAU / 10.0 - PI / 2.0
+				var angle_j: float = float(j) * TAU / 10.0 - PI / 2.0
+				var ri: float = 14.0 if i % 2 == 0 else 7.0
+				var rj: float = 14.0 if j % 2 == 0 else 7.0
+				var xi: float = cx + cos(angle_i) * ri
+				var yi: float = cy + sin(angle_i) * ri
+				var xj: float = cx + cos(angle_j) * rj
+				var yj: float = cy + sin(angle_j) * rj
+				if (yi > float(y)) != (yj > float(y)):
+					var intersect_x: float = (xj - xi) * (float(y) - yi) / (yj - yi) + xi
+					if float(x) < intersect_x:
+						inside = not inside
+				j = i
+			if inside:
+				var d: float = sqrt(float(x - cx) * float(x - cx) + float(y - cy) * float(y - cy)) / 14.0
+				img.set_pixel(x, y, Color(col.r * (1.0 - d * 0.2), col.g * (1.0 - d * 0.2), col.b * (1.0 - d * 0.2), 1.0))
+
+func _draw_diamond(img: Image, w: int, h: int, col: Color) -> void:
+	var cx: int = w / 2
+	var cy: int = h / 2
+	for y in range(h):
+		for x in range(w):
+			var dx: float = abs(float(x - cx)) / 16.0
+			var dy: float = abs(float(y - cy)) / 16.0
+			if dx + dy < 1.0:
+				var t: float = (dx + dy) * 0.5
+				var rr: float = col.r * (1.0 - t * 0.4)
+				var gg: float = col.g * (1.0 - t * 0.4)
+				var bb: float = col.b * (1.0 - t * 0.4)
+				img.set_pixel(x, y, Color(rr, gg, bb, 1.0))
+
+func _draw_hexagon(img: Image, w: int, h: int, col: Color) -> void:
+	var cx: int = w / 2
+	var cy: int = h / 2
+	for y in range(h):
+		for x in range(w):
+			var inside: bool = false
+			var j: int = 5
+			for i in range(6):
+				var ai: float = float(i) * TAU / 6.0
+				var aj: float = float(j) * TAU / 6.0
+				var xi: float = cx + cos(ai) * 14.0
+				var yi: float = cy + sin(ai) * 14.0
+				var xj: float = cx + cos(aj) * 14.0
+				var yj: float = cy + sin(aj) * 14.0
+				if (yi > float(y)) != (yj > float(y)):
+					var ix: float = (xj - xi) * (float(y) - yi) / (yj - yi) + xi
+					if float(x) < ix:
+						inside = not inside
+				j = i
+			if inside:
+				var d: float = sqrt(float(x - cx) * float(x - cx) + float(y - cy) * float(y - cy)) / 14.0
+				img.set_pixel(x, y, Color(col.r * (1.0 - d * 0.2), col.g * (1.0 - d * 0.2), col.b * (1.0 - d * 0.2), 1.0))
+
+func _draw_bomb(img: Image, w: int, h: int, col: Color) -> void:
+	var cx: int = w / 2
+	var cy: int = h / 2
+	## 圆
+	for y in range(h):
+		for x in range(w):
+			var d: float = sqrt(float(x - cx) * float(x - cx) + float(y - cy) * float(y - cy))
+			if d < 12.0:
+				var t: float = d / 12.0
+				img.set_pixel(x, y, Color(col.r * (1.0 - t * 0.3), col.g * (1.0 - t * 0.3), col.b * (1.0 - t * 0.3), 1.0))
+	## 引信
+	for dy in range(-6, -1):
+		var px: int = cx
+		var py: int = cy - 12 + dy
+		if py >= 0 and py < h:
+			img.set_pixel(px, py, Color(0.6, 0.6, 0.6, 1.0))
+	## 火星
+	var fx: int = cx
+	var fy: int = cy - 18
+	if fy >= 0 and fy < h:
+		for dy2 in range(-1, 2):
+			for dx2 in range(-1, 2):
+				var px2: int = fx + dx2
+				var py2: int = fy + dy2
+				if px2 >= 0 and px2 < w and py2 >= 0 and py2 < h:
+					if dx2 * dx2 + dy2 * dy2 <= 1:
+						img.set_pixel(px2, py2, Color(1.0, 0.5, 0.1, 1.0))
 
 func create_explosion_frames() -> Array[ImageTexture]:
 	var frames: Array[ImageTexture] = []
