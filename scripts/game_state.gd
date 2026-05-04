@@ -53,6 +53,7 @@ func level_up() -> void:
 	level += 1
 	kills = 0
 	kills_for_next_level = 10 + level * 5
+	bullet_power_level = min(bullet_power_level + 1, 5)
 	level_changed.emit(level)
 	SFX.play_ui_confirm()
 

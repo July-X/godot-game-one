@@ -73,16 +73,51 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 					if px >= 0 and px < w and py >= 0 and py < h:
 						img.set_pixel(px, py, Color(1.0, 0.2, 0.1, 0.7) if i == 0 else Color(0.1, 0.8, 0.2, 0.7))
 
-	## ===== 翼尖武器挂架 =====
+	## ===== 翼尖武器挂架（随等级变大变强） =====
+	var mount_size: int = 1 + level / 2
 	for i in [-1, 1]:
 		var mpx: int = cx + i * (16 + level * 2)
 		var mpy: int = cy + 8
-		for dy in range(-1, 3):
-			for dx in range(-1, 2):
+		for dy in range(-mount_size, 3 + mount_size):
+			for dx in range(-mount_size, 1 + mount_size):
 				var px: int = mpx + dx * i
 				var py: int = mpy + dy
 				if px >= 0 and px < w and py >= 0 and py < h:
 					img.set_pixel(px, py, Color(0.5, 0.5, 0.55, 0.9))
+	## ===== 炮管（随等级增长加粗加长） =====
+	var barrel_len: int = 8 + level * 3
+	var barrel_w: int = 1 + level / 2
+	for i in [-1, 1]:
+		var bx: int = cx + i * 14
+		for dy in range(-barrel_len, 0):
+			for dx in range(-barrel_w, barrel_w + 1):
+				var px: int = bx + dx
+				var py: int = cy - 2 + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					var b_r: float = 0.35 + level * 0.05
+					var b_g: float = 0.35 + level * 0.05
+					var b_b: float = 0.4 + level * 0.04
+					img.set_pixel(px, py, Color(b_r, b_g, b_b, 0.9))
+	## ===== 额外炮塔（等级3+ 机翼外侧加装） =====
+	if level >= 3:
+		for i in [-1, 1]:
+			var tx: int = cx + i * (22 + level)
+			for dy in range(-6, 0):
+				for dx in range(-2, 3):
+					var px: int = tx + dx * i
+					var py: int = cy - 2 + dy
+					if px >= 0 and px < w and py >= 0 and py < h:
+						img.set_pixel(px, py, Color(0.6, 0.3 + level * 0.06, 0.1, 0.95))
+	## ===== 机头整流锥（随等级更尖锐） =====
+	var nose_len: int = 8 + level * 2
+	for dy in range(-nose_len, 0):
+		var half_w: int = max(1, int(4 * (1.0 - float(-dy) / float(nose_len))))
+		for dx in range(-half_w, half_w + 1):
+			var px: int = cx + dx
+			var py: int = cy - 16 + dy
+			if px >= 0 and px < w and py >= 0 and py < h:
+				var t: float = float(-dy) / float(nose_len)
+				img.set_pixel(px, py, Color(body_r * (0.8 + t * 0.3), body_g * (0.8 + t * 0.3), body_b * (0.8 + t * 0.3), 1.0))
 
 	## ===== 驾驶舱 =====
 	var ck_cx: int = cx
@@ -212,66 +247,104 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
 func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
-	var img := Image.create(size + 8, size + 8, false, Image.FORMAT_RGBA8)
+	var img := Image.create(size + 10, size + 10, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = (size + 8) / 2
-	var cy: int = (size + 8) / 2
+	var cx: int = (size + 10) / 2
+	var cy: int = (size + 10) / 2
 	var base_r: float = randf_range(0.5, 0.7)
 	var base_g: float = randf_range(0.35, 0.5)
 	var base_b: float = randf_range(0.2, 0.35)
 	var max_r: float = float(size) / 2.0
-	## 强发光外圈（橙色辉光，更宽更亮）
-	for y in range(size + 8):
-		for x in range(size + 8):
+	## 生成不规则多边形顶点
+	var vertex_count: int = randi_range(7, 12)
+	var vertices: Array[Vector2] = []
+	for i in range(vertex_count):
+		var angle: float = float(i) / float(vertex_count) * TAU
+		var r_offset: float = randf_range(0.6, 1.0)
+		var v: Vector2 = Vector2(cos(angle), sin(angle)) * max_r * r_offset
+		vertices.append(v)
+	## 发光外圈（沿多边形轮廓发光）
+	for y in range(size + 10):
+		for x in range(size + 10):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d > max_r and d < max_r + 6.0:
-				var glow_a: float = (1.0 - (d - max_r) / 6.0) * 0.55
-				img.set_pixel(x, y, Color(1.0, 0.7, 0.2, glow_a))
-	## 主体（更亮）
-	for y in range(size + 8):
-		for x in range(size + 8):
+			var inside: bool = _point_in_polygon(Vector2(dx, dy), vertices)
+			var outside_glow: bool = false
+			var glow_dist: float = 0.0
+			for v in vertices:
+				var d: float = sqrt((dx - v.x) * (dx - v.x) + (dy - v.y) * (dy - v.y))
+				if d < 8.0 and not inside:
+					var g: float = (8.0 - d) / 8.0
+					if g > glow_dist:
+						glow_dist = g
+					outside_glow = true
+			if outside_glow and glow_dist > 0:
+				img.set_pixel(x, y, Color(1.0, 0.7, 0.2, glow_dist * 0.5))
+	## 主体填充（多边形内部）
+	for y in range(size + 10):
+		for x in range(size + 10):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			var body_r: float = max_r * (0.75 + randf_range(-0.1, 0.1))
-			if d < body_r:
+			if _point_in_polygon(Vector2(dx, dy), vertices):
 				var noise: float = sin(x * 0.3 + y * 0.2) * 0.12 + sin(x * 0.5 - y * 0.4) * 0.08
-				var t: float = d / body_r
+				var dist_center: float = sqrt(dx * dx + dy * dy) / max_r
+				var t: float = min(dist_center, 1.0)
 				var r: float = base_r + t * 0.15 + noise * 0.08
 				var g: float = base_g + t * 0.08 + noise * 0.06
 				var b: float = base_b + t * 0.05 + noise * 0.04
 				var a: float = 1.0 - t * 0.15
-				if d > body_r - 2.0:
-					a = 1.0 - (d - (body_r - 2.0)) / 2.0
 				img.set_pixel(x, y, Color(r, g, b, a))
-	## 高光边缘
-	for y in range(size + 8):
-		for x in range(size + 8):
+	## 高光边缘（多边形轮廓内侧）
+	for y in range(size + 10):
+		for x in range(size + 10):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d > max_r * 0.8 and d < max_r:
-				var highlight_a: float = (1.0 - (max_r - d) / (max_r * 0.2)) * 0.6
-				img.set_pixel(x, y, Color(0.9, 0.8, 0.5, highlight_a))
+			if not _point_in_polygon(Vector2(dx, dy), vertices):
+				continue
+			var near_edge: bool = false
+			for v in vertices:
+				var d: float = sqrt((dx - v.x) * (dx - v.x) + (dy - v.y) * (dy - v.y))
+				if d < max_r * 0.25:
+					near_edge = true
+					break
+			if near_edge:
+				for v in vertices:
+					var d: float = sqrt((dx - v.x) * (dx - v.x) + (dy - v.y) * (dy - v.y))
+					if d < max_r * 0.25:
+						var ha: float = (1.0 - d / (max_r * 0.25)) * 0.5
+						var existing := img.get_pixel(x, y)
+						img.set_pixel(x, y, Color(min(existing.r + ha * 0.3, 1.0), min(existing.g + ha * 0.2, 1.0), min(existing.b + ha * 0.1, 1.0), existing.a))
+						break
 	## 陨石坑
-	for i in range(size / 5):
-		var cx2: int = randi_range(size / 4, size * 3 / 4)
-		var cy2: int = randi_range(size / 4, size * 3 / 4)
-		var cr: int = randi_range(3, size / 5)
+	for i in range(size / 4):
+		var cx2: int = randi_range(max_r * 0.2, max_r * 1.4)
+		var cy2: int = randi_range(max_r * 0.2, max_r * 1.4)
+		var cr: int = randi_range(2, size / 6)
 		for dy in range(-cr, cr + 1):
 			for dx in range(-cr, cr + 1):
 				var d2: float = sqrt(float(dx * dx + dy * dy))
 				if d2 < cr:
 					var px: int = cx2 + dx
 					var py: int = cy2 + dy
-					if px >= 0 and px < size + 8 and py >= 0 and py < size + 8:
-						var depth: float = 1.0 - d2 / float(cr)
-						img.set_pixel(px, py, Color(base_r * 0.3, base_g * 0.3, base_b * 0.3, depth * 0.9))
+					if px >= 0 and px < size + 10 and py >= 0 and py < size + 10:
+						var pt := Vector2(float(px - cx), float(py - cy))
+						if _point_in_polygon(pt, vertices):
+							var depth: float = 1.0 - d2 / float(cr)
+							img.set_pixel(px, py, Color(base_r * 0.3, base_g * 0.3, base_b * 0.3, depth * 0.85))
 	sprite.texture = ImageTexture.create_from_image(img)
 	sprite.z_index = 1
 	sprite.self_modulate = Color(1.15, 1.05, 0.9, 1.0)
+
+func _point_in_polygon(point: Vector2, vertices: Array[Vector2]) -> bool:
+	var inside: bool = false
+	var j: int = vertices.size() - 1
+	for i in range(vertices.size()):
+		if (vertices[i].y > point.y) != (vertices[j].y > point.y):
+			var intersect_x: float = (vertices[j].x - vertices[i].x) * (point.y - vertices[i].y) / (vertices[j].y - vertices[i].y) + vertices[i].x
+			if point.x < intersect_x:
+				inside = not inside
+		j = i
+	return inside
 
 func create_boss_sprite() -> ImageTexture:
 	var w: int = 160
