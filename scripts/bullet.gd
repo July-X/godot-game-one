@@ -6,9 +6,13 @@ var _damage: int = 1
 var _is_player_bullet: bool = true
 var _lifetime: float = 3.0
 
+@onready var _sprite: Sprite2D = $Sprite2D
+
 func _ready() -> void:
 	connect("body_entered", _on_body_entered)
 	connect("area_entered", _on_area_entered)
+	## 生成子弹精灵
+	_sprite.texture = SpriteFactory.create_bullet_sprite(true)
 
 func setup(pos: Vector2, angle: float, damage: int, is_player: bool) -> void:
 	global_position = pos
@@ -16,23 +20,16 @@ func setup(pos: Vector2, angle: float, damage: int, is_player: bool) -> void:
 	rotation = angle + PI * 0.5
 	_damage = damage
 	_is_player_bullet = is_player
-
-	if is_player:
-		## 玩家子弹 — 蓝色能量弹
-		$Sprite2D.modulate = Color(0.3, 0.7, 1.0, 1.0)
-		$Sprite2D.scale = Vector2(0.8, 0.8) + Vector2.ONE * min(damage * 0.15, 1.0)
-	else:
-		## 敌人子弹 — 红色
-		$Sprite2D.modulate = Color(1.0, 0.3, 0.2, 0.9)
-		$Sprite2D.scale = Vector2(0.6, 0.6)
+	if _sprite:
+		_sprite.texture = SpriteFactory.create_bullet_sprite(is_player)
+		var scale_val: float = 1.0 + min(damage * 0.2, 1.5)
+		_sprite.scale = Vector2(scale_val, scale_val)
 
 func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta
 	_lifetime -= delta
 	if _lifetime <= 0:
 		queue_free()
-
-	## 出屏删除
 	var screen := get_viewport_rect().size
 	if global_position.x < -50 or global_position.x > screen.x + 50 or global_position.y < -50 or global_position.y > screen.y + 50:
 		queue_free()

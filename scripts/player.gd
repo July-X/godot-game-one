@@ -18,9 +18,14 @@ var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 
 func _ready() -> void:
 	_muzzle_flash.visible = false
+	## 生成玩家精灵
+	if _sprite:
+		_sprite.texture = SpriteFactory.create_player_sprite()
+	if _muzzle_flash:
+		_muzzle_flash.texture = SpriteFactory.create_bullet_sprite(true)
+		_muzzle_flash.scale = Vector2(1.5, 1.5)
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
-		## 拾取范围可视化（调试用，可关闭）
 		if _pickup_area.get_child_count() > 0:
 			_pickup_area.get_child(0).shape.radius = pickup_radius
 
@@ -32,7 +37,7 @@ func _physics_process(delta: float) -> void:
 	var to_mouse: Vector2 = global_position.direction_to(mouse_pos)
 	var mouse_dist: float = global_position.distance_to(mouse_pos)
 
-	## 鼠标方向移动 — 距离越远速度越快
+	## 鼠标方向移动
 	if mouse_dist > 30.0:
 		var speed_ratio: float = clamp(mouse_dist / 200.0, 0.1, 1.0)
 		var target_vel: Vector2 = to_mouse * move_speed * speed_ratio
@@ -42,7 +47,7 @@ func _physics_process(delta: float) -> void:
 
 	move_and_slide()
 
-	## 限制在屏幕内
+	## 屏幕边界
 	var screen_size := get_viewport_rect().size
 	global_position.x = clamp(global_position.x, 20, screen_size.x - 20)
 	global_position.y = clamp(global_position.y, 20, screen_size.y - 20)
@@ -56,7 +61,7 @@ func _physics_process(delta: float) -> void:
 	if _shoot_timer <= 0.0:
 		_shoot()
 
-	## 自动拾取道具
+	## 自动拾取
 	_try_pickup_nearby()
 
 	## 无敌闪烁
@@ -92,7 +97,6 @@ func _shoot() -> void:
 		tween.tween_callback(func(): _muzzle_flash.visible = false)
 
 func _try_pickup_nearby() -> void:
-	## 自动拾取范围内的道具
 	var powerups := get_tree().get_nodes_in_group("powerups")
 	for pu in powerups:
 		if pu.is_inside_tree() and global_position.distance_to(pu.global_position) < pickup_radius:

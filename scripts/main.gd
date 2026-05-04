@@ -12,29 +12,17 @@ var _enemies_alive: int = 0
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_spawn_starfield()
+	_create_starfield()
 	_spawn_player()
 	_spawn_hud()
 	GameState.reset_game()
 
-func _spawn_starfield() -> void:
-	var starfield := Node2D.new()
-	starfield.name = "Starfield"
-	add_child(starfield)
-	for i in 200:
-		var star := Sprite2D.new()
-		var grad := Gradient.new()
-		var brightness := randf_range(0.3, 1.0)
-		grad.colors = [Color(brightness, brightness, brightness, 1.0)]
-		grad.offsets = [0.0]
-		var tex := GradientTexture2D.new()
-		tex.gradient = grad
-		tex.width = 2
-		tex.height = 2
-		star.texture = tex
-		star.position = Vector2(randf_range(-100, 1380), randf_range(-100, 820))
-		star.scale = Vector2(randf_range(0.3, 1.5), randf_range(0.3, 1.5))
-		starfield.add_child(star)
+func _create_starfield() -> void:
+	
+	var bg := Sprite2D.new()
+	bg.texture = SpriteFactory.create_star_field(1280, 720, 300)
+	bg.z_index = -100
+	add_child(bg)
 
 func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
@@ -49,15 +37,10 @@ func _spawn_hud() -> void:
 func _process(delta: float) -> void:
 	if not GameState.game_running:
 		return
-
-	## 敌人生成
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
 		_spawn_enemy()
-		## 随等级加快生成
 		_enemy_spawn_timer = max(2.0 - GameState.level * 0.1, 0.4)
-
-	## 难度递增
 	_difficulty_timer += delta
 	if _difficulty_timer > 15.0:
 		_difficulty_timer = 0.0
@@ -65,7 +48,6 @@ func _process(delta: float) -> void:
 
 func _spawn_enemy() -> void:
 	var enemy = _enemy_scene.instantiate()
-	## 随机屏幕边缘位置
 	var side := randi() % 4
 	var pos := Vector2.ZERO
 	var screen := get_viewport_rect().size
@@ -75,7 +57,6 @@ func _spawn_enemy() -> void:
 		2: pos = Vector2(-30, randf_range(0, screen.y))
 		3: pos = Vector2(screen.x + 30, randf_range(0, screen.y))
 	enemy.position = pos
-	## 随等级增强
 	enemy.health = 1 + GameState.level / 3
 	enemy.move_speed = 50.0 + GameState.level * 8.0
 	enemy.shoot_cooldown = max(2.5 - GameState.level * 0.15, 0.8)
@@ -99,6 +80,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if event is InputEventKey and event.keycode == KEY_F11:
+		if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		else:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		set_meta("fs_latch", true)
+	else:
+		if has_meta("fs_latch"):
+			remove_meta("fs_latch")
 
 func _restart() -> void:
 	get_tree().reload_current_scene()

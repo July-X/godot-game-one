@@ -13,9 +13,12 @@ var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 
+@onready var _sprite: Sprite2D = $Sprite2D
+
 func _ready() -> void:
 	add_to_group("enemies")
-	## 随机初始移动方向
+	if _sprite:
+		_sprite.texture = SpriteFactory.create_enemy_sprite()
 	var angle := randf() * TAU
 	velocity = Vector2.from_angle(angle) * move_speed
 	_shoot_timer = randf_range(0.5, shoot_cooldown)
@@ -65,11 +68,9 @@ func _shoot() -> void:
 
 func take_damage(amount: int = 1) -> void:
 	health -= amount
-	## 受击闪烁
 	modulate = Color(2, 2, 2, 1)
 	var tween := create_tween()
 	tween.tween_property(self, "modulate", Color(1, 1, 1, 1), 0.1)
-
 	if health <= 0:
 		die()
 
@@ -87,7 +88,6 @@ func _spawn_explosion() -> void:
 	SFX.play_enemy_death()
 
 func _try_spawn_powerup() -> void:
-	## 20% 概率掉落道具
 	if randf() < 0.2:
 		var pu = _powerup_scene.instantiate()
 		get_tree().current_scene.add_child(pu)
