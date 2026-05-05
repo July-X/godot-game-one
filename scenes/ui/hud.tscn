@@ -74,9 +74,9 @@ R - 重新开始"
 [node name="LeaderboardPanel" type="Panel" parent="."]
 anchor_left = 1.0
 offset_left = -220.0
-offset_top = 66.0
+offset_top = 72.0
 offset_right = -20.0
-offset_bottom = 200.0
+offset_bottom = 220.0
 theme_override_styles/panel = SubResource("3")
 
 [node name="LeaderboardLabel" type="Label" parent="LeaderboardPanel"]

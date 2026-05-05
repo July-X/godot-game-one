@@ -49,8 +49,8 @@ func _destroy() -> void:
 
 func _on_body_entered(body: Node2D) -> void:
 	if body.is_in_group("player") and body.has_method("take_damage"):
-		GameState.death_message = "撞上小行星 粉身碎骨"
-		body.take_damage(99)
+		GameState.death_message = "撞上小行星 遭受重创"
+		body.take_damage(max(1.0, ceil(GameState.max_health * 0.5)))
 		_destroy()
 
 func _on_area_entered(area: Area2D) -> void:
