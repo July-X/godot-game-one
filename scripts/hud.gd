@@ -12,7 +12,7 @@ extends CanvasLayer
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
 @onready var _skill_button: Button = $SkillButton
 @onready var _skill_bg: ColorRect = $SkillButton/SkillBg
-@onready var _skill_cooldown_rect: ColorRect = $SkillButton/SkillCooldown
+@onready var _skill_cooldown_overlay = $SkillButton/SkillCooldown
 @onready var _skill_label: Label = $SkillButton/SkillLabel
 
 var _damage_flash: ColorRect
@@ -47,17 +47,15 @@ func _on_skill_pressed() -> void:
 func _update_skill_cooldown() -> void:
 	var cd: float = GameState.skill_cooldown
 	if cd > 0:
-		_skill_cooldown_rect.visible = true
+		_skill_cooldown_overlay.visible = true
 		var ratio: float = cd / GameState.SKILL_COOLDOWN_MAX
-		var bh: float = _skill_button.size.y
-		_skill_cooldown_rect.size.y = bh * ratio
-		_skill_cooldown_rect.position.y = 0.0
+		_skill_cooldown_overlay.set_cooldown_ratio(ratio)
 		var seconds: int = int(ceil(cd))
 		_skill_label.text = str(seconds)
 		_skill_label.add_theme_font_size_override("font_size", 20)
 		_skill_bg.color = Color(0.12, 0.15, 0.25, 0.45)
 	else:
-		_skill_cooldown_rect.visible = false
+		_skill_cooldown_overlay.visible = false
 		_skill_label.text = "⚡"
 		_skill_label.add_theme_font_size_override("font_size", 22)
 		_skill_bg.color = Color(0.2, 0.7, 0.35, 0.35)

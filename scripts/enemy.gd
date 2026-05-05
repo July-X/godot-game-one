@@ -66,7 +66,10 @@ func _physics_process(delta: float) -> void:
 	_shoot_timer -= delta
 	if _shoot_timer <= 0.0 and _target and is_instance_valid(_target):
 		_shoot()
-		_shoot_timer = shoot_cooldown + randf_range(-0.3, 0.3)
+		var cd: float = shoot_cooldown
+		if enemy_type == 0:
+			cd *= 2.0
+		_shoot_timer = cd + randf_range(-0.3, 0.3)
 
 	## 更新血条
 	if _health_bar:
