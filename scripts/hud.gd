@@ -4,12 +4,16 @@ extends CanvasLayer
 @onready var _level_label: Label = $LevelLabel
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _powerup_display: HBoxContainer = $PowerupDisplay
+@onready var _controls_label: Label = $ControlsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
+@onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
 
 func _ready() -> void:
 	_game_over_panel.visible = false
+	_set_control_ignore_input(_game_over_panel)
+	_update_platform_hints()
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
 	GameState.health_changed.connect(_on_health_changed)
@@ -75,3 +79,18 @@ func _update_powerup_display() -> void:
 			bar.modulate = labels[type].color
 			container.add_child(bar)
 			_powerup_display.add_child(container)
+
+func _set_control_ignore_input(root: Control) -> void:
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for child in root.get_children():
+		if child is Control:
+			_set_control_ignore_input(child)
+
+func _update_platform_hints() -> void:
+	var is_mobile: bool = OS.has_feature("android") or DisplayServer.is_touchscreen_available()
+	if is_mobile:
+		_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
+		_restart_label.text = "点击屏幕重新开始"
+	else:
+		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nR - 重新开始"
+		_restart_label.text = "按 R 重新开始"

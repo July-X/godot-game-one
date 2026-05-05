@@ -113,7 +113,7 @@ func _shoot() -> void:
 func _shoot_single(angle: float) -> void:
 	var bullet := _bullet_scene.instantiate()
 	get_tree().current_scene.add_child(bullet)
-	bullet.setup(global_position + Vector2.from_angle(angle) * 20, angle, 0.7, false, 1, 700.0)
+	bullet.setup(global_position + Vector2.from_angle(angle) * 20, angle, 0.7, false, 1, 780.0)
 	bullet.modulate = Color(1.0, 0.4, 0.3, 1.0)
 
 func _shoot_spread(angle: float) -> void:
@@ -121,7 +121,7 @@ func _shoot_spread(angle: float) -> void:
 		var a: float = angle + i * 0.2
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.5, false, 1, 550.0)
+		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.5, false, 1, 780.0)
 		bullet.modulate = Color(0.3, 1.0, 0.4, 1.0)
 
 func _shoot_circle() -> void:
@@ -129,7 +129,7 @@ func _shoot_circle() -> void:
 		var a: float = float(i) * TAU / 6.0
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.3, false, 1, 450.0)
+		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.3, false, 1, 780.0)
 		bullet.modulate = Color(0.6, 0.3, 1.0, 1.0)
 
 func take_damage(amount: int = 1) -> void:

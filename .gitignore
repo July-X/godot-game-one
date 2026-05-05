@@ -6,3 +6,5 @@ addons/
 backup_3d/
 *.uid
 backup_3d/
+.workbuddy/
+android/

@@ -22,9 +22,9 @@ var _planets: Array[Node2D] = []
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_create_parallax_background()
+	_spawn_mobile_controls()
 	_spawn_player()
 	_spawn_hud()
-	_spawn_mobile_controls()
 	_start_bgm()
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
@@ -316,8 +316,6 @@ func _show_boss_warning() -> void:
 func _on_player_died() -> void:
 	GameState.game_running = false
 	_show_death_marquee()
-	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
-		_show_touch_restart()
 
 func _show_death_marquee() -> void:
 	var msg: String = GameState.death_message
@@ -342,24 +340,6 @@ func _show_death_marquee() -> void:
 	tween.tween_property(banner, "modulate:a", 0.0, 3.0)
 	tween.tween_callback(banner.queue_free)
 
-func _show_touch_restart() -> void:
-	var screen := get_viewport_rect().size
-	var label := Label.new()
-	label.text = "点击屏幕重新开始"
-	label.add_theme_font_size_override("font_size", 20)
-	label.add_theme_color_override("font_color", Color(0.6, 0.7, 1.0, 1.0))
-	label.horizontal_alignment = 1
-	label.vertical_alignment = 1
-	label.position = Vector2(0, screen.y * 0.6)
-	label.size = Vector2(screen.x, 40)
-	label.z_index = 200
-	label.name = "TouchRestartLabel"
-	add_child(label)
-
-	var tween := create_tween().set_loops()
-	tween.tween_property(label, "modulate:a", 0.3, 0.6)
-	tween.tween_property(label, "modulate:a", 1.0, 0.6)
-
 func _restart_on_touch() -> void:
 	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
 		_restart()
@@ -368,12 +348,14 @@ func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
 		_player.on_level_up()
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.keycode == KEY_R and not GameState.game_running:
-		_restart()
+func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
 		if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
 			_restart()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.keycode == KEY_R and not GameState.game_running:
+		_restart()
 	if event is InputEventKey and event.keycode == KEY_ESCAPE:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

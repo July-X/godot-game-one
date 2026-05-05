@@ -20,8 +20,6 @@ var _pitch: float = 0.0
 var _pickup_radius: float = 280.0
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
-var _touch_aim: Vector2 = Vector2.ZERO
-var _mobile_shoot: bool = false
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _muzzle_flash: Sprite2D = $MuzzleFlash
@@ -44,9 +42,6 @@ func _ready() -> void:
 		var mc = get_tree().current_scene.find_child("MobileControls", true, false)
 		if mc:
 			mc.move_input.connect(_on_mobile_move)
-			mc.aim_pos.connect(_on_mobile_aim)
-			mc.shoot_pressed.connect(_on_mobile_shoot_start)
-			mc.shoot_released.connect(_on_mobile_shoot_stop)
 
 func _update_appearance() -> void:
 	var level: int = GameState.shoot_level
@@ -73,15 +68,6 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_mobile_move(vec: Vector2) -> void:
 	_touch_move = vec
 
-func _on_mobile_aim(pos: Vector2) -> void:
-	_touch_aim = pos
-
-func _on_mobile_shoot_start() -> void:
-	_mobile_shoot = true
-
-func _on_mobile_shoot_stop() -> void:
-	_mobile_shoot = false
-
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
 		return
@@ -100,13 +86,11 @@ func _physics_process(delta: float) -> void:
 
 	if _mobile_mode:
 		if _touch_move.length() > 0.1:
-			velocity = velocity.lerp(_touch_move * move_speed, acceleration * delta / move_speed)
+			velocity = _touch_move * move_speed
+			rotation = _touch_move.angle() + PI * 0.5
 		else:
 			velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
-		if _touch_aim.length_squared() > 0:
-			target_pos = _touch_aim
-		else:
-			target_pos = global_position + Vector2.RIGHT.rotated(rotation - PI * 0.5) * 100
+		target_pos = global_position + Vector2.RIGHT.rotated(rotation - PI * 0.5) * 100
 	else:
 		var mouse_pos := get_global_mouse_position()
 		var to_mouse: Vector2 = global_position.direction_to(mouse_pos)
@@ -135,13 +119,13 @@ func _physics_process(delta: float) -> void:
 		global_position.y = screen_size.y - margin
 		velocity.y = -abs(velocity.y) * 0.5
 
-	var target_angle: float = global_position.angle_to_point(target_pos) + PI * 0.5
-	var angle_diff: float = wrapf(target_angle - rotation, -PI, PI)
-	rotation += angle_diff * 8.0 * delta
+	if not _mobile_mode:
+		var target_angle: float = global_position.angle_to_point(target_pos) + PI * 0.5
+		var angle_diff: float = wrapf(target_angle - rotation, -PI, PI)
+		rotation += angle_diff * 8.0 * delta
 
-	if (_mobile_mode and _mobile_shoot) or not _mobile_mode:
-		if _shoot_timer <= 0.0:
-			_shoot()
+	if _shoot_timer <= 0.0:
+		_shoot()
 
 	## 自动拾取
 	_try_pickup_nearby()
@@ -190,8 +174,12 @@ func _shoot() -> void:
 	_shoot_timer = GameState.get_shoot_cooldown()
 	SFX.play_shoot()
 
-	var mouse_pos := get_global_mouse_position()
-	var base_angle: float = global_position.angle_to_point(mouse_pos)
+	var base_angle: float
+	if _mobile_mode:
+		base_angle = rotation - PI * 0.5
+	else:
+		var mouse_pos := get_global_mouse_position()
+		base_angle = global_position.angle_to_point(mouse_pos)
 	var bullet_count: int = GameState.get_bullet_count()
 	var level: int = GameState.shoot_level
 

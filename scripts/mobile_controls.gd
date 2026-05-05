@@ -1,18 +1,19 @@
 extends CanvasLayer
 
-var _touch_active: bool = false
-var _touch_pos: Vector2 = Vector2.ZERO
+@export var joystick_radius: float = 140.0
+@export var base_offset: Vector2 = Vector2(170.0, 550.0)
+@export var knob_scale: float = 0.38
 var _move_vector: Vector2 = Vector2.ZERO
-var _aim_pos: Vector2 = Vector2.ZERO
-var _shooting: bool = false
+var _joystick_center: Vector2 = Vector2.ZERO
 var _move_touch_id: int = -1
-var _aim_touch_id: int = -1
 var _is_mobile: bool = false
+var _ui_root: Control
+var _base_node: Panel
+var _knob_node: Panel
+var _base_style: StyleBoxFlat
+var _knob_style: StyleBoxFlat
 
 signal move_input(vector: Vector2)
-signal aim_pos(pos: Vector2)
-signal shoot_pressed
-signal shoot_released
 
 func _ready() -> void:
 	_is_mobile = OS.has_feature("android") or DisplayServer.is_touchscreen_available()
@@ -20,6 +21,10 @@ func _ready() -> void:
 		hide()
 		set_process(false)
 		set_process_input(false)
+		return
+	_joystick_center = _calc_joystick_center()
+	_build_visual_nodes()
+	_update_visual_knob(_joystick_center)
 
 func _input(event: InputEvent) -> void:
 	if not _is_mobile:
@@ -27,36 +32,94 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			if event.position.x < get_viewport().size.x * 0.4 and _move_touch_id == -1:
+			if _move_touch_id == -1:
 				_move_touch_id = event.index
-				_touch_active = true
-				_touch_pos = event.position
-			elif event.position.x >= get_viewport().size.x * 0.4 and _aim_touch_id == -1:
-				_aim_touch_id = event.index
-				_aim_pos = event.position
-				if GameState.game_running:
-					_shooting = true
-					shoot_pressed.emit()
+				_set_active_visual(true)
+				_update_move_vector(event.position)
 		else:
 			if event.index == _move_touch_id:
 				_move_touch_id = -1
 				_move_vector = Vector2.ZERO
 				move_input.emit(Vector2.ZERO)
-			if event.index == _aim_touch_id:
-				_aim_touch_id = -1
-				_shooting = false
-				shoot_released.emit()
+				_set_active_visual(false)
+				_update_visual_knob(_joystick_center)
 
 	if event is InputEventScreenDrag:
 		if event.index == _move_touch_id:
-			var screen: Vector2 = get_viewport().size
-			var delta_v: Vector2 = (event.position - _touch_pos) / screen
-			_move_vector = delta_v.limit_length(1.0)
-			move_input.emit(_move_vector)
-			_touch_pos = event.position
-		if event.index == _aim_touch_id:
-			_aim_pos = event.position
-			aim_pos.emit(_aim_pos)
-			if not _shooting and GameState.game_running:
-				_shooting = true
-				shoot_pressed.emit()
+			_update_move_vector(event.position)
+
+func _update_move_vector(current_pos: Vector2) -> void:
+	var delta_v: Vector2 = current_pos - _joystick_center
+	if delta_v.length() <= 0.001:
+		_move_vector = Vector2.ZERO
+		_update_visual_knob(_joystick_center)
+	else:
+		_move_vector = delta_v / joystick_radius
+		_move_vector = _move_vector.limit_length(1.0)
+		_update_visual_knob(_joystick_center + _move_vector * joystick_radius)
+	move_input.emit(_move_vector)
+
+func _calc_joystick_center() -> Vector2:
+	var size: Vector2 = get_viewport().size
+	var center_x: float = clamp(base_offset.x, joystick_radius + 24.0, size.x * 0.5)
+	var center_y: float = clamp(base_offset.y, joystick_radius + 24.0, size.y - joystick_radius - 24.0)
+	return Vector2(center_x, center_y)
+
+func _build_visual_nodes() -> void:
+	_ui_root = Control.new()
+	_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_ui_root)
+
+	_base_node = Panel.new()
+	_base_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_base_node.size = Vector2(joystick_radius * 2.0, joystick_radius * 2.0)
+	_base_node.position = _joystick_center - _base_node.size * 0.5
+	_base_style = StyleBoxFlat.new()
+	_base_style.bg_color = Color(0.1, 0.15, 0.25, 0.28)
+	_base_style.border_color = Color(0.45, 0.65, 1.0, 0.78)
+	_base_style.border_width_left = 4
+	_base_style.border_width_top = 4
+	_base_style.border_width_right = 4
+	_base_style.border_width_bottom = 4
+	_base_style.corner_radius_top_left = int(joystick_radius)
+	_base_style.corner_radius_top_right = int(joystick_radius)
+	_base_style.corner_radius_bottom_left = int(joystick_radius)
+	_base_style.corner_radius_bottom_right = int(joystick_radius)
+	_base_node.add_theme_stylebox_override("panel", _base_style)
+	_ui_root.add_child(_base_node)
+
+	var knob_radius: float = joystick_radius * knob_scale
+	_knob_node = Panel.new()
+	_knob_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_knob_node.size = Vector2(knob_radius * 2.0, knob_radius * 2.0)
+	_knob_style = StyleBoxFlat.new()
+	_knob_style.bg_color = Color(0.65, 0.8, 1.0, 0.88)
+	_knob_style.border_color = Color(1.0, 1.0, 1.0, 0.85)
+	_knob_style.border_width_left = 2
+	_knob_style.border_width_top = 2
+	_knob_style.border_width_right = 2
+	_knob_style.border_width_bottom = 2
+	_knob_style.corner_radius_top_left = int(knob_radius)
+	_knob_style.corner_radius_top_right = int(knob_radius)
+	_knob_style.corner_radius_bottom_left = int(knob_radius)
+	_knob_style.corner_radius_bottom_right = int(knob_radius)
+	_knob_node.add_theme_stylebox_override("panel", _knob_style)
+	_ui_root.add_child(_knob_node)
+
+func _update_visual_knob(knob_center: Vector2) -> void:
+	if _knob_node == null:
+		return
+	_knob_node.position = knob_center - _knob_node.size * 0.5
+
+func _set_active_visual(active: bool) -> void:
+	if _base_style == null or _knob_style == null:
+		return
+	if active:
+		_base_style.bg_color = Color(0.2, 0.3, 0.45, 0.44)
+		_base_style.border_color = Color(0.6, 0.8, 1.0, 0.95)
+		_knob_style.bg_color = Color(0.8, 0.9, 1.0, 1.0)
+	else:
+		_base_style.bg_color = Color(0.1, 0.15, 0.25, 0.28)
+		_base_style.border_color = Color(0.45, 0.65, 1.0, 0.78)
+		_knob_style.bg_color = Color(0.65, 0.8, 1.0, 0.88)
