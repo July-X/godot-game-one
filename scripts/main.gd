@@ -315,31 +315,23 @@ func _show_death_marquee() -> void:
 	if msg.is_empty():
 		msg = "被击落"
 
-	var marquee := Label.new()
+	var banner := Label.new()
 	var screen := get_viewport_rect().size
-	var start_x: float = screen.x + 50
-	var end_x: float = -len(msg) * 14.0 - 50
-	marquee.text = "    ☠  " + msg + "  ☠    "
-	marquee.add_theme_font_size_override("font_size", 22)
-	marquee.add_theme_color_override("font_color", Color(1.0, 0.3, 0.2, 1.0))
-	marquee.position = Vector2(start_x, screen.y * 0.45)
-	marquee.z_index = 200
-	add_child(marquee)
+	banner.text = "☠  " + msg + "  ☠"
+	banner.add_theme_font_size_override("font_size", 24)
+	banner.add_theme_color_override("font_color", Color(1.0, 0.3, 0.2, 1.0))
+	banner.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
+	banner.add_theme_constant_override("shadow_outline_size", 2)
+	banner.horizontal_alignment = 1
+	banner.position = Vector2(0, 20)
+	banner.size = Vector2(screen.x, 36)
+	banner.z_index = 200
+	add_child(banner)
 
-	var duration: float = 4.0
-	var tween := create_tween().set_parallel(false)
-	tween.tween_property(marquee, "position:x", end_x, duration).set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN)
-	tween.tween_callback(func():
-		marquee.position.x = start_x
-		marquee.modulate.a = 0.7
-		var tween2 := create_tween().set_parallel(false)
-		tween2.tween_property(marquee, "position:x", end_x, duration * 0.8).set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN)
-		tween2.tween_callback(func():
-			var tween3 := create_tween()
-			tween3.tween_property(marquee, "modulate:a", 0.0, 0.5)
-			tween3.tween_callback(marquee.queue_free)
-		)
-	)
+	var tween := create_tween()
+	tween.tween_interval(0.5)
+	tween.tween_property(banner, "modulate:a", 0.0, 3.0)
+	tween.tween_callback(banner.queue_free)
 
 func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
