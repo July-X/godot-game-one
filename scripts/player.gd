@@ -5,7 +5,7 @@ signal died
 @export var move_speed: float = 260.0
 @export var acceleration: float = 1000.0
 @export var friction: float = 500.0
-@export var mouse_sensitivity: float = 0.0005
+@export var mouse_sensitivity: float = 0.000575
 @export var mouse_smoothing: float = 0.06
 
 var _shoot_timer: float = 0.0
@@ -18,6 +18,10 @@ var _walk_cycle: float = 0.0
 var _head_bob_timer: float = 0.0
 var _pitch: float = 0.0
 var _pickup_radius: float = 280.0
+var _mobile_mode: bool = false
+var _touch_move: Vector2 = Vector2.ZERO
+var _touch_aim: Vector2 = Vector2.ZERO
+var _mobile_shoot: bool = false
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _muzzle_flash: Sprite2D = $MuzzleFlash
@@ -34,6 +38,15 @@ func _ready() -> void:
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
+	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
+		_mobile_mode = true
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var mc = get_tree().current_scene.find_child("MobileControls", true, false)
+		if mc:
+			mc.move_input.connect(_on_mobile_move)
+			mc.aim_pos.connect(_on_mobile_aim)
+			mc.shoot_pressed.connect(_on_mobile_shoot_start)
+			mc.shoot_released.connect(_on_mobile_shoot_stop)
 
 func _update_appearance() -> void:
 	var level: int = GameState.shoot_level
@@ -51,11 +64,23 @@ func _update_pickup_radius() -> void:
 		_pickup_area.get_child(0).shape.radius = _pickup_radius
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and GameState.game_running:
+	if event is InputEventMouseMotion and GameState.game_running and not _mobile_mode:
 		var target_yaw: float = -event.relative.x * mouse_sensitivity
 		var target_pitch: float = -event.relative.y * mouse_sensitivity
 		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
 		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
+
+func _on_mobile_move(vec: Vector2) -> void:
+	_touch_move = vec
+
+func _on_mobile_aim(pos: Vector2) -> void:
+	_touch_aim = pos
+
+func _on_mobile_shoot_start() -> void:
+	_mobile_shoot = true
+
+func _on_mobile_shoot_stop() -> void:
+	_mobile_shoot = false
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
@@ -64,26 +89,38 @@ func _physics_process(delta: float) -> void:
 	_shoot_timer -= delta
 	_invincible_timer = max(_invincible_timer - delta, 0.0)
 
-	rotate(_yaw_velocity)
-	_pitch = clamp(_pitch + _pitch_velocity, -PI * 0.4, PI * 0.4)
-	_yaw_velocity *= 0.8
-	_pitch_velocity *= 0.8
+	if not _mobile_mode:
+		rotate(_yaw_velocity)
+		_pitch = clamp(_pitch + _pitch_velocity, -PI * 0.4, PI * 0.4)
+		_yaw_velocity *= 0.8
+		_pitch_velocity *= 0.8
 
-	var mouse_pos := get_global_mouse_position()
-	var to_mouse: Vector2 = global_position.direction_to(mouse_pos)
-	var mouse_dist: float = global_position.distance_to(mouse_pos)
+	var target_pos: Vector2
+	var screen_size := get_viewport_rect().size
 
-	if mouse_dist > 20.0:
-		var speed_ratio: float = clamp(mouse_dist / 250.0, 0.05, 1.0)
-		var target_vel: Vector2 = to_mouse * move_speed * speed_ratio
-		velocity = velocity.lerp(target_vel, acceleration * delta / move_speed)
+	if _mobile_mode:
+		if _touch_move.length() > 0.1:
+			velocity = velocity.lerp(_touch_move * move_speed, acceleration * delta / move_speed)
+		else:
+			velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
+		if _touch_aim.length_squared() > 0:
+			target_pos = _touch_aim
+		else:
+			target_pos = global_position + Vector2.RIGHT.rotated(rotation - PI * 0.5) * 100
 	else:
-		velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
+		var mouse_pos := get_global_mouse_position()
+		var to_mouse: Vector2 = global_position.direction_to(mouse_pos)
+		var mouse_dist: float = global_position.distance_to(mouse_pos)
+		if mouse_dist > 20.0:
+			var speed_ratio: float = clamp(mouse_dist / 250.0, 0.05, 1.0)
+			var target_vel: Vector2 = to_mouse * move_speed * speed_ratio
+			velocity = velocity.lerp(target_vel, acceleration * delta / move_speed)
+		else:
+			velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
+		target_pos = mouse_pos
 
 	move_and_slide()
 
-	## 屏幕边缘反弹
-	var screen_size := get_viewport_rect().size
 	var margin: float = 24.0
 	if global_position.x < margin:
 		global_position.x = margin
@@ -98,14 +135,13 @@ func _physics_process(delta: float) -> void:
 		global_position.y = screen_size.y - margin
 		velocity.y = -abs(velocity.y) * 0.5
 
-	## 朝向鼠标
-	var target_angle: float = global_position.angle_to_point(mouse_pos) + PI * 0.5
+	var target_angle: float = global_position.angle_to_point(target_pos) + PI * 0.5
 	var angle_diff: float = wrapf(target_angle - rotation, -PI, PI)
 	rotation += angle_diff * 8.0 * delta
 
-	## 自动射击
-	if _shoot_timer <= 0.0:
-		_shoot()
+	if (_mobile_mode and _mobile_shoot) or not _mobile_mode:
+		if _shoot_timer <= 0.0:
+			_shoot()
 
 	## 自动拾取
 	_try_pickup_nearby()
