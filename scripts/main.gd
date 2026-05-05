@@ -25,7 +25,6 @@ func _ready() -> void:
 	_spawn_mobile_controls()
 	_spawn_player()
 	_spawn_hud()
-	_spawn_damage_flash()
 	_start_bgm()
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
@@ -190,32 +189,6 @@ func _spawn_mobile_controls() -> void:
 	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
 		var mc = _mobile_controls_scene.instantiate()
 		add_child(mc)
-
-var _damage_flash: ColorRect
-
-func _spawn_damage_flash() -> void:
-	_damage_flash = ColorRect.new()
-	_damage_flash.color = Color(1.0, 0.0, 0.0, 0.0)
-	_damage_flash.z_index = 150
-	_damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_damage_flash)
-	_damage_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var old_health: int = GameState.current_health
-	GameState.health_changed.connect(func(_cur: int, _max: int):
-		if GameState.current_health < old_health:
-			_trigger_damage_flash()
-		old_health = GameState.current_health
-	)
-
-func _trigger_damage_flash() -> void:
-	if not _damage_flash or not is_instance_valid(_damage_flash):
-		return
-	var tween := create_tween()
-	tween.tween_property(_damage_flash, "color", Color(1.0, 0.0, 0.0, 0.18), 0.05)
-	tween.tween_property(_damage_flash, "color", Color(1.0, 0.0, 0.0, 0.0), 0.25)
-	tween.tween_callback(func():
-		_damage_flash.color = Color(1.0, 0.0, 0.0, 0.0)
-	)
 
 func _process(delta: float) -> void:
 	if not GameState.game_running:

@@ -12,10 +12,13 @@ extends CanvasLayer
 @onready var _leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
 
+var _damage_flash: ColorRect
+
 func _ready() -> void:
 	_game_over_panel.visible = false
 	_set_control_ignore_input(_game_over_panel)
 	_set_control_ignore_input($LeaderboardPanel)
+	_setup_damage_flash()
 	_update_platform_hints()
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
@@ -85,6 +88,23 @@ func _update_powerup_display() -> void:
 			bar.modulate = labels[type].color
 			container.add_child(bar)
 			_powerup_display.add_child(container)
+
+func _setup_damage_flash() -> void:
+	_damage_flash = ColorRect.new()
+	_damage_flash.color = Color(1.0, 0.0, 0.0, 0.0)
+	_damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_damage_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_damage_flash)
+	var old_health: int = GameState.current_health
+	GameState.health_changed.connect(func(_cur: int, _max: int):
+		if GameState.current_health < old_health:
+			if _damage_flash and is_instance_valid(_damage_flash):
+				var tween := create_tween()
+				tween.tween_property(_damage_flash, "color", Color(1.0, 0.0, 0.0, 0.18), 0.05)
+				tween.tween_property(_damage_flash, "color", Color(1.0, 0.0, 0.0, 0.0), 0.25)
+				tween.tween_callback(func(): _damage_flash.color = Color(1.0, 0.0, 0.0, 0.0))
+		old_health = GameState.current_health
+	)
 
 func _set_control_ignore_input(root: Control) -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
