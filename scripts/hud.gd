@@ -10,7 +10,7 @@ extends CanvasLayer
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
-@onready var _skill_button: TextureButton = $SkillButton
+@onready var _skill_button: Button = $SkillButton
 @onready var _skill_cooldown_rect: ColorRect = $SkillButton/SkillCooldown
 
 var _damage_flash: ColorRect

@@ -72,7 +72,7 @@ ESC - 释放鼠标
 Space - 技能
 R - 重新开始"
 
-[node name="SkillButton" type="TextureButton" parent="."]
+[node name="SkillButton" type="Button" parent="."]
 anchor_left = 1.0
 anchor_bottom = 1.0
 offset_left = -100.0
