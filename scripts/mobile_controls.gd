@@ -6,7 +6,7 @@ extends CanvasLayer
 var _move_vector: Vector2 = Vector2.ZERO
 var _joystick_center: Vector2 = Vector2.ZERO
 var _move_touch_id: int = -1
-var _is_mobile: bool = false
+var _is_mouse_dragging: bool = false
 var _ui_root: Control
 var _base_node: Panel
 var _knob_node: Panel
@@ -16,23 +16,32 @@ var _knob_style: StyleBoxFlat
 signal move_input(vector: Vector2)
 
 func _ready() -> void:
-	_is_mobile = OS.has_feature("android") or DisplayServer.is_touchscreen_available()
-	if not _is_mobile:
-		hide()
-		set_process(false)
-		set_process_input(false)
-		return
 	_joystick_center = _calc_joystick_center()
 	_build_visual_nodes()
 	_update_visual_knob(_joystick_center)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _is_mobile:
-		return
-
-	if event is InputEventScreenTouch:
+	## 鼠标控制（PC 端）
+	if event is InputEventMouseButton:
 		if event.pressed:
-			if _move_touch_id == -1 and event.position.x < get_viewport().size.x * 0.45:
+			if _is_in_joystick_area(event.position):
+				_is_mouse_dragging = true
+				_set_active_visual(true)
+				_update_move_vector(event.position)
+		else:
+			if _is_mouse_dragging:
+				_is_mouse_dragging = false
+				_move_vector = Vector2.ZERO
+				move_input.emit(Vector2.ZERO)
+				_set_active_visual(false)
+				_update_visual_knob(_joystick_center)
+	elif event is InputEventMouseMotion:
+		if _is_mouse_dragging:
+			_update_move_vector(event.position)
+	## 触屏控制（移动端）
+	elif event is InputEventScreenTouch:
+		if event.pressed:
+			if _move_touch_id == -1 and _is_in_joystick_area(event.position):
 				_move_touch_id = event.index
 				_set_active_visual(true)
 				_update_move_vector(event.position)
@@ -43,10 +52,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				move_input.emit(Vector2.ZERO)
 				_set_active_visual(false)
 				_update_visual_knob(_joystick_center)
-
-	if event is InputEventScreenDrag:
+	elif event is InputEventScreenDrag:
 		if event.index == _move_touch_id:
 			_update_move_vector(event.position)
+
+func _is_in_joystick_area(pos: Vector2) -> bool:
+	var dx: float = pos.x - _joystick_center.x
+	var dy: float = pos.y - _joystick_center.y
+	return dx * dx + dy * dy < joystick_radius * joystick_radius * 1.5
 
 func _update_move_vector(current_pos: Vector2) -> void:
 	var delta_v: Vector2 = current_pos - _joystick_center
@@ -68,9 +81,8 @@ func _calc_joystick_center() -> Vector2:
 func _build_visual_nodes() -> void:
 	_ui_root = Control.new()
 	_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui_root.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_ui_root)
-
 	_base_node = Panel.new()
 	_base_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_base_node.size = Vector2(joystick_radius * 2.0, joystick_radius * 2.0)
@@ -88,7 +100,6 @@ func _build_visual_nodes() -> void:
 	_base_style.corner_radius_bottom_right = int(joystick_radius)
 	_base_node.add_theme_stylebox_override("panel", _base_style)
 	_ui_root.add_child(_base_node)
-
 	var knob_radius: float = joystick_radius * knob_scale
 	_knob_node = Panel.new()
 	_knob_node.mouse_filter = Control.MOUSE_FILTER_IGNORE

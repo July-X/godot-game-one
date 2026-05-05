@@ -50,8 +50,8 @@ text = "等级 1"
 [node name="HealthBar" type="ProgressBar" parent="." unique_id=913072449]
 offset_left = 20.0
 offset_top = 68.0
-offset_right = 200.0
-offset_bottom = 88.0
+offset_right = 170.0
+offset_bottom = 92.0
 theme_override_styles/background = SubResource("1")
 theme_override_styles/fill = SubResource("2")
 max_value = 3.0
@@ -83,8 +83,8 @@ anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -120.0
-offset_top = -120.0
+offset_left = -168.0
+offset_top = -168.0
 offset_right = -24.0
 offset_bottom = -24.0
 grow_horizontal = 0
@@ -96,19 +96,27 @@ theme_override_styles/disabled = SubResource("4")
 
 [node name="SkillCooldown" type="ColorRect" parent="SkillButton" unique_id=1834192477]
 layout_mode = 0
-offset_right = 96.0
-offset_bottom = 96.0
+offset_right = 144.0
+offset_bottom = 144.0
 mouse_filter = 2
 color = Color(0, 0, 0, 0)
 script = ExtResource("2")
 
 [node name="SkillLabel" type="Label" parent="SkillButton" unique_id=1350867425]
-layout_mode = 0
-offset_right = 96.0
-offset_bottom = 96.0
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 0.90800005
+anchor_right = 0.901
+anchor_bottom = 1.0
+offset_left = -9.0
+offset_top = -18.512024
+offset_right = 14.255997
+grow_horizontal = 2
+grow_vertical = 2
 theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
-theme_override_font_sizes/font_size = 22
-text = "⚡"
+theme_override_font_sizes/font_size = 30
+text = "⚡⚡
+⚡⚡"
 horizontal_alignment = 1
 vertical_alignment = 1
 
