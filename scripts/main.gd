@@ -35,7 +35,7 @@ func _create_parallax_background() -> void:
 		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
 		_bg_color.z_index = -100
 
-	var far_layer := {nodes = [], speed = 5.0}
+	var far_layer := {nodes = [], speed = 12.0}
 	for i in range(350):
 		var star := Sprite2D.new()
 		var b: float = randf_range(0.3, 0.7)
@@ -49,7 +49,7 @@ func _create_parallax_background() -> void:
 		far_layer.nodes.append(star)
 	_bg_layers.append(far_layer)
 
-	var mid_layer := {nodes = [], speed = 10.0}
+	var mid_layer := {nodes = [], speed = 24.0}
 	for i in range(180):
 		var star := Sprite2D.new()
 		var b: float = randf_range(0.5, 0.9)
@@ -68,7 +68,7 @@ func _create_parallax_background() -> void:
 		mid_layer.nodes.append(star)
 	_bg_layers.append(mid_layer)
 
-	var near_layer := {nodes = [], speed = 16.0}
+	var near_layer := {nodes = [], speed = 40.0}
 	for i in range(70):
 		var star := Sprite2D.new()
 		var b: float = randf_range(0.7, 1.0)

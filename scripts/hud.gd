@@ -82,7 +82,7 @@ func _update_powerup_display() -> void:
 			container.add_child(label)
 			var bar := ProgressBar.new()
 			bar.custom_minimum_size = Vector2(60, 14)
-			bar.max_value = 5
+			bar.max_value = 15
 			bar.value = level
 			bar.modulate = labels[type].color
 			container.add_child(bar)

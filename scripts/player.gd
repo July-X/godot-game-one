@@ -182,19 +182,51 @@ func _shoot() -> void:
 		base_angle = global_position.angle_to_point(mouse_pos)
 	var bullet_count: int = GameState.get_bullet_count()
 	var level: int = GameState.shoot_level
+	var damage: int = GameState.get_bullet_damage()
 
 	var engine_offset: Vector2 = Vector2.from_angle(base_angle) * 24
-	var cannon_spread: float = 14.0 + level * 2.0
 	var perp: Vector2 = Vector2(-sin(base_angle), cos(base_angle))
-	var positions: Array[float] = []
-	for i in range(bullet_count):
-		positions.append(-cannon_spread + i * (cannon_spread * 2.0 / max(bullet_count - 1, 1)))
 
-	for i in bullet_count:
-		var offset: Vector2 = perp * positions[i]
-		var bullet := _bullet_scene.instantiate()
-		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + engine_offset + offset, base_angle, GameState.get_bullet_damage(), true, level, 660.0)
+	if level >= 12:
+		var spread_angles: Array[float] = [-0.3, -0.15, 0.0, 0.15, 0.3]
+		for i in range(bullet_count):
+			var a: float = base_angle + spread_angles[i % spread_angles.size()] * (0.5 + (level - 12) * 0.1)
+			var spread_offset: float = (i - bullet_count / 2.0) * 18.0
+			var offset: Vector2 = perp * spread_offset
+			var bullet := _bullet_scene.instantiate()
+			get_tree().current_scene.add_child(bullet)
+			bullet.setup(global_position + engine_offset + offset, a, damage, true, level, 660.0)
+	elif level >= 8:
+		var max_spread: float = 16.0 + level
+		var positions: Array[float] = []
+		for i in range(bullet_count):
+			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
+		for i in bullet_count:
+			var a: float = base_angle + positions[i] * 0.008
+			var offset: Vector2 = perp * positions[i]
+			var bullet := _bullet_scene.instantiate()
+			get_tree().current_scene.add_child(bullet)
+			bullet.setup(global_position + engine_offset + offset, a, damage, true, level, 660.0)
+	elif level >= 4:
+		var max_spread: float = 12.0 + level * 3.0
+		var positions: Array[float] = []
+		for i in range(bullet_count):
+			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
+		for i in bullet_count:
+			var offset: Vector2 = perp * positions[i]
+			var bullet := _bullet_scene.instantiate()
+			get_tree().current_scene.add_child(bullet)
+			bullet.setup(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
+	else:
+		var max_spread: float = 10.0 + level * 2.0
+		var positions: Array[float] = []
+		for i in range(bullet_count):
+			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
+		for i in bullet_count:
+			var offset: Vector2 = perp * positions[i]
+			var bullet := _bullet_scene.instantiate()
+			get_tree().current_scene.add_child(bullet)
+			bullet.setup(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
 
 	if _muzzle_flash:
 		_muzzle_flash.visible = true

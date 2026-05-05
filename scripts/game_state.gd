@@ -95,22 +95,21 @@ func collect_powerup(type: String) -> void:
 	SFX.play_ui_confirm()
 	match type:
 		"spread":
-			shoot_level = min(shoot_level + 1, 5)
+			shoot_level = min(shoot_level + 1, 15)
 		"speed":
-			shoot_speed_level = min(shoot_speed_level + 1, 5)
+			shoot_speed_level = min(shoot_speed_level + 1, 15)
 		"power":
-			bullet_power_level = min(bullet_power_level + 1, 5)
+			bullet_power_level = min(bullet_power_level + 1, 15)
 		"heal":
 			heal(max(ceil(max_health * 0.1), 1))
 		"bomb":
-			## 清屏炸弹，由主场景处理
 			pass
 
 func get_bullet_count() -> int:
-	return min(1 + shoot_level, 6)
+	return min(2 + shoot_level / 3, 8)
 
 func get_shoot_cooldown() -> float:
-	return max(0.3 - shoot_speed_level * 0.04, 0.08)
+	return max(0.3 - shoot_speed_level * 0.018, 0.08)
 
 func get_bullet_damage() -> int:
 	return bullet_power_level
