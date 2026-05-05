@@ -10,10 +10,12 @@ extends CanvasLayer
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
 @onready var _leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
+@onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
 
 func _ready() -> void:
 	_game_over_panel.visible = false
 	_set_control_ignore_input(_game_over_panel)
+	_set_control_ignore_input($LeaderboardPanel)
 	_update_platform_hints()
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
@@ -23,6 +25,7 @@ func _ready() -> void:
 	_update_score(0)
 	_update_level(1)
 	_update_health(3, 3)
+	_refresh_leaderboard()
 
 func _on_score_changed(new_score: int) -> void:
 	_update_score(new_score)
@@ -89,16 +92,18 @@ func _set_control_ignore_input(root: Control) -> void:
 		_set_control_ignore_input(child)
 
 func _refresh_leaderboard() -> void:
-	for child in _leaderboard_entries.get_children():
-		child.queue_free()
+	for container in [_leaderboard_entries, _perm_leaderboard_entries]:
+		for child in container.get_children():
+			child.queue_free()
 	var entries := Leaderboard.get_entries()
 	for entry in entries:
-		var label := Label.new()
-		label.theme_override_font_sizes["font_size"] = 12
-		label.theme_override_colors["font_color"] = Color(0.8, 0.85, 1.0, 0.9)
-		label.horizontal_alignment = 1
-		label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
-		_leaderboard_entries.add_child(label)
+		for container in [_leaderboard_entries, _perm_leaderboard_entries]:
+			var label := Label.new()
+			label.theme_override_font_sizes["font_size"] = 12 if container == _perm_leaderboard_entries else 12
+			label.theme_override_colors["font_color"] = Color(0.8, 0.85, 1.0, 0.9)
+			label.horizontal_alignment = 1
+			label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
+			container.add_child(label)
 
 func _update_platform_hints() -> void:
 	var is_mobile: bool = OS.has_feature("android") or DisplayServer.is_touchscreen_available()
