@@ -162,15 +162,18 @@ func _shoot() -> void:
 	var bullet_count: int = GameState.get_bullet_count()
 	var level: int = GameState.shoot_level
 
+	var engine_offset: Vector2 = Vector2.from_angle(base_angle) * 24
+	var cannon_spread: float = 14.0 + level * 2.0
 	var perp: Vector2 = Vector2(-sin(base_angle), cos(base_angle))
-	var spacing: float = 8.0
-	var start_offset: float = -(bullet_count - 1) * spacing * 0.5
+	var positions: Array[float] = []
+	for i in range(bullet_count):
+		positions.append(-cannon_spread + i * (cannon_spread * 2.0 / max(bullet_count - 1, 1)))
 
 	for i in bullet_count:
-		var offset: Vector2 = perp * (start_offset + i * spacing)
+		var offset: Vector2 = perp * positions[i]
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(base_angle) * 24 + offset, base_angle, GameState.get_bullet_damage(), true, level)
+		bullet.setup(global_position + engine_offset + offset, base_angle, GameState.get_bullet_damage(), true, level)
 
 	if _muzzle_flash:
 		_muzzle_flash.visible = true
