@@ -11,7 +11,9 @@ extends CanvasLayer
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
 @onready var _skill_button: Button = $SkillButton
+@onready var _skill_bg: ColorRect = $SkillButton/SkillBg
 @onready var _skill_cooldown_rect: ColorRect = $SkillButton/SkillCooldown
+@onready var _skill_label: Label = $SkillButton/SkillLabel
 
 var _damage_flash: ColorRect
 
@@ -36,15 +38,28 @@ func _process(_delta: float) -> void:
 	_update_skill_cooldown()
 
 func _on_skill_pressed() -> void:
+	if GameState.skill_cooldown > 0:
+		return
 	var player := get_tree().current_scene.find_child("Player", true, false)
 	if player and player.has_method("_fire_ring_shotgun"):
 		player._fire_ring_shotgun()
 
 func _update_skill_cooldown() -> void:
-	var ratio: float = GameState.get_skill_cooldown_ratio()
-	_skill_cooldown_rect.custom_minimum_size.y = _skill_button.size.y * ratio
-	_skill_cooldown_rect.size.y = _skill_button.size.y * ratio
-	_skill_cooldown_rect.visible = ratio > 0
+	var cd: float = GameState.skill_cooldown
+	if cd > 0:
+		_skill_cooldown_rect.visible = true
+		var ratio: float = cd / GameState.SKILL_COOLDOWN_MAX
+		_skill_cooldown_rect.custom_minimum_size.y = _skill_button.size.y * ratio
+		_skill_cooldown_rect.size.y = _skill_button.size.y * ratio
+		var seconds: int = int(ceil(cd))
+		_skill_label.text = str(seconds)
+		_skill_label.add_theme_font_size_override("font_size", 20)
+		_skill_bg.color = Color(0.12, 0.15, 0.25, 0.45)
+	else:
+		_skill_cooldown_rect.visible = false
+		_skill_label.text = "⚡"
+		_skill_label.add_theme_font_size_override("font_size", 22)
+		_skill_bg.color = Color(0.2, 0.7, 0.35, 0.35)
 
 func _on_score_changed(new_score: int) -> void:
 	_update_score(new_score)
