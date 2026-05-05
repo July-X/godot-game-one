@@ -56,9 +56,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		var target_pitch: float = -event.relative.y * mouse_sensitivity
 		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
 		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
@@ -173,7 +170,7 @@ func _shoot() -> void:
 		var offset: Vector2 = perp * positions[i]
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + engine_offset + offset, base_angle, GameState.get_bullet_damage(), true, level)
+		bullet.setup(global_position + engine_offset + offset, base_angle, GameState.get_bullet_damage(), true, level, 660.0)
 
 	if _muzzle_flash:
 		_muzzle_flash.visible = true
