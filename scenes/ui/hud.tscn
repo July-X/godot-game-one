@@ -83,8 +83,8 @@ anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -88.0
-offset_top = 636.0
+offset_left = -120.0
+offset_top = -120.0
 offset_right = -24.0
 offset_bottom = -24.0
 grow_horizontal = 0
@@ -94,25 +94,18 @@ theme_override_styles/pressed = SubResource("4")
 theme_override_styles/hover = SubResource("4")
 theme_override_styles/disabled = SubResource("4")
 
-[node name="SkillBg" type="ColorRect" parent="SkillButton" unique_id=785607628]
-layout_mode = 0
-offset_right = 64.0
-offset_bottom = 64.0
-mouse_filter = 2
-color = Color(0.12, 0.15, 0.25, 0.45)
-
 [node name="SkillCooldown" type="ColorRect" parent="SkillButton" unique_id=1834192477]
 layout_mode = 0
-offset_right = 64.0
-offset_bottom = 64.0
+offset_right = 96.0
+offset_bottom = 96.0
 mouse_filter = 2
 color = Color(0, 0, 0, 0)
 script = ExtResource("2")
 
 [node name="SkillLabel" type="Label" parent="SkillButton" unique_id=1350867425]
 layout_mode = 0
-offset_right = 64.0
-offset_bottom = 64.0
+offset_right = 96.0
+offset_bottom = 96.0
 theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
 theme_override_font_sizes/font_size = 22
 text = "⚡"

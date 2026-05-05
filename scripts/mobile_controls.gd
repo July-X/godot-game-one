@@ -32,7 +32,7 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			if _move_touch_id == -1:
+			if _move_touch_id == -1 and event.position.x < get_viewport().size.x * 0.45:
 				_move_touch_id = event.index
 				_set_active_visual(true)
 				_update_move_vector(event.position)
@@ -119,7 +119,11 @@ func _set_active_visual(active: bool) -> void:
 		_base_style.bg_color = Color(0.2, 0.3, 0.45, 0.44)
 		_base_style.border_color = Color(0.6, 0.8, 1.0, 0.95)
 		_knob_style.bg_color = Color(0.8, 0.9, 1.0, 1.0)
+		_base_node.modulate = Color(1, 1, 1, 0.3)
+		_knob_node.modulate = Color(1, 1, 1, 0.3)
 	else:
 		_base_style.bg_color = Color(0.1, 0.15, 0.25, 0.28)
 		_base_style.border_color = Color(0.45, 0.65, 1.0, 0.78)
 		_knob_style.bg_color = Color(0.65, 0.8, 1.0, 0.88)
+		_base_node.modulate = Color(1, 1, 1, 1.0)
+		_knob_node.modulate = Color(1, 1, 1, 1.0)
