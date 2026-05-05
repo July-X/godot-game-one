@@ -49,8 +49,9 @@ func _update_skill_cooldown() -> void:
 	if cd > 0:
 		_skill_cooldown_rect.visible = true
 		var ratio: float = cd / GameState.SKILL_COOLDOWN_MAX
-		_skill_cooldown_rect.custom_minimum_size.y = _skill_button.size.y * ratio
-		_skill_cooldown_rect.size.y = _skill_button.size.y * ratio
+		var bh: float = _skill_button.size.y
+		_skill_cooldown_rect.size.y = bh * ratio
+		_skill_cooldown_rect.position.y = 0.0
 		var seconds: int = int(ceil(cd))
 		_skill_label.text = str(seconds)
 		_skill_label.add_theme_font_size_override("font_size", 20)
