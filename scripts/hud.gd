@@ -9,7 +9,6 @@ extends CanvasLayer
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
-@onready var _leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
 
 var _damage_flash: ColorRect
@@ -93,8 +92,9 @@ func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()
 	_damage_flash.color = Color(1.0, 0.0, 0.0, 0.0)
 	_damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_damage_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_damage_flash.z_index = 200
 	add_child(_damage_flash)
+	_damage_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var old_health: int = GameState.current_health
 	GameState.health_changed.connect(func(_cur: int, _max: int):
 		if GameState.current_health < old_health:
@@ -112,18 +112,16 @@ func _set_control_ignore_input(root: Control) -> void:
 		_set_control_ignore_input(child)
 
 func _refresh_leaderboard() -> void:
-	for container in [_leaderboard_entries, _perm_leaderboard_entries]:
-		for child in container.get_children():
-			child.queue_free()
+	for child in _perm_leaderboard_entries.get_children():
+		child.queue_free()
 	var entries := Leaderboard.get_entries()
 	for entry in entries:
-		for container in [_leaderboard_entries, _perm_leaderboard_entries]:
-			var label := Label.new()
-			label.theme_override_font_sizes["font_size"] = 12 if container == _perm_leaderboard_entries else 12
-			label.theme_override_colors["font_color"] = Color(0.8, 0.85, 1.0, 0.9)
-			label.horizontal_alignment = 1
-			label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
-			container.add_child(label)
+		var label := Label.new()
+		label.theme_override_font_sizes["font_size"] = 12
+		label.theme_override_colors["font_color"] = Color(0.8, 0.85, 1.0, 0.9)
+		label.horizontal_alignment = 1
+		label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
+		_perm_leaderboard_entries.add_child(label)
 
 func _update_platform_hints() -> void:
 	var is_mobile: bool = OS.has_feature("android") or DisplayServer.is_touchscreen_available()
