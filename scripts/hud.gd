@@ -46,19 +46,16 @@ func _on_skill_pressed() -> void:
 
 func _update_skill_cooldown() -> void:
 	var cd: float = GameState.skill_cooldown
+	var progress: float = 1.0 - cd / GameState.SKILL_COOLDOWN_MAX
+	_skill_cooldown_overlay.visible = true
+	_skill_cooldown_overlay.set_ready_progress(progress)
 	if cd > 0:
-		_skill_cooldown_overlay.visible = true
-		var ratio: float = cd / GameState.SKILL_COOLDOWN_MAX
-		_skill_cooldown_overlay.set_cooldown_ratio(ratio)
 		var seconds: int = int(ceil(cd))
 		_skill_label.text = str(seconds)
 		_skill_label.add_theme_font_size_override("font_size", 20)
-		_skill_bg.color = Color(0.12, 0.15, 0.25, 0.45)
 	else:
-		_skill_cooldown_overlay.visible = false
 		_skill_label.text = "⚡"
 		_skill_label.add_theme_font_size_override("font_size", 22)
-		_skill_bg.color = Color(0.2, 0.7, 0.35, 0.35)
 
 func _on_score_changed(new_score: int) -> void:
 	_update_score(new_score)
