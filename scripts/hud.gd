@@ -117,8 +117,8 @@ func _refresh_leaderboard() -> void:
 	var entries := Leaderboard.get_entries()
 	for entry in entries:
 		var label := Label.new()
-		label.theme_override_font_sizes["font_size"] = 12
-		label.theme_override_colors["font_color"] = Color(0.8, 0.85, 1.0, 0.9)
+		label.add_theme_font_size_override("font_size", 12)
+		label.add_theme_color_override("font_color", Color(0.8, 0.85, 1.0, 0.9))
 		label.horizontal_alignment = 1
 		label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
 		_perm_leaderboard_entries.add_child(label)
