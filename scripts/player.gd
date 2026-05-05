@@ -74,6 +74,7 @@ func _physics_process(delta: float) -> void:
 
 	_shoot_timer -= delta
 	_invincible_timer = max(_invincible_timer - delta, 0.0)
+	GameState.tick_skill_cooldown(delta)
 
 	if not _mobile_mode:
 		rotate(_yaw_velocity)
@@ -126,6 +127,11 @@ func _physics_process(delta: float) -> void:
 
 	if _shoot_timer <= 0.0:
 		_shoot()
+
+	## 技能
+	if not _mobile_mode and Input.is_key_pressed(KEY_SPACE):
+		if GameState.use_skill():
+			_fire_ring_shotgun()
 
 	## 自动拾取
 	_try_pickup_nearby()
@@ -233,6 +239,24 @@ func _shoot() -> void:
 		var tween := create_tween()
 		tween.tween_property(_muzzle_flash, "modulate:a", 0.0, 0.06)
 		tween.tween_callback(func(): _muzzle_flash.visible = false)
+
+func _fire_ring_shotgun() -> void:
+	var count: int = 16
+	var base_angle: float
+	if _mobile_mode:
+		base_angle = rotation - PI * 0.5
+	else:
+		var mouse_pos := get_global_mouse_position()
+		base_angle = global_position.angle_to_point(mouse_pos)
+	var perp: Vector2 = Vector2(-sin(base_angle), cos(base_angle))
+	var engine_offset: Vector2 = Vector2.from_angle(base_angle) * 24
+	var damage: int = GameState.get_bullet_damage() + 2
+	for i in range(count):
+		var a: float = base_angle + i * TAU / count
+		var offset: Vector2 = perp * 8.0 + Vector2(cos(a), sin(a)) * 4.0
+		var bullet := _bullet_scene.instantiate()
+		get_tree().current_scene.add_child(bullet)
+		bullet.setup(global_position + engine_offset + offset, a, damage, true, 5, 500.0)
 
 func _try_pickup_nearby() -> void:
 	var powerups := get_tree().get_nodes_in_group("powerups")

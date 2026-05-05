@@ -7,6 +7,7 @@ signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
 signal boss_spawn_requested
 signal shield_changed(layers)
+signal skill_used
 
 var score: int = 0
 var level: int = 1
@@ -25,6 +26,8 @@ var kills_for_next_level: int = 10
 var shoot_level: int = 1
 var shoot_speed_level: int = 1
 var bullet_power_level: int = 1
+var skill_cooldown: float = 0.0
+const SKILL_COOLDOWN_MAX: float = 15.0
 
 func reset_game() -> void:
 	score = 0
@@ -42,6 +45,7 @@ func reset_game() -> void:
 	shoot_level = 1
 	shoot_speed_level = 1
 	bullet_power_level = 1
+	skill_cooldown = 0.0
 	kills_for_next_level = 10
 
 func add_score(amount: int) -> void:
@@ -104,6 +108,22 @@ func collect_powerup(type: String) -> void:
 			heal(max(ceil(max_health * 0.1), 1))
 		"bomb":
 			pass
+
+func use_skill() -> bool:
+	if skill_cooldown > 0 or not game_running:
+		return false
+	skill_cooldown = SKILL_COOLDOWN_MAX
+	skill_used.emit()
+	return true
+
+func tick_skill_cooldown(delta: float) -> void:
+	if skill_cooldown > 0:
+		skill_cooldown = max(skill_cooldown - delta, 0.0)
+
+func get_skill_cooldown_ratio() -> float:
+	if skill_cooldown <= 0:
+		return 0.0
+	return skill_cooldown / SKILL_COOLDOWN_MAX
 
 func get_bullet_count() -> int:
 	return min(2 + shoot_level / 3, 8)

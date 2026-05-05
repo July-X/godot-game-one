@@ -10,6 +10,8 @@ extends CanvasLayer
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
+@onready var _skill_button: TextureButton = $SkillButton
+@onready var _skill_cooldown_rect: ColorRect = $SkillButton/SkillCooldown
 
 var _damage_flash: ColorRect
 
@@ -28,6 +30,21 @@ func _ready() -> void:
 	_update_level(1)
 	_update_health(3, 3)
 	_refresh_leaderboard()
+	_skill_button.pressed.connect(_on_skill_pressed)
+
+func _process(_delta: float) -> void:
+	_update_skill_cooldown()
+
+func _on_skill_pressed() -> void:
+	var player := get_tree().current_scene.find_child("Player", true, false)
+	if player and player.has_method("_fire_ring_shotgun"):
+		player._fire_ring_shotgun()
+
+func _update_skill_cooldown() -> void:
+	var ratio: float = GameState.get_skill_cooldown_ratio()
+	_skill_cooldown_rect.custom_minimum_size.y = _skill_button.size.y * ratio
+	_skill_cooldown_rect.size.y = _skill_button.size.y * ratio
+	_skill_cooldown_rect.visible = ratio > 0
 
 func _on_score_changed(new_score: int) -> void:
 	_update_score(new_score)
@@ -129,5 +146,5 @@ func _update_platform_hints() -> void:
 		_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
 		_restart_label.text = "点击屏幕重新开始"
 	else:
-		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nR - 重新开始"
+		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nSpace - 技能\nR - 重新开始"
 		_restart_label.text = "按 R 重新开始"

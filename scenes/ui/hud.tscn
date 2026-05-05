@@ -69,7 +69,43 @@ theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.5, 0.55, 0.7, 1.0)
 text = "鼠标 - 移动/瞄准
 ESC - 释放鼠标
+Space - 技能
 R - 重新开始"
+
+[node name="SkillButton" type="TextureButton" parent="."]
+anchor_left = 1.0
+anchor_bottom = 1.0
+offset_left = -100.0
+offset_top = -100.0
+offset_right = -20.0
+offset_bottom = -20.0
+mouse_filter = 0
+
+[node name="SkillBg" type="Panel" parent="SkillButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_styles/panel = SubResource("1")
+
+[node name="SkillLabel" type="Label" parent="SkillButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.9, 0.9, 1.0, 1.0)
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "技能"
+
+[node name="SkillCooldown" type="ColorRect" parent="SkillButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.0, 0.0, 0.0, 0.6)
+mouse_filter = 2
 
 [node name="LeaderboardPanel" type="Panel" parent="."]
 anchor_left = 1.0
