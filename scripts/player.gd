@@ -274,12 +274,14 @@ func _on_shield_changed(layers: int) -> void:
 		child.queue_free()
 	if layers <= 0:
 		return
+	var level: int = GameState.shoot_level
+	var level_scale: float = 1.0 + level * 0.12
 	var max_display: int = min(layers, 5)
 	var count: int = max_display
-	var base_radius: float = 32.0 + _sprite.texture.get_width() * 0.25
+	var base_radius: float = (32.0 + _sprite.texture.get_width() * 0.35) * level_scale
 	for i in range(count):
 		var shield := Sprite2D.new()
-		var radius: float = base_radius + i * 4.0
+		var radius: float = base_radius + i * 6.0
 		var img := Image.create(int(radius * 2 + 4), int(radius * 2 + 4), false, Image.FORMAT_RGBA8)
 		img.fill(Color(0, 0, 0, 0))
 		var cx: int = int(radius) + 2
@@ -289,8 +291,8 @@ func _on_shield_changed(layers: int) -> void:
 				var dx: float = float(x - cx)
 				var dy: float = float(y - cy)
 				var d: float = sqrt(dx * dx + dy * dy)
-				if d > radius - 3.0 and d < radius + 1.0:
-					var a: float = 1.0 - abs(d - radius) / 3.0
+				if d > radius - 4.0 and d < radius + 1.0:
+					var a: float = 1.0 - abs(d - radius) / 4.0
 					var alpha_factor: float = 1.0 - float(i) / float(count) * 0.5
 					img.set_pixel(x, y, Color(0.2, 0.55, 1.0, a * 0.45 * alpha_factor))
 		shield.texture = ImageTexture.create_from_image(img)
