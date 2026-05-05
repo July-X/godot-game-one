@@ -90,6 +90,8 @@ func take_damage(amount: int = 1) -> void:
 			game_over.emit(score, level)
 
 func heal(amount: int = 1) -> void:
+	if current_health >= max_health:
+		max_health += amount
 	current_health = min(current_health + amount, max_health)
 	health_changed.emit(current_health, max_health)
 	SFX.play_ui_select()

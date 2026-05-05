@@ -118,12 +118,11 @@ func _update_powerup_display() -> void:
 			label.add_theme_color_override("font_color", labels[type].color)
 			label.add_theme_font_size_override("font_size", 13)
 			container.add_child(label)
-			var bar := ProgressBar.new()
-			bar.custom_minimum_size = Vector2(60, 14)
-			bar.max_value = 15
-			bar.value = level
-			bar.modulate = labels[type].color
-			container.add_child(bar)
+			var text_label := Label.new()
+			text_label.text = "%d/15" % level
+			text_label.add_theme_color_override("font_color", labels[type].color)
+			text_label.add_theme_font_size_override("font_size", 13)
+			container.add_child(text_label)
 			_powerup_display.add_child(container)
 
 func _setup_damage_flash() -> void:
