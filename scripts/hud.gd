@@ -9,6 +9,7 @@ extends CanvasLayer
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
+@onready var _leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
 
 func _ready() -> void:
 	_game_over_panel.visible = false
@@ -36,6 +37,8 @@ func _on_game_over(final_score: int, final_level: int) -> void:
 	_game_over_panel.visible = true
 	_final_score_label.text = "得分: %d" % final_score
 	_final_level_label.text = "等级: %d" % final_level
+	Leaderboard.add_entry(final_score, final_level)
+	_refresh_leaderboard()
 
 func _on_powerup_collected(type: String) -> void:
 	_update_powerup_display()
@@ -83,8 +86,19 @@ func _update_powerup_display() -> void:
 func _set_control_ignore_input(root: Control) -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for child in root.get_children():
-		if child is Control:
-			_set_control_ignore_input(child)
+		_set_control_ignore_input(child)
+
+func _refresh_leaderboard() -> void:
+	for child in _leaderboard_entries.get_children():
+		child.queue_free()
+	var entries := Leaderboard.get_entries()
+	for entry in entries:
+		var label := Label.new()
+		label.theme_override_font_sizes["font_size"] = 12
+		label.theme_override_colors["font_color"] = Color(0.8, 0.85, 1.0, 0.9)
+		label.horizontal_alignment = 1
+		label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
+		_leaderboard_entries.add_child(label)
 
 func _update_platform_hints() -> void:
 	var is_mobile: bool = OS.has_feature("android") or DisplayServer.is_touchscreen_available()

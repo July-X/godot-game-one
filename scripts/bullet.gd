@@ -94,9 +94,11 @@ func _on_body_entered(body: Node2D) -> void:
 	else:
 		if body.is_in_group("player") and body.has_method("take_damage"):
 			var source: String = "普通子弹"
-			if _speed >= 700.0:
+			if _damage >= 1.0:
 				source = "狙击子弹"
-			elif _speed <= 550.0 and _speed >= 450.0:
+			elif _damage >= 0.45 and _damage <= 0.55:
+				source = "散弹子弹"
+			elif _damage >= 0.25 and _damage <= 0.35:
 				source = "弹幕子弹"
 			GameState.death_message = "被 " + source + " 击落"
 			body.take_damage(_damage)

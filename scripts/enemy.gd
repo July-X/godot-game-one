@@ -113,7 +113,8 @@ func _shoot() -> void:
 func _shoot_single(angle: float) -> void:
 	var bullet := _bullet_scene.instantiate()
 	get_tree().current_scene.add_child(bullet)
-	bullet.setup(global_position + Vector2.from_angle(angle) * 20, angle, 0.7, false, 1, 780.0)
+	var dmg: float = max(1.0, ceil(GameState.max_health * 0.25))
+	bullet.setup(global_position + Vector2.from_angle(angle) * 20, angle, dmg, false, 1, 780.0)
 	bullet.modulate = Color(1.0, 0.4, 0.3, 1.0)
 
 func _shoot_spread(angle: float) -> void:
