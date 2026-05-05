@@ -116,14 +116,12 @@ func _set_active_visual(active: bool) -> void:
 	if _base_style == null or _knob_style == null:
 		return
 	if active:
-		_base_style.bg_color = Color(0.2, 0.3, 0.45, 0.44)
-		_base_style.border_color = Color(0.6, 0.8, 1.0, 0.95)
-		_knob_style.bg_color = Color(0.8, 0.9, 1.0, 1.0)
-		_base_node.modulate = Color(1, 1, 1, 0.3)
-		_knob_node.modulate = Color(1, 1, 1, 0.3)
+		_base_style.bg_color = Color(0.2, 0.3, 0.45, 0.12)
+		_base_style.border_color = Color(0.6, 0.8, 1.0, 0.28)
+		_knob_style.bg_color = Color(0.8, 0.9, 1.0, 0.25)
+		_knob_style.border_color = Color(1.0, 1.0, 1.0, 0.25)
 	else:
 		_base_style.bg_color = Color(0.1, 0.15, 0.25, 0.28)
 		_base_style.border_color = Color(0.45, 0.65, 1.0, 0.78)
 		_knob_style.bg_color = Color(0.65, 0.8, 1.0, 0.88)
-		_base_node.modulate = Color(1, 1, 1, 1.0)
-		_knob_node.modulate = Color(1, 1, 1, 1.0)
+		_knob_style.border_color = Color(1.0, 1.0, 1.0, 0.85)
