@@ -36,12 +36,23 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_skill_cooldown()
 
-func _on_skill_pressed() -> void:
+func _input(event: InputEvent) -> void:
+	if not (OS.has_feature("android") or DisplayServer.is_touchscreen_available()):
+		return
+	if event is InputEventScreenTouch and event.pressed:
+		var screen: Vector2 = get_viewport().size
+		if event.position.x > screen.x * 0.55 and event.position.y > screen.y * 0.7:
+			_trigger_skill()
+
+func _trigger_skill() -> void:
 	if not GameState.use_skill():
 		return
 	var player := get_tree().current_scene.find_child("Player", true, false)
 	if player and player.has_method("_fire_ring_shotgun"):
 		player._fire_ring_shotgun()
+
+func _on_skill_pressed() -> void:
+	_trigger_skill()
 
 func _update_skill_cooldown() -> void:
 	var cd: float = GameState.skill_cooldown
@@ -51,10 +62,10 @@ func _update_skill_cooldown() -> void:
 	if cd > 0:
 		var seconds: int = int(ceil(cd))
 		_skill_label.text = str(seconds)
-		_skill_label.add_theme_font_size_override("font_size", 20)
+		_skill_label.add_theme_font_size_override("font_size", 28)
 	else:
 		_skill_label.text = "⚡"
-		_skill_label.add_theme_font_size_override("font_size", 22)
+		_skill_label.add_theme_font_size_override("font_size", 30)
 
 func _on_score_changed(new_score: int) -> void:
 	_update_score(new_score)

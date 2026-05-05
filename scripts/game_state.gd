@@ -69,7 +69,7 @@ func level_up() -> void:
 	level += 1
 	kills = 0
 	kills_for_next_level = 10 + level * 5
-	bullet_power_level = min(bullet_power_level + 1, 5)
+	bullet_power_level = min(bullet_power_level + 1, 15)
 	max_health += 1
 	current_health = min(current_health + 1, max_health)
 	health_changed.emit(current_health, max_health)
@@ -99,11 +99,20 @@ func collect_powerup(type: String) -> void:
 	SFX.play_ui_confirm()
 	match type:
 		"spread":
-			shoot_level = min(shoot_level + 1, 15)
+			if shoot_level >= 15:
+				heal(1)
+			else:
+				shoot_level = min(shoot_level + 1, 15)
 		"speed":
-			shoot_speed_level = min(shoot_speed_level + 1, 15)
+			if shoot_speed_level >= 15:
+				heal(1)
+			else:
+				shoot_speed_level = min(shoot_speed_level + 1, 15)
 		"power":
-			bullet_power_level = min(bullet_power_level + 1, 15)
+			if bullet_power_level >= 15:
+				heal(1)
+			else:
+				bullet_power_level = min(bullet_power_level + 1, 15)
 		"heal":
 			heal(max(ceil(max_health * 0.1), 1))
 		"bomb":

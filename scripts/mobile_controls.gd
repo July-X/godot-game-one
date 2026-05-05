@@ -26,7 +26,7 @@ func _ready() -> void:
 	_build_visual_nodes()
 	_update_visual_knob(_joystick_center)
 
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	if not _is_mobile:
 		return
 
