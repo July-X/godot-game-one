@@ -3,10 +3,8 @@ extends CharacterBody2D
 signal died
 
 @export var move_speed: float = 260.0
-@export var acceleration: float = 1000.0
 @export var friction: float = 500.0
 @export var mouse_sensitivity: float = 0.008
-@export var mouse_smoothing: float = 0.12
 
 var _shoot_timer: float = 0.0
 var _invincible_timer: float = 0.0
@@ -59,7 +57,7 @@ func _update_pickup_radius() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and GameState.game_running and not _mobile_mode:
-		_mouse_vel += event.relative * mouse_sensitivity * 100.0
+		_mouse_vel += event.relative * mouse_sensitivity * move_speed
 
 func _on_mobile_move(vec: Vector2) -> void:
 	_touch_move = vec
@@ -73,7 +71,7 @@ func _physics_process(delta: float) -> void:
 	GameState.tick_skill_cooldown(delta)
 
 	if not _mobile_mode:
-		_mouse_vel = _mouse_vel.lerp(Vector2.ZERO, 5.0 * delta)
+		_mouse_vel = _mouse_vel.lerp(Vector2.ZERO, 1.5 * delta)
 
 	var screen_size := get_viewport_rect().size
 
