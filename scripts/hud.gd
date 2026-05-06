@@ -37,6 +37,12 @@ func _process(_delta: float) -> void:
 	_update_skill_cooldown()
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			var local := _skill_button.get_local_mouse_position()
+			if Rect2(Vector2.ZERO, _skill_button.size).has_point(local):
+				_trigger_skill()
+				return
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		return
 	if event is InputEventScreenTouch and event.pressed:
@@ -50,6 +56,8 @@ func _trigger_skill() -> void:
 	var player := get_tree().current_scene.find_child("Player", true, false)
 	if player and player.has_method("_fire_ring_shotgun"):
 		player._fire_ring_shotgun()
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _on_skill_pressed() -> void:
 	_trigger_skill()

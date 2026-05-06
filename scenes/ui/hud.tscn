@@ -97,7 +97,7 @@ layout_mode = 0
 offset_right = 144.0
 offset_bottom = 144.0
 mouse_filter = 2
-color = Color(1, 1, 1, 1)
+color = Color(1, 1, 1, 0)
 script = ExtResource("2")
 
 [node name="SkillLabel" type="Label" parent="SkillButton" unique_id=1350867425]

@@ -94,16 +94,9 @@ func _physics_process(delta: float) -> void:
 			velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
 		target_pos = global_position + Vector2.RIGHT.rotated(rotation - PI * 0.5) * 100
 	else:
-		var mouse_pos := get_global_mouse_position()
-		var to_mouse: Vector2 = global_position.direction_to(mouse_pos)
-		var mouse_dist: float = global_position.distance_to(mouse_pos)
-		if mouse_dist > 20.0:
-			var speed_ratio: float = clamp(mouse_dist / 250.0, 0.05, 1.0)
-			var target_vel: Vector2 = to_mouse * move_speed * speed_ratio
-			velocity = velocity.lerp(target_vel, acceleration * delta / move_speed)
-		else:
-			velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
-		target_pos = mouse_pos
+		var forward := Vector2.RIGHT.rotated(rotation - PI * 0.5)
+		velocity = forward * move_speed
+		target_pos = global_position + forward * 100
 
 	move_and_slide()
 
@@ -181,12 +174,7 @@ func _shoot() -> void:
 	_shoot_timer = GameState.get_shoot_cooldown()
 	SFX.play_shoot()
 
-	var base_angle: float
-	if _mobile_mode:
-		base_angle = rotation - PI * 0.5
-	else:
-		var mouse_pos := get_global_mouse_position()
-		base_angle = global_position.angle_to_point(mouse_pos)
+	var base_angle: float = rotation - PI * 0.5
 	var bullet_count: int = GameState.get_bullet_count()
 	var level: int = GameState.shoot_level
 	var damage: int = GameState.get_bullet_damage()
