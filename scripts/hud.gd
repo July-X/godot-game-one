@@ -32,6 +32,7 @@ func _ready() -> void:
 	_update_health(3, 3)
 	_refresh_leaderboard()
 	_skill_button.pressed.connect(_on_skill_pressed)
+	_skill_button.gui_input.connect(_on_skill_button_gui_input)
 
 func _process(_delta: float) -> void:
 	_update_skill_cooldown()
@@ -62,6 +63,12 @@ func _trigger_skill() -> void:
 
 func _on_skill_pressed() -> void:
 	_trigger_skill()
+
+func _on_skill_button_gui_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and event.pressed:
+		if not (OS.has_feature("android") or OS.has_feature("ios")):
+			return
+		_trigger_skill()
 
 func _update_skill_cooldown() -> void:
 	var cd: float = GameState.skill_cooldown

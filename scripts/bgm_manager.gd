@@ -11,7 +11,7 @@ func play_bgm() -> void:
 	if _bgm_player == null:
 		return
 	_bgm_player.stream = _generate_bgm()
-	_bgm_player.volume_db = -8.0
+	_bgm_player.volume_db = -6.0
 	_bgm_player.play()
 	_is_playing = true
 	_bgm_player.finished.connect(_on_bgm_finished)
