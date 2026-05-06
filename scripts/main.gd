@@ -350,7 +350,7 @@ func _on_level_up(_new_level: int) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
-		if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
+		if OS.has_feature("android") or OS.has_feature("ios"):
 			_restart()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -359,6 +359,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.keycode == KEY_ESCAPE:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		elif not (OS.has_feature("android") or OS.has_feature("ios")):
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT:
+			if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventKey and event.keycode == KEY_F11:
 		if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)

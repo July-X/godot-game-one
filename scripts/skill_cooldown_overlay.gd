@@ -7,26 +7,32 @@ func set_ready_progress(value: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	var c: Vector2 = size * 0.5
-	var r: float = min(c.x, c.y) - 2.0
-	if r <= 0:
-		return
+	var w: float = size.x
+	var h: float = size.y
+	var m: float = 8.0
+
+	var top := Vector2(w * 0.5, m)
+	var br := Vector2(w - m, h - m)
+	var bl := Vector2(m, h - m)
+	var tri := PackedVector2Array([top, br, bl])
 
 	if _progress >= 1.0:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.15, 0.7, 0.3, 0.55))
-		draw_arc(c, r - 1, 0, TAU, 32, Color(0.3, 1.0, 0.5, 0.8), 3.0)
+		draw_polygon(tri, [Color(0.15, 0.72, 0.28, 0.6)])
+		draw_polyline(tri, Color(0.3, 1.0, 0.5, 0.9), 3.0)
 		return
 
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.04, 0.06, 0.12, 0.55))
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0))
+	draw_polygon(tri, [Color(0.05, 0.08, 0.15, 0.55)])
+	draw_polyline(tri, Color(0.3, 0.35, 0.5, 0.6), 2.0)
 
 	if _progress <= 0.01:
 		return
 
-	var pie: float = -PI * 0.5 + TAU * _progress
-	var psteps: int = max(4, int(r * max(_progress, 0.05) * 0.5))
-	var pts: PackedVector2Array = [c]
-	for i in range(psteps + 1):
-		var a: float = -PI * 0.5 + (pie + PI * 0.5) * i / psteps
-		pts.append(c + Vector2(cos(a), sin(a)) * r)
-	var g: float = 0.15 + _progress * 0.65
-	draw_polygon(pts, [Color(0.08 * _progress, g, 0.18 * _progress, 0.4 + _progress * 0.3)])
+	var bottom_y: float = h - m
+	var top_y: float = m
+	var fill_y: float = bottom_y - (bottom_y - top_y) * _progress
+	var fill_top := Vector2(w * 0.5, fill_y)
+	var fill_br := Vector2(lerp(m, w - m, _progress), bottom_y)
+	var fill_bl := Vector2(lerp(w - m, m, _progress), bottom_y)
+	draw_polygon(PackedVector2Array([fill_top, fill_br, fill_bl]), [Color(0.1, 0.65, 0.22, 0.45)])
+	draw_polyline(PackedVector2Array([fill_top, fill_br, fill_bl]), Color(0.2, 0.9, 0.4, 0.7), 2.0)

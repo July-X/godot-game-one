@@ -37,7 +37,7 @@ func _process(_delta: float) -> void:
 	_update_skill_cooldown()
 
 func _input(event: InputEvent) -> void:
-	if not (OS.has_feature("android") or DisplayServer.is_touchscreen_available()):
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		return
 	if event is InputEventScreenTouch and event.pressed:
 		var screen: Vector2 = get_viewport().size

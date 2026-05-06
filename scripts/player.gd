@@ -38,7 +38,7 @@ func _ready() -> void:
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
-	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
+	if OS.has_feature("android") or OS.has_feature("ios"):
 		_mobile_mode = true
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		var mc = get_tree().current_scene.find_child("MobileControls", true, false)
