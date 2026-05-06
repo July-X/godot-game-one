@@ -454,6 +454,9 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 	return tex
 
 func create_powerup_sprite(type: String) -> ImageTexture:
+	if _powerup_cache.has(type):
+		return _powerup_cache[type]
+
 	var w: int = 32
 	var h: int = 32
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
@@ -483,27 +486,26 @@ func create_powerup_sprite(type: String) -> ImageTexture:
 		_:
 			_draw_hexagon(img, w, h, col)
 
-	## 发光边缘
+	_draw_glow_ring(img, w, h, col)
+	var tex := ImageTexture.create_from_image(img)
+	_powerup_cache[type] = tex
+	return tex
+
+var _powerup_cache: Dictionary = {}
+
+func _draw_glow_ring(img: Image, w: int, h: int, col: Color) -> void:
+	var r: int = 14
+	var cx: int = w / 2
+	var cy: int = h / 2
 	for y in range(h):
 		for x in range(w):
 			if img.get_pixel(x, y).a > 0:
 				continue
-			var has_n: bool = false
-			for dx3 in range(-1, 2):
-				for dy3 in range(-1, 2):
-					var nx: int = x + dx3
-					var ny: int = y + dy3
-					if nx >= 0 and nx < w and ny >= 0 and ny < h:
-						if img.get_pixel(nx, ny).a > 0:
-							has_n = true
-					if has_n:
-						break
-				if has_n:
-					break
-			if has_n:
-				img.set_pixel(x, y, Color(col.r, col.g, col.b, 0.25))
-	var tex := ImageTexture.create_from_image(img)
-	return tex
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			if d > r - 2.5 and d < r + 1.5:
+				img.set_pixel(x, y, Color(col.r, col.g, col.b, 0.2))
 
 func _draw_heart(img: Image, w: int, h: int, col: Color) -> void:
 	var cx: int = w / 2

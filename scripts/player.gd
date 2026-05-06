@@ -241,7 +241,19 @@ func _on_pickup_body_entered(body: Node2D) -> void:
 	if body.is_in_group("powerups") and body.has_method("collect"):
 		body.collect()
 
+var _shield_dirty: bool = false
+
 func _on_shield_changed(layers: int) -> void:
+	_pending_shield_layers = layers
+	if not _shield_dirty:
+		_shield_dirty = true
+		call_deferred("_rebuild_shields")
+
+var _pending_shield_layers: int = 0
+
+func _rebuild_shields() -> void:
+	_shield_dirty = false
+	var layers: int = _pending_shield_layers
 	for child in _shield_container.get_children():
 		child.queue_free()
 	if layers <= 0:

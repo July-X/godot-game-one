@@ -14,7 +14,10 @@ func _ready() -> void:
 
 func setup(type: String) -> void:
 	_type = type
-	_sprite.texture = SpriteFactory.create_powerup_sprite(type)
+	call_deferred("_apply_sprite")
+
+func _apply_sprite() -> void:
+	_sprite.texture = SpriteFactory.create_powerup_sprite(_type)
 
 func _physics_process(delta: float) -> void:
 	_bob_timer += delta * 3.0
@@ -53,15 +56,28 @@ func collect() -> void:
 	tween.tween_callback(queue_free)
 
 func _bomb_effect() -> void:
-	var enemies := get_tree().get_nodes_in_group("enemies")
-	var delay: float = 0.0
-	for e in enemies:
-		if e.has_method("die"):
-			get_tree().create_timer(delay).timeout.connect(e.die)
-			delay += 0.05
 	SFX.play_explosion()
 	call_deferred("_spawn_shake")
+	call_deferred("_kill_enemies_sequential")
 
 func _spawn_shake() -> void:
 	var screen_shake = _screen_shake_scene.instantiate()
 	get_tree().current_scene.add_child(screen_shake)
+
+var _kill_queue: Array = []
+var _kill_idx: int = 0
+
+func _kill_enemies_sequential() -> void:
+	_kill_queue = get_tree().get_nodes_in_group("enemies")
+	_kill_idx = 0
+	_kill_next()
+
+func _kill_next() -> void:
+	while _kill_idx < _kill_queue.size():
+		var e: Node2D = _kill_queue[_kill_idx]
+		_kill_idx += 1
+		if is_instance_valid(e) and e.has_method("die"):
+			e.die()
+			get_tree().create_timer(0.05).timeout.connect(_kill_next)
+			return
+	_kill_queue.clear()
