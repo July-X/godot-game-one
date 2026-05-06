@@ -14,11 +14,9 @@ var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var ShieldRing = preload("res://scripts/shield_ring.gd")
-var _yaw_velocity: float = 0.0
-var _pitch_velocity: float = 0.0
+var _mouse_vel: Vector2 = Vector2.ZERO
 var _walk_cycle: float = 0.0
 var _head_bob_timer: float = 0.0
-var _pitch: float = 0.0
 var _pickup_radius: float = 280.0
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
@@ -61,10 +59,7 @@ func _update_pickup_radius() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and GameState.game_running and not _mobile_mode:
-		var target_yaw: float = event.relative.x * mouse_sensitivity
-		var target_pitch: float = event.relative.y * mouse_sensitivity
-		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
-		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
+		_mouse_vel += event.relative * mouse_sensitivity * 100.0
 
 func _on_mobile_move(vec: Vector2) -> void:
 	_touch_move = vec
@@ -78,12 +73,8 @@ func _physics_process(delta: float) -> void:
 	GameState.tick_skill_cooldown(delta)
 
 	if not _mobile_mode:
-		rotate(_yaw_velocity)
-		_pitch = clamp(_pitch + _pitch_velocity, -PI * 0.4, PI * 0.4)
-		_yaw_velocity *= 0.92
-		_pitch_velocity *= 0.92
+		_mouse_vel = _mouse_vel.lerp(Vector2.ZERO, 5.0 * delta)
 
-	var target_pos: Vector2
 	var screen_size := get_viewport_rect().size
 
 	if _mobile_mode:
@@ -92,12 +83,10 @@ func _physics_process(delta: float) -> void:
 			rotation = _touch_move.angle() + PI * 0.5
 		else:
 			velocity = velocity.move_toward(Vector2.ZERO, friction * delta)
-		target_pos = global_position + Vector2.RIGHT.rotated(rotation - PI * 0.5) * 100
 	else:
-		var forward := Vector2.RIGHT.rotated(rotation - PI * 0.5)
-		velocity = forward * move_speed
-		velocity.y += _pitch_velocity * move_speed * 3.0
-		target_pos = global_position + forward * 100
+		velocity = _mouse_vel.limit_length(move_speed)
+		if velocity.length() > 10.0:
+			rotation = velocity.angle() + PI * 0.5
 
 	move_and_slide()
 
@@ -114,11 +103,6 @@ func _physics_process(delta: float) -> void:
 	elif global_position.y > screen_size.y - margin:
 		global_position.y = screen_size.y - margin
 		velocity.y = -abs(velocity.y) * 0.5
-
-	if not _mobile_mode:
-		var target_angle: float = global_position.angle_to_point(target_pos) + PI * 0.5
-		var angle_diff: float = wrapf(target_angle - rotation, -PI, PI)
-		rotation += angle_diff * 8.0 * delta
 
 	if _shoot_timer <= 0.0:
 		_shoot()
