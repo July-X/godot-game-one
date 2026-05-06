@@ -1,30 +1,14 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/laser_bolt.gd" id="1"]
 
 [sub_resource type="CircleShape2D" id="1"]
-radius = 6.0
-
-[sub_resource type="Gradient" id="2"]
-colors = PackedColorArray(0.6, 0.2, 1.0, 1.0, 0.3, 0.8, 1.0, 0.0)
-offsets = PackedFloat32Array(0.0, 1.0)
-
-[sub_resource type="GradientTexture2D" id="3"]
-gradient = SubResource("2")
-width = 12
-height = 36
-fill = 1
-fill_from = Vector2(0.5, 1.0)
-fill_to = Vector2(0.5, 0.0)
+radius = 8.0
 
 [node name="LaserBolt" type="Area2D"]
 script = ExtResource("1")
 collision_layer = 2
 collision_mask = 5
-
-[node name="Sprite2D" type="Sprite2D" parent="."]
-texture = SubResource("3")
-scale = Vector2(2.0, 1.0)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
 shape = SubResource("1")

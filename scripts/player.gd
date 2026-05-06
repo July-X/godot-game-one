@@ -18,7 +18,8 @@ var _mouse_vel: Vector2 = Vector2.ZERO
 var _walk_cycle: float = 0.0
 var _head_bob_timer: float = 0.0
 var _missile_timer: float = 0.0
-var _missile_count: int = 0
+var _missile_pods: Array[Node2D] = []
+var _missile_pod_built: int = 0
 var _pickup_radius: float = 280.0
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
@@ -248,21 +249,82 @@ func _try_pickup_nearby() -> void:
 			if pu.has_method("collect"):
 				pu.collect()
 
-func _spawn_homing_missiles(delta: float) -> void:
-	var target_count: int = GameState.shoot_level / 5
-	if target_count <= _missile_count:
+func _get_missile_tier() -> int:
+	var level: int = GameState.shoot_level
+	return mini(level / 5, 5)
+
+func _get_missile_damage() -> int:
+	var tier: int = _get_missile_tier()
+	var dmg: int = (GameState.get_bullet_damage() + 2) * int(pow(1.5, tier - 1))
+	return dmg
+
+func _get_missile_interval() -> float:
+	var tier: int = _get_missile_tier()
+	return 1.5 / tier
+
+func _build_missile_pods() -> void:
+	var tier: int = _get_missile_tier()
+	if tier <= _missile_pod_built:
 		return
-	_missile_count = target_count
+	while _missile_pods.size() > 0:
+		var p: Node2D = _missile_pods.pop_back()
+		p.queue_free()
+	_missile_pod_built = tier
+	for i in range(tier):
+		var pod := Sprite2D.new()
+		pod.texture = _make_pod_texture(Color(0.9, 0.3, 0.15))
+		pod.scale = Vector2(0.5, 0.5)
+		pod.z_index = 2
+		add_child(pod)
+		_missile_pods.append(pod)
+
+func _make_pod_texture(col: Color) -> ImageTexture:
+	var size: int = 10
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var cx: int = size / 2
+	var cy: int = size / 2
+	for y in range(size):
+		for x in range(size):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			if d < cx - 1:
+				img.set_pixel(x, y, col)
+				if d > cx - 3:
+					img.set_pixel(x, y, col.lightened(0.3))
+	var tex := ImageTexture.create_from_image(img)
+	return tex
+
+func _update_missile_pods() -> void:
+	var tier: int = _get_missile_tier()
+	if tier != _missile_pod_built:
+		_build_missile_pods()
+	var rear: Vector2 = Vector2.RIGHT.rotated(rotation + PI) * 48
+	var perp: Vector2 = Vector2.UP.rotated(rotation)
+	var spacing: float = 18.0
+	var start: float = -(tier - 1) * spacing * 0.5
+	for i in range(tier):
+		if i < _missile_pods.size():
+			_missile_pods[i].global_position = global_position + rear + perp * (start + i * spacing)
+			_missile_pods[i].rotation = rotation + PI
+
+func _spawn_homing_missiles(delta: float) -> void:
+	var tier: int = _get_missile_tier()
+	if tier <= 0:
+		return
+	_update_missile_pods()
 	_missile_timer += delta
-	var interval: float = 1.0 / max(target_count, 1)
-	if _missile_timer < interval:
+	if _missile_timer < _get_missile_interval():
 		return
 	_missile_timer = 0.0
-	var angle: float = rotation + PI
-	var pos: Vector2 = global_position + Vector2.from_angle(angle) * 30
-	var missile := _missile_scene.instantiate()
-	get_tree().current_scene.add_child(missile)
-	missile.setup(pos, angle, GameState.get_bullet_damage())
+	for i in range(tier):
+		if i < _missile_pods.size():
+			var pos: Vector2 = _missile_pods[i].global_position
+			var angle: float = rotation + PI + (i - (tier - 1) * 0.5) * 0.15
+			var missile := _missile_scene.instantiate()
+			get_tree().current_scene.add_child(missile)
+			missile.setup(pos, angle, _get_missile_damage())
 
 func _fire_laser() -> void:
 	var count: int = 3

@@ -5,6 +5,7 @@ var _damage: float = 3.0
 var _lifetime: float = 5.0
 var _target: Node2D = null
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
+var _trail_points: PackedVector2Array = PackedVector2Array()
 
 func _ready() -> void:
 	add_to_group("player_bullets")
@@ -18,6 +19,8 @@ func setup(pos: Vector2, angle: float, damage: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	_lifetime -= delta
+	_trail_points.append(global_position)
+
 	if _lifetime <= 0:
 		queue_free()
 		return
@@ -34,6 +37,18 @@ func _physics_process(delta: float) -> void:
 	var screen := get_viewport_rect().size
 	if global_position.x < -30 or global_position.x > screen.x + 30 or global_position.y < -30 or global_position.y > screen.y + 30:
 		queue_free()
+
+	queue_redraw()
+
+func _draw() -> void:
+	if _trail_points.size() > 1:
+		var pts: PackedVector2Array = []
+		var limit: int = max(_trail_points.size() - 15, 0)
+		for i in range(limit, _trail_points.size()):
+			pts.append(to_local(_trail_points[i]))
+		if pts.size() > 1:
+			draw_polyline(pts, Color(1.0, 0.5, 0.1, 0.7), 3.0)
+			draw_polyline(pts, Color(1.0, 0.8, 0.3, 0.4), 6.0)
 
 func _find_target() -> void:
 	if is_instance_valid(_target):
