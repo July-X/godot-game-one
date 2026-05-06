@@ -417,7 +417,13 @@ func create_boss_sprite() -> ImageTexture:
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 
+var _bullet_cache: Dictionary = {}
+
 func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
+	var key: String = "p%d_%d" % [int(is_player), level]
+	if _bullet_cache.has(key):
+		return _bullet_cache[key]
+
 	var size: int = 8 if is_player else 12
 	var h: int = size * 3
 	var img := Image.create(size, h, false, Image.FORMAT_RGBA8)
@@ -451,6 +457,7 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 				img.set_pixel(size / 2 - 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
 				img.set_pixel(size / 2 + 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
 	var tex := ImageTexture.create_from_image(img)
+	_bullet_cache[key] = tex
 	return tex
 
 func create_powerup_sprite(type: String) -> ImageTexture:

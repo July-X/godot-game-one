@@ -11,10 +11,14 @@ var _invincible_timer: float = 0.0
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
+var _missile_scene = preload("res://scenes/entities/homing_missile.tscn")
+var _laser_scene = preload("res://scenes/entities/laser_bolt.tscn")
 var ShieldRing = preload("res://scripts/shield_ring.gd")
 var _mouse_vel: Vector2 = Vector2.ZERO
 var _walk_cycle: float = 0.0
 var _head_bob_timer: float = 0.0
+var _missile_timer: float = 0.0
+var _missile_count: int = 0
 var _pickup_radius: float = 280.0
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
@@ -69,6 +73,7 @@ func _physics_process(delta: float) -> void:
 	_shoot_timer -= delta
 	_invincible_timer = max(_invincible_timer - delta, 0.0)
 	GameState.tick_skill_cooldown(delta)
+	GameState.tick_laser_cooldown(delta)
 
 	if not _mobile_mode:
 		_mouse_vel = _mouse_vel.lerp(Vector2.ZERO, 1.5 * delta)
@@ -109,6 +114,12 @@ func _physics_process(delta: float) -> void:
 	if not _mobile_mode and Input.is_key_pressed(KEY_SPACE):
 		if GameState.use_skill():
 			_fire_ring_shotgun()
+	if not _mobile_mode and Input.is_key_pressed(KEY_Q):
+		if GameState.use_laser():
+			_fire_laser()
+
+	## 追踪导弹
+	_spawn_homing_missiles(delta)
 
 	## 自动拾取
 	_try_pickup_nearby()
@@ -236,6 +247,32 @@ func _try_pickup_nearby() -> void:
 		if pu.is_inside_tree() and global_position.distance_to(pu.global_position) < _pickup_radius:
 			if pu.has_method("collect"):
 				pu.collect()
+
+func _spawn_homing_missiles(delta: float) -> void:
+	var target_count: int = GameState.shoot_level / 5
+	if target_count <= _missile_count:
+		return
+	_missile_count = target_count
+	_missile_timer += delta
+	var interval: float = 1.0 / max(target_count, 1)
+	if _missile_timer < interval:
+		return
+	_missile_timer = 0.0
+	var angle: float = rotation + PI
+	var pos: Vector2 = global_position + Vector2.from_angle(angle) * 30
+	var missile := _missile_scene.instantiate()
+	get_tree().current_scene.add_child(missile)
+	missile.setup(pos, angle, GameState.get_bullet_damage())
+
+func _fire_laser() -> void:
+	var count: int = 3
+	for i in range(count):
+		var angle: float = rotation - PI * 0.5 + (i - 1) * 0.15
+		var pos: Vector2 = global_position + Vector2.from_angle(angle) * 28
+		var bolt := _laser_scene.instantiate()
+		get_tree().current_scene.add_child(bolt)
+		bolt.setup(pos, angle, GameState.get_laser_damage())
+	SFX.play_shoot()
 
 func _on_pickup_body_entered(body: Node2D) -> void:
 	if body.is_in_group("powerups") and body.has_method("collect"):

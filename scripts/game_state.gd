@@ -29,6 +29,9 @@ var bullet_power_level: int = 1
 var skill_cooldown: float = 0.0
 const SKILL_COOLDOWN_MAX: float = 15.0
 
+var laser_cooldown: float = 0.0
+const LASER_COOLDOWN_MAX: float = 10.0
+
 func reset_game() -> void:
 	score = 0
 	level = 1
@@ -46,6 +49,7 @@ func reset_game() -> void:
 	shoot_speed_level = 1
 	bullet_power_level = 1
 	skill_cooldown = 0.0
+	laser_cooldown = 0.0
 	kills_for_next_level = 10
 
 func add_score(amount: int) -> void:
@@ -130,6 +134,21 @@ func use_skill() -> bool:
 func tick_skill_cooldown(delta: float) -> void:
 	if skill_cooldown > 0:
 		skill_cooldown = max(skill_cooldown - delta, 0.0)
+
+func use_laser() -> bool:
+	if laser_cooldown > 0 or not game_running:
+		return false
+	laser_cooldown = LASER_COOLDOWN_MAX
+	return true
+
+func tick_laser_cooldown(delta: float) -> void:
+	if laser_cooldown > 0:
+		laser_cooldown = max(laser_cooldown - delta, 0.0)
+
+func get_laser_damage() -> int:
+	var base: int = 5
+	var mul: int = level / 10
+	return base * int(pow(2, mul))
 
 func get_skill_cooldown_ratio() -> float:
 	if skill_cooldown <= 0:

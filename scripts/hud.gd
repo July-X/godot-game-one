@@ -13,6 +13,9 @@ extends CanvasLayer
 @onready var _skill_button: Button = $SkillButton
 @onready var _skill_cooldown_overlay = $SkillButton/SkillCooldown
 @onready var _skill_label: Label = $SkillButton/SkillLabel
+@onready var _laser_button: Button = $LaserButton
+@onready var _laser_cooldown_overlay = $LaserButton/LaserCooldown
+@onready var _laser_label: Label = $LaserButton/LaserLabel
 
 var _damage_flash: ColorRect
 
@@ -33,9 +36,12 @@ func _ready() -> void:
 	_refresh_leaderboard()
 	_skill_button.pressed.connect(_on_skill_pressed)
 	_skill_button.gui_input.connect(_on_skill_button_gui_input)
+	_laser_button.pressed.connect(_on_laser_pressed)
+	_laser_button.gui_input.connect(_on_laser_button_gui_input)
 
 func _process(_delta: float) -> void:
 	_update_skill_cooldown()
+	_update_laser_cooldown()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
@@ -43,6 +49,10 @@ func _input(event: InputEvent) -> void:
 			var local := _skill_button.get_local_mouse_position()
 			if Rect2(Vector2.ZERO, _skill_button.size).has_point(local):
 				_trigger_skill()
+				return
+			local = _laser_button.get_local_mouse_position()
+			if Rect2(Vector2.ZERO, _laser_button.size).has_point(local):
+				_trigger_laser()
 				return
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		return
@@ -60,6 +70,15 @@ func _trigger_skill() -> void:
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
+func _trigger_laser() -> void:
+	if not GameState.use_laser():
+		return
+	var player := get_tree().current_scene.find_child("Player", true, false)
+	if player and player.has_method("_fire_laser"):
+		player._fire_laser()
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
 func _on_skill_pressed() -> void:
 	_trigger_skill()
 
@@ -68,6 +87,28 @@ func _on_skill_button_gui_input(event: InputEvent) -> void:
 		if not (OS.has_feature("android") or OS.has_feature("ios")):
 			return
 		_trigger_skill()
+
+func _on_laser_pressed() -> void:
+	_trigger_laser()
+
+func _on_laser_button_gui_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and event.pressed:
+		if not (OS.has_feature("android") or OS.has_feature("ios")):
+			return
+		_trigger_laser()
+
+func _update_laser_cooldown() -> void:
+	var cd: float = GameState.laser_cooldown
+	var progress: float = 1.0 - cd / GameState.LASER_COOLDOWN_MAX
+	_laser_cooldown_overlay.visible = true
+	_laser_cooldown_overlay.set_ready_progress(progress)
+	if cd > 0:
+		var seconds: int = int(ceil(cd))
+		_laser_label.text = str(seconds)
+		_laser_label.add_theme_font_size_override("font_size", 28)
+	else:
+		_laser_label.text = "⚡"
+		_laser_label.add_theme_font_size_override("font_size", 30)
 
 func _update_skill_cooldown() -> void:
 	var cd: float = GameState.skill_cooldown
