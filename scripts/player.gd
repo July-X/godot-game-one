@@ -96,6 +96,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		var forward := Vector2.RIGHT.rotated(rotation - PI * 0.5)
 		velocity = forward * move_speed
+		velocity.y += _pitch_velocity * move_speed * 3.0
 		target_pos = global_position + forward * 100
 
 	move_and_slide()
