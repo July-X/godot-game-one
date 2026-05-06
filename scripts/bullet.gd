@@ -1,5 +1,7 @@
 extends Area2D
 
+var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
+
 var _direction: Vector2 = Vector2.ZERO
 var _speed: float = 600.0
 var _damage: float = 1.0
@@ -115,6 +117,6 @@ func _on_area_entered(area: Area2D) -> void:
 			queue_free()
 
 func _spawn_hit() -> void:
-	var hit = preload("res://scenes/effects/hit_effect.tscn").instantiate()
+	var hit = _hit_effect_scene.instantiate()
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position

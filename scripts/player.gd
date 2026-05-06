@@ -12,6 +12,8 @@ var _shoot_timer: float = 0.0
 var _invincible_timer: float = 0.0
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
+var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
+var ShieldRing = preload("res://scripts/shield_ring.gd")
 var _yaw_velocity: float = 0.0
 var _pitch_velocity: float = 0.0
 var _walk_cycle: float = 0.0
@@ -284,24 +286,11 @@ func _on_shield_changed(layers: int) -> void:
 	var count: int = max_display
 	var base_radius: float = (32.0 + _sprite.texture.get_width() * 0.35) * level_scale
 	for i in range(count):
-		var shield := Sprite2D.new()
+		var ring := ShieldRing.new()
 		var radius: float = base_radius + i * 6.0
-		var img := Image.create(int(radius * 2 + 4), int(radius * 2 + 4), false, Image.FORMAT_RGBA8)
-		img.fill(Color(0, 0, 0, 0))
-		var cx: int = int(radius) + 2
-		var cy: int = int(radius) + 2
-		for y in range(img.get_height()):
-			for x in range(img.get_width()):
-				var dx: float = float(x - cx)
-				var dy: float = float(y - cy)
-				var d: float = sqrt(dx * dx + dy * dy)
-				if d > radius - 4.0 and d < radius + 1.0:
-					var a: float = 1.0 - abs(d - radius) / 4.0
-					var alpha_factor: float = 1.0 - float(i) / float(count) * 0.5
-					img.set_pixel(x, y, Color(0.2, 0.55, 1.0, a * 0.45 * alpha_factor))
-		shield.texture = ImageTexture.create_from_image(img)
-		shield.z_index = 3
-		_shield_container.add_child(shield)
+		ring.setup(radius, 1.0 - float(i) / float(count) * 0.5)
+		ring.z_index = 3
+		_shield_container.add_child(ring)
 
 func take_damage(amount: float = 1.0) -> void:
 	if _invincible_timer > 0:
@@ -331,7 +320,7 @@ func _play_hit_animation() -> void:
 	)
 
 func _spawn_hit_effect() -> void:
-	var hit = preload("res://scenes/effects/hit_effect.tscn").instantiate()
+	var hit = _hit_effect_scene.instantiate()
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
 

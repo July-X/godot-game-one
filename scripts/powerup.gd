@@ -1,5 +1,7 @@
 extends Area2D
 
+var _screen_shake_scene = preload("res://scenes/effects/screen_shake.tscn")
+
 var _type: String = "spread"
 var _lifetime: float = 10.0
 var _bob_timer: float = 0.0
@@ -61,5 +63,5 @@ func _bomb_effect() -> void:
 	call_deferred("_spawn_shake")
 
 func _spawn_shake() -> void:
-	var screen_shake = preload("res://scenes/effects/screen_shake.tscn").instantiate()
+	var screen_shake = _screen_shake_scene.instantiate()
 	get_tree().current_scene.add_child(screen_shake)

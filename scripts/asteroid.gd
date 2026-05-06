@@ -2,6 +2,9 @@ extends Area2D
 
 const MAX_HEALTH: int = 100
 
+var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
+var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
+
 var _speed: float = 60.0
 var _direction: Vector2 = Vector2.DOWN
 var _rotation_speed: float = 0.0
@@ -40,7 +43,7 @@ func take_damage(amount: float) -> void:
 		_destroy()
 
 func _destroy() -> void:
-	var exp = preload("res://scenes/effects/explosion.tscn").instantiate()
+	var exp = _explosion_scene.instantiate()
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
 	SFX.play_explosion()
@@ -56,7 +59,7 @@ func _on_body_entered(body: Node2D) -> void:
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group("player_bullets") and area.has_method("setup"):
 		take_damage(area._damage)
-		var hit = preload("res://scenes/effects/hit_effect.tscn").instantiate()
+		var hit = _hit_effect_scene.instantiate()
 		get_tree().current_scene.add_child(hit)
 		hit.global_position = global_position
 		area.queue_free()

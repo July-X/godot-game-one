@@ -31,6 +31,7 @@ var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
+var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _shield_sprite: Sprite2D = $ShieldSprite
@@ -250,7 +251,7 @@ func take_damage(amount: int = 1) -> void:
 		_die()
 
 func _spawn_shield_hit_effect() -> void:
-	var hit = preload("res://scenes/effects/hit_effect.tscn").instantiate()
+	var hit = _hit_effect_scene.instantiate()
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
 
