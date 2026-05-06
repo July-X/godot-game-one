@@ -5,8 +5,8 @@ signal died
 @export var move_speed: float = 260.0
 @export var acceleration: float = 1000.0
 @export var friction: float = 500.0
-@export var mouse_sensitivity: float = 0.000575
-@export var mouse_smoothing: float = 0.06
+@export var mouse_sensitivity: float = 0.008
+@export var mouse_smoothing: float = 0.12
 
 var _shoot_timer: float = 0.0
 var _invincible_timer: float = 0.0
@@ -83,8 +83,8 @@ func _physics_process(delta: float) -> void:
 	if not _mobile_mode:
 		rotate(_yaw_velocity)
 		_pitch = clamp(_pitch + _pitch_velocity, -PI * 0.4, PI * 0.4)
-		_yaw_velocity *= 0.8
-		_pitch_velocity *= 0.8
+		_yaw_velocity *= 0.92
+		_pitch_velocity *= 0.92
 
 	var target_pos: Vector2
 	var screen_size := get_viewport_rect().size
