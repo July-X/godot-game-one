@@ -148,7 +148,7 @@ func _attack_spread() -> void:
 		var a: float = start_a + step * i
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 2, false)
+		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 0.5, false)
 	SFX.play_enemy_death()
 
 func _attack_targeted_burst() -> void:
@@ -161,7 +161,7 @@ func _attack_targeted_burst() -> void:
 		var a: float = angle + spread_offset
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 1, false)
+		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 0.25, false)
 	SFX.play_shoot()
 
 func _attack_ring() -> void:
@@ -173,7 +173,7 @@ func _attack_ring() -> void:
 			var a: float = float(i) * TAU / float(count) + offset
 			var bullet := _bullet_scene.instantiate()
 			get_tree().current_scene.add_child(bullet)
-			bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 1, false)
+			bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 0.25, false)
 	SFX.play_explosion()
 
 func _attack_laser_sweep() -> void:
@@ -187,7 +187,7 @@ func _attack_laser_sweep() -> void:
 		var a: float = angle + step * i
 		var bullet := _bullet_scene.instantiate()
 		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 32, a, 2, false)
+		bullet.setup(global_position + Vector2.from_angle(a) * 32, a, 0.5, false)
 
 func _attack_summon_minions() -> void:
 	var count: int = 2 if not _angry_mode else 4

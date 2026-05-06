@@ -95,13 +95,11 @@ func _on_body_entered(body: Node2D) -> void:
 			queue_free()
 	else:
 		if body.is_in_group("player") and body.has_method("take_damage"):
-			var source: String = "普通子弹"
-			if _damage >= 1.0:
+			var source: String = "弹幕子弹"
+			if _damage >= 0.45:
 				source = "狙击子弹"
-			elif _damage >= 0.45 and _damage <= 0.55:
+			elif _damage >= 0.25:
 				source = "散弹子弹"
-			elif _damage >= 0.25 and _damage <= 0.35:
-				source = "弹幕子弹"
 			GameState.death_message = "被 " + source + " 击落"
 			body.take_damage(_damage)
 			_spawn_hit()
