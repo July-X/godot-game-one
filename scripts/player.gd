@@ -40,7 +40,6 @@ func _ready() -> void:
 	GameState.shield_changed.connect(_on_shield_changed)
 	if OS.has_feature("android") or OS.has_feature("ios"):
 		_mobile_mode = true
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		var mc = get_tree().current_scene.find_child("MobileControls", true, false)
 		if mc:
 			mc.move_input.connect(_on_mobile_move)
@@ -66,10 +65,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		var target_pitch: float = -event.relative.y * mouse_sensitivity
 		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
 		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT:
-			if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _on_mobile_move(vec: Vector2) -> void:
 	_touch_move = vec

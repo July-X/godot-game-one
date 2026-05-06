@@ -6,7 +6,6 @@ extends CanvasLayer
 var _move_vector: Vector2 = Vector2.ZERO
 var _joystick_center: Vector2 = Vector2.ZERO
 var _move_touch_id: int = -1
-var _is_mouse_dragging: bool = false
 var _ui_root: Control
 var _base_node: Panel
 var _knob_node: Panel
@@ -21,25 +20,10 @@ func _ready() -> void:
 	_update_visual_knob(_joystick_center)
 
 func _unhandled_input(event: InputEvent) -> void:
-	## 鼠标控制（PC 端）
-	if event is InputEventMouseButton:
-		if event.pressed:
-			if _is_in_joystick_area(event.position):
-				_is_mouse_dragging = true
-				_set_active_visual(true)
-				_update_move_vector(event.position)
-		else:
-			if _is_mouse_dragging:
-				_is_mouse_dragging = false
-				_move_vector = Vector2.ZERO
-				move_input.emit(Vector2.ZERO)
-				_set_active_visual(false)
-				_update_visual_knob(_joystick_center)
-	elif event is InputEventMouseMotion:
-		if _is_mouse_dragging:
-			_update_move_vector(event.position)
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
+		return
 	## 触屏控制（移动端）
-	elif event is InputEventScreenTouch:
+	if event is InputEventScreenTouch:
 		if event.pressed:
 			if _move_touch_id == -1 and _is_in_joystick_area(event.position):
 				_move_touch_id = event.index

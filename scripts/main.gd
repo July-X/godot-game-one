@@ -20,7 +20,10 @@ var _planets: Array[Node2D] = []
 @onready var _bg_color: ColorRect = $BgColor
 
 func _ready() -> void:
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_create_parallax_background()
 	_spawn_mobile_controls()
 	_spawn_player()
@@ -186,7 +189,7 @@ func _spawn_hud() -> void:
 	add_child(_hud)
 
 func _spawn_mobile_controls() -> void:
-	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
+	if OS.has_feature("android") or OS.has_feature("ios"):
 		var mc = _mobile_controls_scene.instantiate()
 		add_child(mc)
 
@@ -341,7 +344,7 @@ func _show_death_marquee() -> void:
 	tween.tween_callback(banner.queue_free)
 
 func _restart_on_touch() -> void:
-	if OS.has_feature("android") or DisplayServer.is_touchscreen_available():
+	if OS.has_feature("android") or OS.has_feature("ios"):
 		_restart()
 
 func _on_level_up(_new_level: int) -> void:
@@ -359,12 +362,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.keycode == KEY_ESCAPE:
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		elif not (OS.has_feature("android") or OS.has_feature("ios")):
+		else:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT or event.button_index == MOUSE_BUTTON_RIGHT:
-			if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if event is InputEventKey and event.keycode == KEY_F11:
 		if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_WINDOWED:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)

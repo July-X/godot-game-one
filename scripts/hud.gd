@@ -161,7 +161,7 @@ func _refresh_leaderboard() -> void:
 		_perm_leaderboard_entries.add_child(label)
 
 func _update_platform_hints() -> void:
-	var is_mobile: bool = OS.has_feature("android") or DisplayServer.is_touchscreen_available()
+	var is_mobile: bool = OS.has_feature("android") or OS.has_feature("ios")
 	if is_mobile:
 		_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
 		_restart_label.text = "点击屏幕重新开始"
