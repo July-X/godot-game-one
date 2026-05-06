@@ -11,7 +11,7 @@ func play_bgm() -> void:
 	if _bgm_player == null:
 		return
 	_bgm_player.stream = _generate_bgm()
-	_bgm_player.volume_db = -3.0
+	_bgm_player.volume_db = -6.0
 	_bgm_player.play()
 	_is_playing = true
 	_bgm_player.finished.connect(_on_bgm_finished)
@@ -42,18 +42,18 @@ func _generate_bgm() -> AudioStreamWAV:
 	for i in num_samples:
 		var t: float = float(i) / sample_rate
 		var sample_value: float = 0.0
-		## 贝斯（方波，更响亮）
+		## 贝斯（三角波）
 		var bass_idx: int = int(t / (duration / bass_notes.size())) % bass_notes.size()
 		var bass_freq: float = bass_notes[bass_idx]
 		var bass_phase: float = fmod(t * bass_freq, 1.0)
-		var bass_wave: float = 1.0 if bass_phase < 0.5 else -1.0
-		sample_value += bass_wave * 0.25
+		var bass_wave: float = 2.0 * abs(2.0 * bass_phase - 1.0) - 1.0
+		sample_value += bass_wave * 0.1
 		## 和弦（锯齿波）
 		var chord_idx: int = int(t / (duration / chord_notes.size())) % chord_notes.size()
 		for chord_note in chord_notes[chord_idx]:
 			var ch_phase: float = fmod(t * chord_note, 1.0)
 			var ch_wave: float = 2.0 * ch_phase - 1.0
-			sample_value += ch_wave * 0.1
+			sample_value += ch_wave * 0.06
 		## 旋律（三角波，带颤音）
 		var melody_idx: int = int(t / note_duration) % melody_notes.size()
 		var mel_freq: float = melody_notes[melody_idx]
@@ -62,15 +62,15 @@ func _generate_bgm() -> AudioStreamWAV:
 		var mel_wave: float = 2.0 * abs(2.0 * mel_phase - 1.0) - 1.0
 		var mel_t: float = fmod(t, note_duration) / note_duration
 		var mel_env: float = max(1.0 - mel_t * 1.5, 0.0)
-		sample_value += mel_wave * 0.2 * mel_env
+		sample_value += mel_wave * 0.15 * mel_env
 		## 鼓点
 		var beat_t: float = fmod(t, 0.5)
 		if beat_t < 0.06:
 			var kick_env: float = 1.0 - beat_t / 0.06
-			sample_value += sin(beat_t * TAU * 60.0) * 0.4 * kick_env
+			sample_value += sin(beat_t * TAU * 60.0) * 0.2 * kick_env
 		elif beat_t > 0.25 and beat_t < 0.3:
 			var hihat_env: float = 1.0 - (beat_t - 0.25) / 0.05
-			sample_value += (randf() - 0.5) * 0.25 * hihat_env
+			sample_value += (randf() - 0.5) * 0.12 * hihat_env
 		## 限制
 		sample_value = clamp(sample_value, -0.9, 0.9)
 		var si: int = clampi(int(sample_value * 32767), -32768, 32767)

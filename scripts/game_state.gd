@@ -140,7 +140,7 @@ func get_bullet_count() -> int:
 	return min(2 + shoot_level / 3, 8)
 
 func get_shoot_cooldown() -> float:
-	return max(0.3 - shoot_speed_level * 0.018, 0.08)
+	return max(0.27 - shoot_speed_level * 0.018, 0.08)
 
 func get_bullet_damage() -> int:
 	return bullet_power_level
