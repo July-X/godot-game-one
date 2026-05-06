@@ -61,8 +61,8 @@ func _update_pickup_radius() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and GameState.game_running and not _mobile_mode:
-		var target_yaw: float = -event.relative.x * mouse_sensitivity
-		var target_pitch: float = -event.relative.y * mouse_sensitivity
+		var target_yaw: float = event.relative.x * mouse_sensitivity
+		var target_pitch: float = event.relative.y * mouse_sensitivity
 		_yaw_velocity = lerp(_yaw_velocity, target_yaw, mouse_smoothing)
 		_pitch_velocity = lerp(_pitch_velocity, target_pitch, mouse_smoothing)
 
