@@ -29,7 +29,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_move_touch_id = event.index
 				_set_active_visual(true)
 				_update_move_vector(event.position)
-				get_viewport().set_input_as_handled()
 		else:
 			if event.index == _move_touch_id:
 				_move_touch_id = -1
@@ -40,7 +39,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		if event.index == _move_touch_id:
 			_update_move_vector(event.position)
-			get_viewport().set_input_as_handled()
 
 func _is_in_joystick_area(pos: Vector2) -> bool:
 	var dx: float = pos.x - _joystick_center.x

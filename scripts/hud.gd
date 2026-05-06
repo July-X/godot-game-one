@@ -50,7 +50,6 @@ func _input(event: InputEvent) -> void:
 		var screen: Vector2 = get_viewport().size
 		if event.position.x > screen.x * 0.55 and event.position.y > screen.y * 0.7:
 			_trigger_skill()
-			get_viewport().set_input_as_handled()
 
 func _trigger_skill() -> void:
 	if not GameState.use_skill():
