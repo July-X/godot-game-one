@@ -99,24 +99,16 @@ layout_mode = 0
 offset_right = 144.0
 offset_bottom = 144.0
 mouse_filter = 2
-color = Color(0, 0, 0, 0)
+color = Color(1, 1, 1, 1)
 script = ExtResource("2")
 
 [node name="SkillLabel" type="Label" parent="SkillButton" unique_id=1350867425]
-layout_mode = 1
-anchors_preset = -1
-anchor_top = 0.90800005
-anchor_right = 0.901
-anchor_bottom = 1.0
-offset_left = -9.0
-offset_top = -18.512024
-offset_right = 14.255997
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 0
+offset_right = 144.0
+offset_bottom = 144.0
 theme_override_colors/font_color = Color(0.9, 0.95, 1, 1)
 theme_override_font_sizes/font_size = 30
-text = "⚡⚡
-⚡⚡"
+text = "⚡"
 horizontal_alignment = 1
 vertical_alignment = 1
 
