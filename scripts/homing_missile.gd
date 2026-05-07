@@ -17,6 +17,8 @@ func setup(pos: Vector2, angle: float, damage: float) -> void:
 	rotation = angle + PI * 0.5
 	_damage = damage
 
+var _trail_frame_skip: int = 0
+
 func _physics_process(delta: float) -> void:
 	_lifetime -= delta
 	_trail_points.append(global_position)
@@ -38,7 +40,9 @@ func _physics_process(delta: float) -> void:
 	if global_position.x < -30 or global_position.x > screen.x + 30 or global_position.y < -30 or global_position.y > screen.y + 30:
 		queue_free()
 
-	queue_redraw()
+	_trail_frame_skip += 1
+	if _trail_frame_skip % 2 == 0:
+		queue_redraw()
 
 func _draw() -> void:
 	if _trail_points.size() > 1:
@@ -57,7 +61,7 @@ func _find_target() -> void:
 	var best: Node2D = null
 	var best_dist: float = 99999.0
 	for e in enemies:
-		if e.enemy_type == 0 and is_instance_valid(e):
+		if "enemy_type" in e and e.enemy_type == 0 and is_instance_valid(e):
 			var d: float = global_position.distance_squared_to(e.global_position)
 			if d < best_dist:
 				best_dist = d

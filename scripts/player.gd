@@ -242,7 +242,12 @@ func _fire_ring_shotgun() -> void:
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + engine_offset + offset, a, damage, true, 5, 500.0)
 
+var _pickup_frame_skip: int = 0
+
 func _try_pickup_nearby() -> void:
+	_pickup_frame_skip += 1
+	if _pickup_frame_skip % 4 != 0:
+		return
 	var powerups := get_tree().get_nodes_in_group("powerups")
 	for pu in powerups:
 		if pu.is_inside_tree() and global_position.distance_to(pu.global_position) < _pickup_radius:

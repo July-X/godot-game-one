@@ -3,7 +3,20 @@ extends Node
 var _players: Array[AudioStreamPlayer] = []
 var _pool_size: int = 12
 
+var _stream_shoot: AudioStreamWAV
+var _stream_enemy_death: AudioStreamWAV
+var _stream_player_hurt: AudioStreamWAV
+var _stream_ui_confirm: AudioStreamWAV
+var _stream_ui_select: AudioStreamWAV
+var _stream_explosion: AudioStreamWAV
+
 func _ready() -> void:
+	_stream_shoot = _generate_sweep(1200.0, 400.0, 0.06, 0.2)
+	_stream_enemy_death = _generate_sweep(600.0, 100.0, 0.15, 0.3)
+	_stream_player_hurt = _generate_tone(200.0, 0.2, 0.4)
+	_stream_ui_confirm = _generate_tone(800.0, 0.08, 0.25)
+	_stream_ui_select = _generate_tone(500.0, 0.05, 0.15)
+	_stream_explosion = _generate_noise(0.3, 0.4)
 	for i in _pool_size:
 		var player := AudioStreamPlayer.new()
 		add_child(player)
@@ -78,30 +91,30 @@ func _generate_noise(duration: float, volume: float = 0.3) -> AudioStreamWAV:
 
 func play_shoot() -> void:
 	var p := _get_available_player()
-	p.stream = _generate_sweep(1200.0, 400.0, 0.06, 0.2)
+	p.stream = _stream_shoot
 	p.play()
 
 func play_enemy_death() -> void:
 	var p := _get_available_player()
-	p.stream = _generate_sweep(600.0, 100.0, 0.15, 0.3)
+	p.stream = _stream_enemy_death
 	p.play()
 
 func play_player_hurt() -> void:
 	var p := _get_available_player()
-	p.stream = _generate_tone(200.0, 0.2, 0.4)
+	p.stream = _stream_player_hurt
 	p.play()
 
 func play_ui_confirm() -> void:
 	var p := _get_available_player()
-	p.stream = _generate_tone(800.0, 0.08, 0.25)
+	p.stream = _stream_ui_confirm
 	p.play()
 
 func play_ui_select() -> void:
 	var p := _get_available_player()
-	p.stream = _generate_tone(500.0, 0.05, 0.15)
+	p.stream = _stream_ui_select
 	p.play()
 
 func play_explosion() -> void:
 	var p := _get_available_player()
-	p.stream = _generate_noise(0.3, 0.4)
+	p.stream = _stream_explosion
 	p.play()

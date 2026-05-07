@@ -96,12 +96,16 @@ func _handle_movement(delta: float) -> void:
 		var strafe_dir: Vector2 = perp * _dodge_direction
 		velocity = velocity.lerp(strafe_dir * speed * 0.6, 0.8 * delta)
 
+var _dodge_frame_skip: int = 0
+
 func _handle_dodge(delta: float) -> void:
 	_dodge_timer -= delta
 	if _dodge_timer <= 0:
 		_dodge_direction *= -1.0
 		_dodge_timer = randf_range(1.0, 2.5)
-	dodge_nearby_bullets()
+	_dodge_frame_skip += 1
+	if _dodge_frame_skip % 6 == 0:
+		dodge_nearby_bullets()
 
 func dodge_nearby_bullets() -> void:
 	if not _target or not is_instance_valid(_target):

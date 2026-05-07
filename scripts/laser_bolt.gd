@@ -19,6 +19,8 @@ func setup(pos: Vector2, angle: float, damage: float) -> void:
 	rotation = angle
 	_damage = damage
 
+var _trail_frame_skip: int = 0
+
 func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta
 	_lifetime -= delta
@@ -31,7 +33,9 @@ func _physics_process(delta: float) -> void:
 	if global_position.x < -80 or global_position.x > screen.x + 80 or global_position.y < -80 or global_position.y > screen.y + 80:
 		queue_free()
 
-	queue_redraw()
+	_trail_frame_skip += 1
+	if _trail_frame_skip % 2 == 0:
+		queue_redraw()
 
 func _draw() -> void:
 	if _line_points.size() > 1:
