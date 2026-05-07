@@ -19,20 +19,24 @@ func setup(type: String) -> void:
 func _apply_sprite() -> void:
 	_sprite.texture = SpriteFactory.create_powerup_sprite(_type)
 
+var _glow_time: float = 0.0
+
 func _physics_process(delta: float) -> void:
 	_bob_timer += delta * 3.0
 	_sprite.position.y = sin(_bob_timer) * 4.0
 	_sprite.rotation += delta * 1.5
 
-	## 闪光脉冲
-	var pulse: float = 0.4 + abs(sin(Time.get_ticks_msec() * 0.005)) * 0.6
+	## 闪光脉冲（用一个统一的时间值，避免多次调 Time.get_ticks_msec）
+	_glow_time += delta
+	var t: float = _glow_time
+	var pulse: float = 0.4 + abs(sin(t * 12.0)) * 0.6
 	_sprite.modulate.a = pulse * 0.6 + 0.4
 
 	## 外发光脉动
 	if _glow:
-		var glow_a: float = 0.2 + abs(sin(Time.get_ticks_msec() * 0.004)) * 0.35
+		var glow_a: float = 0.2 + abs(sin(t * 8.0)) * 0.35
 		_glow.modulate.a = glow_a
-		var glow_s: float = 0.9 + abs(sin(Time.get_ticks_msec() * 0.003)) * 0.2
+		var glow_s: float = 0.9 + abs(sin(t * 6.0)) * 0.2
 		_glow.scale = Vector2(glow_s, glow_s)
 
 	_lifetime -= delta
@@ -78,6 +82,6 @@ func _kill_next() -> void:
 		_kill_idx += 1
 		if is_instance_valid(e) and e.has_method("die"):
 			e.die()
-			get_tree().create_timer(0.05).timeout.connect(_kill_next)
+			get_tree().create_timer(0.08).timeout.connect(_kill_next)
 			return
 	_kill_queue.clear()
