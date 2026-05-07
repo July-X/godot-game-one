@@ -47,7 +47,13 @@ func _physics_process(delta: float) -> void:
 		var blink: float = 0.3 + abs(sin(_lifetime * 12)) * 0.7
 		_sprite.modulate.a = blink
 
+var _collected: bool = false
+
 func collect() -> void:
+	if _collected:
+		return
+	_collected = true
+
 	GameState.collect_powerup(_type)
 	if _type == "bomb":
 		_bomb_effect()
@@ -57,8 +63,8 @@ func collect() -> void:
 	if player and is_instance_valid(player):
 		var tween := create_tween().set_parallel(true)
 		var target: Vector2 = player.global_position
-		var dur: float = global_position.distance_to(target) / 600.0
-		dur = clamp(dur, 0.1, 0.4)
+		# 无论距离远近，至少 0.25s，让吸附效果肉眼可见
+		var dur: float = max(global_position.distance_to(target) / 400.0, 0.25)
 		tween.tween_property(self, "global_position", target, dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tween.tween_property(_sprite, "scale", Vector2(0.2, 0.2), dur)
 		tween.tween_property(_sprite, "modulate:a", 0.0, dur)
