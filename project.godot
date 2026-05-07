@@ -16,12 +16,13 @@ config/features=PackedStringArray("4.6")
 config/icon="res://assets/sprites/ui/icon.png"
 
 
-[physics]
 
-2d/default_layer_1="player_bullets"
-2d/default_layer_2="enemies"
-2d/default_layer_3="player"
-2d/default_layer_4="enemy_bullets"
+[rendering]
+
+2d/options/use_2d_particle_emitter_feedbacks=false
+2d/gpu_particles_2d/collision_enabled=false
+textures/vram_compression/import_etc2_astc=true
+2d/antialiasing/quality=0
 
 [autoload]
 
@@ -37,6 +38,13 @@ Pool="*res://scripts/pool.gd"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="viewport"
+
+[physics]
+
+2d/default_layer_1="player_bullets"
+2d/default_layer_2="enemies"
+2d/default_layer_3="player"
+2d/default_layer_4="enemy_bullets"
 
 [rendering]
 

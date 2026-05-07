@@ -43,7 +43,7 @@ func _create_parallax_background() -> void:
 		_bg_color.z_index = -100
 
 	var far_layer := {nodes = [], speed = 12.0}
-	for i in range(350):
+		for i in range(180):
 		var star := Sprite2D.new()
 		var b: float = randf_range(0.3, 0.7)
 		var blue_tint: float = randf_range(0.8, 1.3)
@@ -57,7 +57,7 @@ func _create_parallax_background() -> void:
 	_bg_layers.append(far_layer)
 
 	var mid_layer := {nodes = [], speed = 24.0}
-	for i in range(180):
+		for i in range(90):
 		var star := Sprite2D.new()
 		var b: float = randf_range(0.5, 0.9)
 		var blue_tint: float = randf_range(0.85, 1.2)
@@ -76,7 +76,7 @@ func _create_parallax_background() -> void:
 	_bg_layers.append(mid_layer)
 
 	var near_layer := {nodes = [], speed = 40.0}
-	for i in range(70):
+		for i in range(35):
 		var star := Sprite2D.new()
 		var b: float = randf_range(0.7, 1.0)
 		var size: int = randi_range(6, 12)
@@ -222,24 +222,29 @@ func _process(delta: float) -> void:
 		_spawn_enemy()
 
 func _scroll_background(delta: float) -> void:
+	var d: float = delta
+	var screen_h: float = 800.0
+	var screen_w: float = 1280.0
+
 	for layer in _bg_layers:
 		var spd: float = layer.speed
+		var step_y: float = d * spd
 		for node in layer.nodes:
-			node.position.y += delta * spd
-			if node.position.y > 800:
-				node.position.y = -60
-				node.position.x = randf_range(0, 1280)
+			node.position.y += step_y
+			if node.position.y > screen_h:
+				node.position.y = -60.0
+				node.position.x = randf_range(0, screen_w)
 
 	for neb in _nebulas:
-		neb.position.y += delta * 2.5
-		neb.position.x += delta * 0.8
+		neb.position.y += d * 2.5
+		neb.position.x += d * 0.8
 		if neb.position.y > 900:
 			neb.position.y = -200
 			neb.position.x = randf_range(-200, 1500)
 
 	for pl in _planets:
-		pl.position.y += delta * 1.2
-		pl.position.x += delta * 0.3
+		pl.position.y += d * 1.2
+		pl.position.x += d * 0.3
 		if pl.position.y > 760:
 			pl.position.y = -100
 			pl.position.x = randf_range(100, 1180)
