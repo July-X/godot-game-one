@@ -36,6 +36,9 @@ func _ready() -> void:
 	_muzzle_flash.visible = false
 	_update_appearance()
 	_update_pickup_radius()
+	## 引擎尾焰设为锥形精灵
+	if _engine_glow and ResourceLoader.exists("res://assets/sprites/ui/engine_flame.png"):
+		_engine_glow.texture = load("res://assets/sprites/ui/engine_flame.png")
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
