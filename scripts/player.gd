@@ -20,7 +20,6 @@ var _head_bob_timer: float = 0.0
 var _missile_timer: float = 0.0
 var _missile_pods: Array[Node2D] = []
 var _missile_pod_built: int = 0
-var _engine_particles: CpuParticles2D = null
 var _pickup_radius: float = 280.0
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
