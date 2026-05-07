@@ -5,8 +5,6 @@ extends CanvasLayer
 @onready var _level_label: Label = $LevelLabel
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _hp_num: Label = $HealthBar/HPNum
-@onready var _health_bar: ProgressBar = $HealthBar
-@onready var _hp_num: Label = $HealthBar/HPNum
 @onready var _powerup_display: VBoxContainer = $PowerupDisplay
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -285,8 +283,8 @@ func _update_powerup_display() -> void:
 		val_lbl.text = "%d/%d" % [level, max_level]
 		val_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
 		val_lbl.add_theme_font_size_override("font_size", 10)
-		val_lbl.horizontal_alignment = 1
-		val_lbl.vertical_alignment = 1
+		val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bg.add_child(val_lbl)
 
