@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw
 try:
     _NEAREST = Image.Resampling.NEAREST  # Pillow >= 10
 except AttributeError:
-    _NEAREST = _NEAREST  # Pillow < 10
+    _NEAREST = Image.NEAREST  # Pillow < 10
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "assets" / "sprites"
@@ -481,6 +481,8 @@ def make_explosion_frames():
         r_inner = max(2, int(radius * 0.4))
 
         px = img.load()
+        if px is None:
+            continue
         for y in range(64):
             for x in range(64):
                 dist = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
@@ -494,8 +496,10 @@ def make_explosion_frames():
                         b_val = int(50 * (1 - t))
                         px[x, y] = (r_val, g_val, b_val, alpha)
                 if dist < r_inner:
-                    r, g, b, a = px[x, y]
-                    px[x, y] = (min(255, r + 100), min(255, g + 100), min(255, b + 100), min(255, a + 200))
+                    pv = px[x, y]
+                    if isinstance(pv, (tuple, list)):
+                        r, g, b, a = pv
+                        px[x, y] = (min(255, r + 100), min(255, g + 100), min(255, b + 100), min(255, a + 200))
 
         frames.append(quantize_pixel_art(img, 16))
     return frames
