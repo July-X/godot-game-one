@@ -1,4 +1,5 @@
 extends CanvasLayer
+## HUD 控制器 — 动态技能条 + 像素风 UI
 
 @onready var _score_label: Label = $ScoreLabel
 @onready var _level_label: Label = $LevelLabel
@@ -11,14 +12,15 @@ extends CanvasLayer
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
 @onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
-@onready var _skill_button: Button = $SkillButton
-@onready var _skill_cooldown_overlay = $SkillButton/SkillCooldown
-@onready var _skill_label: Label = $SkillButton/SkillLabel
-@onready var _laser_button: Button = $LaserButton
-@onready var _laser_cooldown_overlay = $LaserButton/LaserCooldown
-@onready var _laser_label: Label = $LaserButton/LaserLabel
+@onready var _skill_bar: HBoxContainer = $SkillBar
 
 var _damage_flash: ColorRect
+
+## 技能槽数据（新增技能只需在这里加一条）
+## {name, icon, action, key, overlay_style, bar_color}
+var _skill_data: Array[Dictionary] = []
+## 运行时生成的技能槽节点列表
+var _skill_slots: Array[Dictionary] = []
 
 func _ready() -> void:
 	_game_over_panel.visible = false
@@ -26,6 +28,8 @@ func _ready() -> void:
 	_set_control_ignore_input($LeaderboardPanel)
 	_setup_damage_flash()
 	_update_platform_hints()
+	_setup_skill_bar()
+
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
 	GameState.health_changed.connect(_on_health_changed)
@@ -35,32 +39,113 @@ func _ready() -> void:
 	_update_level(1)
 	_update_health(3, 3)
 	_refresh_leaderboard()
-	_skill_button.pressed.connect(_on_skill_pressed)
-	_skill_button.gui_input.connect(_on_skill_button_gui_input)
-	_laser_button.pressed.connect(_on_laser_pressed)
-	_laser_button.gui_input.connect(_on_laser_button_gui_input)
 
 func _process(_delta: float) -> void:
-	_update_skill_cooldown()
-	_update_laser_cooldown()
+	_update_cooldowns()
 
-func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			var local := _skill_button.get_local_mouse_position()
-			if Rect2(Vector2.ZERO, _skill_button.size).has_point(local):
-				_trigger_skill()
-				return
-			local = _laser_button.get_local_mouse_position()
-			if Rect2(Vector2.ZERO, _laser_button.size).has_point(local):
-				_trigger_laser()
-				return
-	if not (OS.has_feature("android") or OS.has_feature("ios")):
-		return
-	if event is InputEventScreenTouch and event.pressed:
-		var screen: Vector2 = get_viewport().size
-		if event.position.x > screen.x * 0.55 and event.position.y > screen.y * 0.7:
-			_trigger_skill()
+## ── 动态技能条 ──────────────────────────────────────────────
+## 定义技能、动态创建按钮、按 action 触发技能
+func _setup_skill_bar() -> void:
+	_skill_data = [
+		{
+			"name": "激光", "icon": "◎",
+			"action": "laser", "key": KEY_Q,
+			"overlay": 1,  # CIRCLE
+			"bar_color": Color(0.25, 0.12, 0.85),
+		},
+		{
+			"name": "散射", "icon": "△",
+			"action": "skill", "key": KEY_SPACE,
+			"overlay": 0,  # TRIANGLE
+			"bar_color": Color(0.15, 0.72, 0.28),
+		},
+	]
+
+	for data in _skill_data:
+		_create_skill_slot(data)
+
+## 动态创建单个技能按钮
+func _create_skill_slot(data: Dictionary) -> void:
+	var slot_size := Vector2(72, 72)
+
+	# Button 容器
+	var btn := Button.new()
+	btn.custom_minimum_size = slot_size
+	btn.size = slot_size
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	var empty_sb := StyleBoxFlat.new()
+	empty_sb.bg_color = Color(0, 0, 0, 0)
+	btn.add_theme_stylebox_override("normal", empty_sb)
+	btn.add_theme_stylebox_override("pressed", empty_sb)
+	btn.add_theme_stylebox_override("hover", empty_sb)
+	btn.add_theme_stylebox_override("disabled", empty_sb)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.pressed.connect(_on_skill_slot_pressed.bind(data))
+
+	# 半透明背景框
+	var bg := ColorRect.new()
+	bg.size = slot_size
+	bg.color = Color(0.1, 0.12, 0.2, 0.45)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(bg)
+
+	# 冷却覆盖层
+	var overlay := ColorRect.new()
+	overlay.size = slot_size - Vector2(4, 4)
+	overlay.position = Vector2(2, 2)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.color = Color(1, 1, 1, 0)
+	overlay.set_script(preload("res://scripts/cooldown_overlay.gd"))
+	overlay.overlay_style = data.overlay as int
+	btn.add_child(overlay)
+
+	# 图标标签
+	var lbl := Label.new()
+	lbl.size = slot_size
+	lbl.text = data.icon
+	lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0, 1))
+	lbl.add_theme_font_size_override("font_size", 28)
+	lbl.horizontal_alignment = 1
+	lbl.vertical_alignment = 1
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(lbl)
+
+	_skill_bar.add_child(btn)
+	_skill_slots.append({
+		"data": data,
+		"button": btn,
+		"overlay": overlay,
+		"label": lbl,
+	})
+
+## 技能按钮被点击 / 触屏触发
+func _on_skill_slot_pressed(data: Dictionary) -> void:
+	match data.action:
+		"skill": _trigger_skill()
+		"laser": _trigger_laser()
+
+func _update_cooldowns() -> void:
+	for slot in _skill_slots:
+		var action: String = slot.data.action
+		var cd: float = 0.0
+		var cd_max: float = 0.0
+		match action:
+			"skill":
+				cd = GameState.skill_cooldown
+				cd_max = GameState.SKILL_COOLDOWN_MAX
+			"laser":
+				cd = GameState.laser_cooldown
+				cd_max = GameState.LASER_COOLDOWN_MAX
+		var progress: float = 1.0 - cd / cd_max if cd_max > 0 else 1.0
+		slot.overlay.set_ready_progress(progress)
+		if cd > 0:
+			slot.label.text = str(int(ceil(cd)))
+			slot.label.add_theme_font_size_override("font_size", 26)
+		else:
+			slot.label.text = slot.data.icon
+			slot.label.add_theme_font_size_override("font_size", 28)
+
+## ── 技能触发 ────────────────────────────────────────────────
 
 func _trigger_skill() -> void:
 	if not GameState.use_skill():
@@ -80,49 +165,13 @@ func _trigger_laser() -> void:
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func _on_skill_pressed() -> void:
-	_trigger_skill()
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_SPACE: _trigger_skill()
+			KEY_Q: _trigger_laser()
 
-func _on_skill_button_gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and event.pressed:
-		if not (OS.has_feature("android") or OS.has_feature("ios")):
-			return
-		_trigger_skill()
-
-func _on_laser_pressed() -> void:
-	_trigger_laser()
-
-func _on_laser_button_gui_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and event.pressed:
-		if not (OS.has_feature("android") or OS.has_feature("ios")):
-			return
-		_trigger_laser()
-
-func _update_laser_cooldown() -> void:
-	var cd: float = GameState.laser_cooldown
-	var progress: float = 1.0 - cd / GameState.LASER_COOLDOWN_MAX
-	_laser_cooldown_overlay.visible = true
-	_laser_cooldown_overlay.set_ready_progress(progress)
-	if cd > 0:
-		var seconds: int = int(ceil(cd))
-		_laser_label.text = str(seconds)
-		_laser_label.add_theme_font_size_override("font_size", 28)
-	else:
-		_laser_label.text = "⚡"
-		_laser_label.add_theme_font_size_override("font_size", 30)
-
-func _update_skill_cooldown() -> void:
-	var cd: float = GameState.skill_cooldown
-	var progress: float = 1.0 - cd / GameState.SKILL_COOLDOWN_MAX
-	_skill_cooldown_overlay.visible = true
-	_skill_cooldown_overlay.set_ready_progress(progress)
-	if cd > 0:
-		var seconds: int = int(ceil(cd))
-		_skill_label.text = str(seconds)
-		_skill_label.add_theme_font_size_override("font_size", 28)
-	else:
-		_skill_label.text = "⚡"
-		_skill_label.add_theme_font_size_override("font_size", 30)
+## ── 信号响应 ────────────────────────────────────────────────
 
 func _on_score_changed(new_score: int) -> void:
 	_update_score(new_score)
@@ -142,6 +191,8 @@ func _on_game_over(final_score: int, final_level: int) -> void:
 
 func _on_powerup_collected(type: String) -> void:
 	_update_powerup_display()
+
+## ── 显示更新 ────────────────────────────────────────────────
 
 func _update_score(score: int) -> void:
 	_score_label.text = "得分: %d" % score
@@ -176,8 +227,6 @@ func _update_powerup_display() -> void:
 			block.size = Vector2(80, 18)
 			block.color = labels[type].bar
 			block.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-			# Inner label
 			var lbl := Label.new()
 			lbl.text = "%s %d/15" % [labels[type].name, level]
 			lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
@@ -229,5 +278,10 @@ func _update_platform_hints() -> void:
 		_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
 		_restart_label.text = "点击屏幕重新开始"
 	else:
-		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nSpace - 技能\nR - 重新开始"
+		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  Space - 散射\nR - 重新开始"
 		_restart_label.text = "按 R 重新开始"
+
+## 新增技能：追加到 _skill_data 并重建技能条
+func add_skill(data: Dictionary) -> void:
+	_skill_data.append(data)
+	_create_skill_slot(data)
