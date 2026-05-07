@@ -20,6 +20,8 @@ func _apply_sprite() -> void:
 	_sprite.texture = SpriteFactory.create_powerup_sprite(_type)
 
 var _glow_time: float = 0.0
+var _magnet_target: Node2D = null
+var _magnet_speed: float = 350.0
 
 func _physics_process(delta: float) -> void:
 	## 磁铁吸引模式：向玩家飞行
