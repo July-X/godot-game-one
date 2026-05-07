@@ -157,7 +157,7 @@ func _attack_spread() -> void:
 	var step: float = spread_angle / max(count - 1, 1)
 	for i in range(count):
 		var a: float = start_a + step * i
-		var bullet := _bullet_scene.instantiate()
+		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 0.5, false)
 	SFX.play_enemy_death()
@@ -170,7 +170,7 @@ func _attack_targeted_burst() -> void:
 		var angle: float = global_position.angle_to_point(_target.global_position)
 		var spread_offset: float = deg_to_rad(randf_range(-8.0, 8.0))
 		var a: float = angle + spread_offset
-		var bullet := _bullet_scene.instantiate()
+		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 0.25, false)
 	SFX.play_shoot()
@@ -182,7 +182,7 @@ func _attack_ring() -> void:
 		var offset: float = float(ring) * TAU / float(count) / 2.0
 		for i in range(count):
 			var a: float = float(i) * TAU / float(count) + offset
-			var bullet := _bullet_scene.instantiate()
+			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + Vector2.from_angle(a) * 28, a, 0.25, false)
 	SFX.play_explosion()
@@ -196,7 +196,7 @@ func _attack_laser_sweep() -> void:
 	var step: float = spread / float(count)
 	for i in range(count):
 		var a: float = angle + step * i
-		var bullet := _bullet_scene.instantiate()
+		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + Vector2.from_angle(a) * 32, a, 0.5, false)
 
@@ -262,9 +262,10 @@ func take_damage(amount: int = 1) -> void:
 		_die()
 
 func _spawn_shield_hit_effect() -> void:
-	var hit = _hit_effect_scene.instantiate()
+	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
+	hit.start()
 
 func _shield_break_effect() -> void:
 	SFX.play_explosion()

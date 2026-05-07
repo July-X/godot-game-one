@@ -91,6 +91,7 @@ func _draw_lightning_bolt(from: Vector2, to: Vector2) -> void:
 	line.setup(from, to)
 
 func _spawn_hit() -> void:
-	var hit = _hit_effect_scene.instantiate()
+	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
+	hit.start()

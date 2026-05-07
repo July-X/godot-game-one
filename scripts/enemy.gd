@@ -116,7 +116,7 @@ func _shoot() -> void:
 		2: _shoot_circle()
 
 func _shoot_single(angle: float) -> void:
-	var bullet := _bullet_scene.instantiate()
+	var bullet := Pool.acquire("bullet", _bullet_scene)
 	get_tree().current_scene.add_child(bullet)
 	var dmg: float = max(0.25, ceil(GameState.max_health * 0.0625))
 	bullet.setup(global_position + Vector2.from_angle(angle) * 20, angle, dmg, false, 1, 780.0)
@@ -125,7 +125,7 @@ func _shoot_single(angle: float) -> void:
 func _shoot_spread(angle: float) -> void:
 	for i in range(-1, 2):
 		var a: float = angle + i * 0.2
-		var bullet := _bullet_scene.instantiate()
+		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.5, false, 1, 780.0)
 		bullet.modulate = Color(0.3, 1.0, 0.4, 1.0)
@@ -133,7 +133,7 @@ func _shoot_spread(angle: float) -> void:
 func _shoot_circle() -> void:
 	for i in range(6):
 		var a: float = float(i) * TAU / 6.0
-		var bullet := _bullet_scene.instantiate()
+		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.3, false, 1, 780.0)
 		bullet.modulate = Color(0.6, 0.3, 1.0, 1.0)

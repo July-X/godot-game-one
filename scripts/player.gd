@@ -21,6 +21,7 @@ var _missile_timer: float = 0.0
 var _missile_pods: Array[Node2D] = []
 var _missile_pod_built: int = 0
 var _pickup_radius: float = 280.0
+var _mobile_vel: Vector2 = Vector2.ZERO
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
 
@@ -183,7 +184,7 @@ func _shoot() -> void:
 			var a: float = base_angle + spread_angles[i % spread_angles.size()] * (0.5 + (level - 12) * 0.1)
 			var spread_offset: float = (i - bullet_count / 2.0) * 18.0
 			var offset: Vector2 = perp * spread_offset
-			var bullet := _bullet_scene.instantiate()
+			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, a, damage, true, level, 660.0)
 	elif level >= 8:
@@ -194,7 +195,7 @@ func _shoot() -> void:
 		for i in bullet_count:
 			var a: float = base_angle + positions[i] * 0.008
 			var offset: Vector2 = perp * positions[i]
-			var bullet := _bullet_scene.instantiate()
+			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, a, damage, true, level, 660.0)
 	elif level >= 4:
@@ -204,7 +205,7 @@ func _shoot() -> void:
 			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
 		for i in bullet_count:
 			var offset: Vector2 = perp * positions[i]
-			var bullet := _bullet_scene.instantiate()
+			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
 	else:
@@ -214,7 +215,7 @@ func _shoot() -> void:
 			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
 		for i in bullet_count:
 			var offset: Vector2 = perp * positions[i]
-			var bullet := _bullet_scene.instantiate()
+			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
 
@@ -238,7 +239,7 @@ func _fire_ring_shotgun() -> void:
 	for i in range(count):
 		var a: float = base_angle + i * TAU / count
 		var offset: Vector2 = perp * 8.0 + Vector2(cos(a), sin(a)) * 4.0
-		var bullet := _bullet_scene.instantiate()
+		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + engine_offset + offset, a, damage, true, 5, 500.0)
 
@@ -395,9 +396,10 @@ func _play_hit_animation() -> void:
 	)
 
 func _spawn_hit_effect() -> void:
-	var hit = _hit_effect_scene.instantiate()
+	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
+	hit.start()
 
 func _spawn_explosion() -> void:
 	var exp = _explosion_scene.instantiate()

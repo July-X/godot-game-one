@@ -1,5 +1,7 @@
 extends Node2D
 
+var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
+var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
@@ -29,6 +31,8 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_hud()
 	_start_bgm()
+	Pool.setup("bullet", _bullet_scene, 40)
+	Pool.setup("hit_effect", _hit_effect_scene, 20)
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)

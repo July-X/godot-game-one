@@ -59,7 +59,8 @@ func _on_body_entered(body: Node2D) -> void:
 func _on_area_entered(area: Area2D) -> void:
 	if area.is_in_group("player_bullets") and area.has_method("setup"):
 		take_damage(area._damage)
-		var hit = _hit_effect_scene.instantiate()
+		var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 		get_tree().current_scene.add_child(hit)
 		hit.global_position = global_position
+	hit.start()
 		area.queue_free()
