@@ -112,11 +112,21 @@ func _create_skill_slot(data: Dictionary) -> void:
 	btn.add_child(icon_tex)
 
 	_skill_bar.add_child(btn)
+	# 冷却数字标签（覆盖在图标上方）
+	var cd_label := Label.new()
+	cd_label.size = slot_size
+	cd_label.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0, 1))
+	cd_label.add_theme_font_size_override("font_size", 44)
+	cd_label.horizontal_alignment = 1
+	cd_label.vertical_alignment = 1
+	cd_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(cd_label)
+
 	_skill_slots.append({
 		"data": data,
 		"button": btn,
 		"overlay": overlay,
-		"label": lbl,
+		"cd_label": cd_label,
 	})
 
 ## 技能按钮被点击 / 触屏触发
@@ -147,11 +157,11 @@ func _update_cooldowns() -> void:
 		var progress: float = 1.0 - cd / cd_max if cd_max > 0 else 1.0
 		slot.overlay.set_ready_progress(progress)
 		if cd > 0:
-			slot.label.text = str(int(ceil(cd)))
-			slot.label.add_theme_font_size_override("font_size", 40)
+			slot.cd_label.visible = true
+			slot.cd_label.text = str(int(ceil(cd)))
+			slot.cd_label.add_theme_font_size_override("font_size", 40)
 		else:
-			slot.label.text = slot.data.icon
-			slot.label.add_theme_font_size_override("font_size", 44)
+			slot.cd_label.visible = false
 
 ## ── 技能触发 ────────────────────────────────────────────────
 
