@@ -5,7 +5,7 @@ signal level_changed(new_level)
 signal health_changed(current_health, max_health)
 signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
-signal boss_spawn_requested
+signal elite_spawn_requested
 signal shield_changed(layers)
 signal skill_used
 
@@ -13,9 +13,9 @@ var score: int = 0
 var level: int = 1
 var kills: int = 0
 var total_kills: int = 0
-var last_boss_threshold: int = 0
-var boss_encounter_count: int = 0
-var post_boss_multiplier: float = 1.0
+var last_elite_threshold: int = 0
+var elite_encounter_count: int = 0
+var post_elite_multiplier: float = 1.0
 var current_health: int = 3
 var max_health: int = 3
 var shield_layers: int = 0
@@ -37,9 +37,9 @@ func reset_game() -> void:
 	level = 1
 	kills = 0
 	total_kills = 0
-	last_boss_threshold = 0
-	boss_encounter_count = 0
-	post_boss_multiplier = 1.0
+	last_elite_threshold = 0
+	elite_encounter_count = 0
+	post_elite_multiplier = 1.0
 	current_health = 200
 	max_health = 200
 	shield_layers = 0
@@ -65,9 +65,9 @@ func add_kill() -> void:
 	if total_kills % 10 == 0:
 		shield_layers = min(shield_layers + 1, 30)
 		shield_changed.emit(shield_layers)
-	if total_kills > 0 and total_kills % 30 == 0 and total_kills != last_boss_threshold:
-		last_boss_threshold = total_kills
-		boss_spawn_requested.emit()
+	if total_kills > 0 and total_kills % 20 == 0 and total_kills != last_elite_threshold:
+		last_elite_threshold = total_kills
+		elite_spawn_requested.emit()
 
 func level_up() -> void:
 	level += 1

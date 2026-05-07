@@ -1,6 +1,6 @@
 [gd_scene load_steps=11 format=3]
 
-[ext_resource type="Script" path="res://scripts/boss.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/elite.gd" id="1"]
 
 [sub_resource type="Gradient" id="1"]
 colors = PackedColorArray(0.6, 0.1, 0.1, 1.0, 0.9, 0.3, 0.1, 1.0)
@@ -53,7 +53,7 @@ border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.3, 0.3, 0.4, 1.0)
 
-[node name="Boss" type="CharacterBody2D"]
+[node name="Elite" type="CharacterBody2D"]
 collision_layer = 4
 collision_mask = 3
 script = ExtResource("1")

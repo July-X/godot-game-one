@@ -2,14 +2,14 @@ extends Node2D
 
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
-var _boss_scene = preload("res://scenes/entities/boss.tscn")
+var _elite_scene = preload("res://scenes/entities/elite.tscn")
 var _asteroid_scene = preload("res://scenes/entities/asteroid.tscn")
 var _hud_scene = preload("res://scenes/ui/hud.tscn")
 var _mobile_controls_scene = preload("res://scenes/ui/mobile_controls.tscn")
 
 var _player: Node2D = null
 var _hud: Node = null
-var _boss: Node2D = null
+var _elite: Node2D = null
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
 var _asteroid_timer: float = 0.0
@@ -31,7 +31,7 @@ func _ready() -> void:
 	_start_bgm()
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
-	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
+	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 
 func _create_parallax_background() -> void:
 	if _bg_color:
@@ -199,7 +199,7 @@ func _process(delta: float) -> void:
 
 	_scroll_background(delta)
 
-	if _boss != null and is_instance_valid(_boss):
+	if _elite != null and is_instance_valid(_elite):
 		return
 
 	_asteroid_timer -= delta
@@ -253,7 +253,7 @@ func _spawn_enemy() -> void:
 	enemy.position = pos
 	var enemy_type: int = randi() % 3
 	enemy.enemy_type = enemy_type
-	var mult: float = GameState.post_boss_multiplier
+	var mult: float = GameState.post_elite_multiplier
 	enemy.health = int((1 + GameState.level / 2 + enemy_type) * mult)
 	enemy.move_speed = (40.0 + GameState.level * 6.0 + enemy_type * 10.0) * mult
 	enemy.shoot_cooldown = max((2.0 - GameState.level * 0.12) / mult, 0.4)
@@ -277,32 +277,32 @@ func _spawn_asteroid() -> void:
 		3: asteroid.position = Vector2(screen.x + 40, randf_range(60, screen.y - 60))
 	add_child(asteroid)
 
-func _on_boss_spawn_requested() -> void:
-	if _boss != null and is_instance_valid(_boss):
+func _on_elite_spawn_requested() -> void:
+	if _elite != null and is_instance_valid(_elite):
 		return
-	_spawn_boss()
+	_spawn_elite()
 
-func _spawn_boss() -> void:
-	_show_boss_warning()
-	GameState.boss_encounter_count += 1
-	_boss = _boss_scene.instantiate()
-	_boss.position = Vector2(640, -60)
-	var boss_mult: float = 1.0 + (GameState.boss_encounter_count - 1) * 0.1
-	_boss.set_difficulty(boss_mult)
+func _spawn_elite() -> void:
+	_show_elite_warning()
+	GameState.elite_encounter_count += 1
+	_elite = _elite_scene.instantiate()
+	_elite.position = Vector2(640, -60)
+	var elite_mult: float = 1.0 + (GameState.elite_encounter_count - 1) * 0.1
+	_elite.set_difficulty(elite_mult)
 	if _player and is_instance_valid(_player):
-		_boss.set_target(_player)
-	_boss.boss_died.connect(_on_boss_died)
-	add_child(_boss)
+		_elite.set_target(_player)
+	_elite.elite_died.connect(_on_elite_died)
+	add_child(_elite)
 	var tween := create_tween()
-	tween.tween_property(_boss, "position", Vector2(640, 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_elite, "position", Vector2(640, 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
-func _on_boss_died() -> void:
-	_boss = null
-	GameState.post_boss_multiplier = 1.0 + GameState.boss_encounter_count * 0.05
+func _on_elite_died() -> void:
+	_elite = null
+	GameState.post_elite_multiplier = 1.0 + GameState.elite_encounter_count * 0.05
 
-func _show_boss_warning() -> void:
+func _show_elite_warning() -> void:
 	var warning := Label.new()
-	warning.text = "警告: BOSS 来袭"
+	warning.text = "警告: 精英怪 来袭"
 	warning.add_theme_font_size_override("font_size", 32)
 	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.1, 1.0))
 	warning.horizontal_alignment = 1

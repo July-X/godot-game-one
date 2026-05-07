@@ -64,8 +64,8 @@ func _update_appearance() -> void:
 
 
 func _update_pickup_radius() -> void:
-	## 拾取范围 = 3倍飞机模型大小（飞机约64宽，3倍=192，取280留余量）
-	_pickup_radius = 280.0
+	## 拾取范围 1.5 倍扩大
+	_pickup_radius = 420.0
 	if _pickup_area and _pickup_area.get_child_count() > 0:
 		_pickup_area.get_child(0).shape.radius = _pickup_radius
 

@@ -6,7 +6,7 @@
 
 ## 1. 项目概览
 
-**Space Bullet Hell** 是一款俯视角 Roguelike 弹幕射击游戏。玩家操控星际战机，在深空星域中对抗源源不断的敌机与 Boss，通过升级和拾取道具不断提升火力。
+**Space Bullet Hell** 是一款俯视角 Roguelike 弹幕射击游戏。玩家操控星际战机，在深空星域中对抗源源不断的敌机与精英，通过升级和拾取道具不断提升火力。
 
 | 属性 | 值 |
 |------|-----|
@@ -31,7 +31,7 @@
 │   ├── entities/
 │   │   ├── player.tscn        # 玩家飞机
 │   │   ├── enemy.tscn         # 普通敌人
-│   │   ├── boss.tscn          # Boss
+│   │   ├── elite.tscn          # Boss
 │   │   ├── bullet.tscn        # 子弹（通用）
 │   │   ├── asteroid.tscn      # 陨石
 │   │   ├── homing_missile.tscn # 追踪导弹
@@ -49,7 +49,7 @@
 │   ├── main.gd                # 主场景控制器
 │   ├── player.gd              # 玩家飞机逻辑
 │   ├── enemy.gd               # 普通敌人 AI
-│   ├── boss.gd                # Boss AI
+│   ├── elite.gd                # 精英 AI
 │   ├── bullet.gd              # 子弹物理
 │   ├── asteroid.gd            # 陨石
 │   ├── powerup.gd             # 掉落道具
@@ -83,9 +83,9 @@
 | **生命值** | `current_health`, `max_health`, `shield_layers` | 血量 + 护盾层数（最大5层显示） |
 | **升级成长** | `shoot_level`, `shoot_speed_level`, `bullet_power_level` | 扩散/射速/威力（上限15） |
 | **技能冷却** | `skill_cooldown`(15s), `laser_cooldown`(10s) | 环形散射/激光技能冷却 |
-| **Boss 节奏** | `boss_encounter_count`, `post_boss_multiplier`, `last_boss_threshold` | Boss 出场控制 |
+| **Boss 节奏** | `elite_encounter_count`, `post_elite_multiplier`, `last_elite_threshold` | 精英 出场控制 |
 
-**信号**：`score_changed`, `level_changed`, `health_changed`, `game_over`, `powerup_collected`, `boss_spawn_requested`, `shield_changed`, `skill_used`
+**信号**：`score_changed`, `level_changed`, `health_changed`, `game_over`, `powerup_collected`, `elite_spawn_requested`, `shield_changed`, `skill_used`
 
 **核心公式**：
 
@@ -121,7 +121,7 @@
 程序化纹理生成，避免外部美术资源依赖：
 - `create_player_sprite(level)` — 玩家飞机（锯齿形，随等级增长）
 - `create_enemy_sprite(type)` — 敌人（3 种类型）
-- `create_boss_sprite()` — Boss（大眼睛 + 炮塔）
+- `create_elite_sprite()` — 精英（大眼睛 + 炮塔）
 - `create_bullet_sprite(is_player, level)` — 子弹（已缓存）
 - `create_powerup_sprite(type)` — 道具（已缓存，5 种形状）
 - `apply_asteroid_texture(sprite, size)` — 陨石纹理
@@ -139,7 +139,7 @@
 ```
 main._process(delta)
 ├── _scroll_background(delta)       # 多层星空视差滚动
-├── 如果 Boss 存活 → return        # Boss 战中暂停刷怪
+├── 如果 Boss 存活 → return        # 精英战中暂停刷怪
 ├── _spawn_asteroid()               # 陨石生成（2-5s 随机）
 ├── _spawn_enemy()                  # 敌人生成（0.2-1.2s 间隔，随等级加速）
 └── 每 8 秒额外刷新一波敌人        # 难度递增
@@ -233,11 +233,11 @@ powerup_types = ["spread", "speed", "power", "heal", "bomb"]
 
 ---
 
-## 7. Boss 系统
+## 7. 精英系统
 
 ### 7.1 出场条件
 
-每 30 击杀触发一次 Boss 战（`total_kills % 30 == 0`）。难度加成：`mult = 1 + boss_encounter_count * 0.3`。
+每 20 击杀触发一次精英战（`total_kills % 30 == 0`）。难度加成：`mult = 1 + elite_encounter_count * 0.3`。
 
 ### 7.2 核心机制
 
@@ -347,7 +347,7 @@ powerup_types = ["spread", "speed", "power", "heal", "bomb"]
           │ signals         │ signals         │ signals
      ┌────▼────┐      ┌─────▼──────┐    ┌─────▼─────┐
      │  HUD    │      │   Player   │    │   Main    │
-     │ 显示更新 │      │ 移动/射击   │    │ 刷怪/Boss │
+     │ 显示更新 │      │ 移动/射击   │    │ 刷怪/精英 │
      │ 按钮交互 │      │ 导弹/技能   │    │ 背景滚动  │
      └─────────┘      └─────┬──────┘    └───────────┘
                             │ instantiate
@@ -358,7 +358,7 @@ powerup_types = ["spread", "speed", "power", "heal", "bomb"]
          └────┬────┘  └─────┬─────┘  └───┬────┘
               │ body_entered │             │
          ┌────▼──────────────▼─────────────▼───┐
-         │          Enemy / Boss               │
+         │          Enemy / Elite               │
          │    take_damage() → die() → 掉落     │
          └─────────────────────────────────────┘
 ```
@@ -386,11 +386,11 @@ powerup_types = ["spread", "speed", "power", "heal", "bomb"]
 击杀10    → 第一次升级 + 护盾
 击杀20    → 护盾 + 升级
 击杀30    → Boss出场！ + 护盾 + 升级
-击杀Boss  → 掉落大量道具
+击杀精英  → 掉落大量道具
 循环...
-击杀60    → 第二个Boss（更强）
+击杀60    → 第二个精英（更强）
 每10击杀 → 护盾+1
-每30击杀 → Boss
+每20击杀 → 精英
 ```
 
 升级曲线：`kills_for_next_level = 10 + level * 5`，中后期升级间隔逐渐拉长。

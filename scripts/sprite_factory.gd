@@ -377,8 +377,8 @@ func _point_in_polygon(point: Vector2, vertices: Array[Vector2]) -> bool:
 		j = i
 	return inside
 
-func create_boss_sprite() -> ImageTexture:
-	var png := _load_png("boss/boss.png")
+func create_elite_sprite() -> ImageTexture:
+	var png := _load_png("enemies/elite/elite.png")
 	if png:
 		return png
 

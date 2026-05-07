@@ -1,4 +1,4 @@
-# Godot Game - Boss 关卡增量系统设计文档
+# Godot Game - 精英关卡增量系统设计文档
 
 > 版本：v1.0
 > 日期：2026-05-03
@@ -8,7 +8,7 @@
 
 ## 1. 实现方案
 
-### 1.1 Boss 敌人（`boss.gd` + `boss.tscn`）
+### 1.1 精英敌人（`elite.gd` + `elite.tscn`）
 
 **设计思路：**
 - 继承 `CharacterBody3D`，参考 `enemy_shooter.gd` 的结构
@@ -35,18 +35,18 @@
 
 **设计思路：**
 - 25×25 的战斗竞技场，无出口区域
-- 包含：2 巡逻 + 1 射击 + 1 跳跃 + 1 Boss
+- 包含：2 巡逻 + 1 射击 + 1 跳跃 + 1 精英
 - 3 个血包分布在战场关键位置
-- Boss 被击败后直接触发结算，显示 "FINAL BOSS DEFEATED"
+- 精英 被击败后直接触发结算，显示 "FINAL BOSS DEFEATED"
 - 继承 `level_01.gd` 的基础结构，重写 `_on_boss_defeated()` 逻辑
 
 ### 1.4 main.gd 修改
 
 **修改要点：**
 - `_level_scenes` 字典添加 Level 04
-- 新增 `_on_boss_defeated()` 方法处理 Boss 死亡事件
-- 修改 `_on_player_reached_exit()` 逻辑，区分普通关卡和 Boss 关卡
-- 新增 Boss 关卡结算路径，显示专属结算画面
+- 新增 `_on_boss_defeated()` 方法处理 精英 死亡事件
+- 修改 `_on_player_reached_exit()` 逻辑，区分普通关卡和 精英关卡
+- 新增 精英关卡结算路径，显示专属结算画面
 
 ### 1.5 player.gd 修改
 
@@ -73,8 +73,8 @@
 
 | 文件路径 | 说明 |
 |---------|------|
-| `res://scripts/boss.gd` | Boss 敌人逻辑脚本 |
-| `res://scenes/entities/boss.tscn` | Boss 场景文件 |
+| `res://scripts/elite.gd` | 精英敌人逻辑脚本 |
+| `res://scenes/entities/elite.tscn` | 精英 场景文件 |
 | `res://scripts/health_pack.gd` | 血包逻辑脚本 |
 | `res://scenes/entities/health_pack.tscn` | 血包场景文件 |
 | `res://scripts/level_04.gd` | Level 04 关卡脚本 |
@@ -84,7 +84,7 @@
 
 | 文件路径 | 说明 |
 |---------|------|
-| `res://scripts/main.gd` | 添加 Level 04 支持，Boss 结算逻辑 |
+| `res://scripts/main.gd` | 添加 Level 04 支持，精英 结算逻辑 |
 | `res://scripts/player.gd` | 新增 `heal()` 方法 |
 | `res://scripts/sfx_manager.gd` | 新增 `play_pickup()` 方法 |
 | `res://scripts/damage_number.gd` | 支持自定义颜色参数 |
@@ -96,7 +96,7 @@
 
 ## 3. 关键数据结构和接口
 
-### 3.1 Boss 类（`boss.gd`）
+### 3.1 精英 类（`elite.gd`）
 
 ```gdscript
 extends CharacterBody3D
@@ -214,7 +214,7 @@ extends Node3D
 
 signal boss_defeated
 
-@onready var boss_node = $Boss
+@onready var boss_node = $精英
 
 func _ready() -> void:
 	if boss_node and boss_node.has_method("connect"):
@@ -241,13 +241,13 @@ var _level_scenes: Dictionary = {
 
 # 新增方法
 func notify_boss_defeated() -> void:
-	"""Boss 被击败，触发专属结算"""
+	"""精英 被击败，触发专属结算"""
 	_enemy_count = 0
 	_kill_count += 1
 	_trigger_boss_result()
 
 func _trigger_boss_result() -> void:
-	"""Boss 关卡专属结算"""
+	"""精英关卡专属结算"""
 	if _result_shown:
 		return
 	_result_shown = true
@@ -287,11 +287,11 @@ sequenceDiagram
 	H->>H: queue_free()
 ```
 
-### 4.2 Boss Phase 切换流程
+### 4.2 精英 Phase 切换流程
 
 ```mermaid
 sequenceDiagram
-	participant B as Boss
+	participant B as 精英
 	participant S as SFXManager
 	participant C as Camera
 	participant D as DamageNumber
@@ -312,11 +312,11 @@ sequenceDiagram
 	end
 ```
 
-### 4.3 Boss 死亡→结算流程
+### 4.3 精英 死亡→结算流程
 
 ```mermaid
 sequenceDiagram
-	participant B as Boss
+	participant B as 精英
 	participant L as Level04
 	participant M as Main
 	participant H as HUD
@@ -338,12 +338,12 @@ sequenceDiagram
 
 ---
 
-## 5. Boss 场景节点结构
+## 5. 精英 场景节点结构
 
 参考 `enemy_patroller.tscn` 和 `enemy_shooter.tscn` 的节点树结构：
 
 ```
-Boss (CharacterBody3D)
+精英 (CharacterBody3D)
 ├── CollisionShape3D          # 碰撞体
 ├── ModelRoot (Node3D)        # 模型根节点
 │   ├── Body (MeshInstance3D) # 主体（橙色/深红色材质）
@@ -386,7 +386,7 @@ Level04 (Node3D)  # 脚本: level_04.gd
 ├── EnemyPatroller2 (instance: enemy_patroller.tscn)
 ├── EnemyShooter1 (instance: enemy_shooter.tscn)
 ├── EnemyJumper1 (instance: enemy_jumper.tscn)
-├── Boss (instance: boss.tscn)    # Boss 节点
+├── 精英 (instance: elite.tscn)    # 精英 节点
 ├── HealthPack1 (instance: health_pack.tscn)
 ├── HealthPack2 (instance: health_pack.tscn)
 ├── HealthPack3 (instance: health_pack.tscn)
@@ -397,7 +397,7 @@ Level04 (Node3D)  # 脚本: level_04.gd
 **关键参数：**
 - 场景尺寸：25×25 单位
 - 无 ExitZone（无出口）
-- Boss 位置：建议放在场景中心偏后位置
+- 精英 位置：建议放在场景中心偏后位置
 - 血包分布：分散在战场各个角落，鼓励玩家移动
 
 ---
@@ -419,26 +419,26 @@ func _ready() -> void:
 	# ...
 ```
 
-### 7.2 添加 Boss 关卡判定
+### 7.2 添加 精英关卡判定
 
 ```gdscript
 func _is_boss_level() -> bool:
 	return _current_level == 4
 ```
 
-### 7.3 修改 _bind_level 添加 Boss 信号连接
+### 7.3 修改 _bind_level 添加 精英 信号连接
 
 ```gdscript
 func _bind_level() -> void:
 	# ... 原有逻辑 ...
 	
-	# Boss 关卡特殊绑定
+	# 精英关卡特殊绑定
 	if _is_boss_level() and level.has_method("notify_boss_defeated"):
 		if level.has_signal("boss_defeated"):
 			level.boss_defeated.connect(_on_boss_defeated)
 ```
 
-### 7.4 添加 Boss 结算处理方法
+### 7.4 添加 精英 结算处理方法
 
 ```gdscript
 func _on_boss_defeated() -> void:
@@ -469,24 +469,24 @@ func notify_boss_defeated() -> void:
 	hud.show_boss_result_screen("FINAL BOSS DEFEATED", _kill_count, _total_enemies, _get_elapsed_time())
 ```
 
-### 7.5 修改 _on_player_reached_exit 处理 Boss 关卡
+### 7.5 修改 _on_player_reached_exit 处理 精英关卡
 
 ```gdscript
 func _on_player_reached_exit() -> void:
-	# Boss 关卡无出口，不应触发此方法
+	# 精英关卡无出口，不应触发此方法
 	if _is_boss_level():
 		return
 	
 	# ... 原有逻辑 ...
 ```
 
-### 7.6 添加 Boss 结算画面支持（HUD）
+### 7.6 添加 精英 结算画面支持（HUD）
 
 需要在 `hud.gd` 中添加：
 
 ```gdscript
 func show_boss_result_screen(message: String, kills: int, total: int, time: String) -> void:
-	# 显示 Boss 击败专属结算画面
+	# 显示 精英 击败专属结算画面
 	# 可以复用 show_result_screen 但使用不同样式
 	result_title.text = message
 	result_kills.text = "Kills: %d / %d" % [kills, total]
@@ -499,31 +499,31 @@ func show_boss_result_screen(message: String, kills: int, total: int, time: Stri
 ## 8. 待明确事项
 
 ### 8.1 当前已明确
-- ✅ Boss 血量 12，两段式 Phase（12~7，6~1）
-- ✅ Boss Scale 1.8×
+- ✅ 精英 血量 12，两段式 Phase（12~7，6~1）
+- ✅ 精英 Scale 1.8×
 - ✅ 血包 +2 HP，红色发光胶囊体
 - ✅ Level 04 尺寸 25×25
-- ✅ Boss 击败显示 "FINAL BOSS DEFEATED"
+- ✅ 精英 击败显示 "FINAL BOSS DEFEATED"
 
 ### 8.2 需要进一步确认
-1. **Boss 模型细节**：是否需要专属 3D 模型，还是复用现有敌人模型放大 + 换色？
+1. **精英 模型细节**：是否需要专属 3D 模型，还是复用现有敌人模型放大 + 换色？
 2. **屏幕震动实现**：Godot 中屏幕震动是通过 Camera3D 的 `shake_offset` 还是其他方式？需要确认 `player.gd` 中是否已有震动接口可复用。
-3. **Boss 射击 Projectile**：是否复用现有 `projectile.tscn`，还是需要新的 Boss 专属弹幕？
+3. **精英 射击 Projectile**：是否复用现有 `projectile.tscn`，还是需要新的 精英 专属弹幕？
 4. **Level 01~03 血包位置**：具体放在每个关卡的什么位置？
-5. **Boss BGM**：是否需要专属 BGM？`bgm_manager.gd` 是否需要添加 `play_boss_music()`？
-6. **成就系统**：Boss 首通是否需要新增专属成就？
-7. **存档系统**：Boss 关卡通关后是否需要标记游戏通关（可能影响 Title 画面显示）？
+5. **精英 BGM**：是否需要专属 BGM？`bgm_manager.gd` 是否需要添加 `play_boss_music()`？
+6. **成就系统**：精英 首通是否需要新增专属成就？
+7. **存档系统**：精英关卡通关后是否需要标记游戏通关（可能影响 Title 画面显示）？
 
 ### 8.3 技术风险
-1. **Boss Phase 切换性能**：同时触发多个 Tween 动画（材质修改、缩放、音效）是否会影响性能？
-2. **多敌人场景性能**：Level 04 包含 5 个敌人 + Boss，需确认性能表现。
-3. **信号连接生命周期**：Boss 死亡后 `queue_free()`，信号连接是否需要手动断开？
+1. **精英 Phase 切换性能**：同时触发多个 Tween 动画（材质修改、缩放、音效）是否会影响性能？
+2. **多敌人场景性能**：Level 04 包含 5 个敌人 + 精英，需确认性能表现。
+3. **信号连接生命周期**：精英 死亡后 `queue_free()`，信号连接是否需要手动断开？
 
 ---
 
 ## 9. 附录：关键代码片段参考
 
-### 9.1 Boss Phase 切换实现参考
+### 9.1 精英 Phase 切换实现参考
 
 ```gdscript
 func take_damage(amount: int = 1) -> void:
@@ -570,7 +570,7 @@ func _switch_phase(new_phase: int) -> void:
 		# TODO: 触发屏幕震动（需要 Camera 引用或信号）
 		
 		# 通知 HUD/GameState
-		GameState.set_story_line("Boss enraged! Speed and fire rate increased!")
+		GameState.set_story_line("精英 enraged! Speed and fire rate increased!")
 ```
 
 ### 9.2 血包旋转+浮动动画实现

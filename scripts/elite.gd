@@ -1,6 +1,6 @@
 extends CharacterBody2D
 
-signal boss_died
+signal elite_died
 
 const MAX_SHIELD: int = 80
 const DODGE_RANGE: float = 280.0
@@ -41,7 +41,7 @@ var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
 func _ready() -> void:
 	add_to_group("enemies")
-	_sprite.texture = SpriteFactory.create_boss_sprite()
+	_sprite.texture = SpriteFactory.create_elite_sprite()
 	_shield_sprite.modulate = Color(0.3, 0.6, 1.0, 0.45)
 	_shoot_timer = randf_range(0.5, 1.5)
 	_dodge_direction = 1.0 if randf() > 0.5 else -1.0
