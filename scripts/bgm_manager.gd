@@ -14,7 +14,8 @@ func play_bgm() -> void:
 	_bgm_player.volume_db = -6.0
 	_bgm_player.play()
 	_is_playing = true
-	_bgm_player.finished.connect(_on_bgm_finished)
+	if not _bgm_player.finished.is_connected(_on_bgm_finished):
+		_bgm_player.finished.connect(_on_bgm_finished)
 
 func stop_bgm() -> void:
 	if _bgm_player != null and _bgm_player.playing:
