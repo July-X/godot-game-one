@@ -9,3 +9,4 @@ backup_3d/
 .workbuddy/
 android/__pycache__/
 *.pyc
+android/build/
