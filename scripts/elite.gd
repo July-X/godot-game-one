@@ -227,11 +227,7 @@ func _update_shield(delta: float) -> void:
 	if _shield <= 0 and _health > 0:
 		_shield_regen_timer -= delta
 		if _shield_regen_timer <= 0:
-			# 移除护盾恢复
 			_shield_regen_timer = SHIELD_REGEN_TIME
-		# shield visible via circle
-			var tween := create_tween()
-			tween.tween_callback(func(): if _shield_circle: _shield_circle.set_color(Color(1.0, 0.7, 0.15, 0.5)))
 	if _shield > 0:
 		# shield visible via circle
 		var alpha: float = 0.25 + 0.25 * abs(sin(Time.get_ticks_msec() * 0.003))
