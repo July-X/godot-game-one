@@ -36,11 +36,11 @@ func _exit_tree() -> void:
 func _apply_bullet_appearance() -> void:
 	if _is_player_bullet:
 		_sprite.texture = SpriteFactory.create_bullet_sprite(true, _level)
-		var scale_val: float = 1.0 + min(_damage * 0.15, 1.5)
+		var scale_val: float = (1.0 + min(_damage * 0.15, 1.5)) * 0.667
 		_sprite.scale = Vector2(scale_val, scale_val)
 	else:
 		_sprite.texture = SpriteFactory.create_bullet_sprite(false, 1)
-		_sprite.scale = Vector2(1.0, 1.0)
+		_sprite.scale = Vector2(0.67, 0.67)
 
 func _physics_process(delta: float) -> void:
 	global_position += _direction * _speed * delta

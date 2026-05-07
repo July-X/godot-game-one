@@ -58,26 +58,19 @@ func collect() -> void:
 	if _type == "bomb":
 		_bomb_effect()
 
-	# 吸附动画：向玩家位置飞过去 + 缩小消失
-	var player := get_tree().current_scene.find_child("Player", true, false)
-	if player and is_instance_valid(player):
-		var tween := create_tween().set_parallel(true)
-		var target: Vector2 = player.global_position
-		# 无论距离远近，至少 0.25s，让吸附效果肉眼可见
-		var dur: float = max(global_position.distance_to(target) / 200.0, 1.0)
-		tween.tween_property(self, "global_position", target, dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tween.tween_property(_sprite, "scale", Vector2(0.2, 0.2), dur)
-		tween.tween_property(_sprite, "modulate:a", 0.0, dur)
-		tween.tween_property(_glow, "scale", Vector2(0.2, 0.2), dur)
-		tween.tween_property(_glow, "modulate:a", 0.0, dur)
-		tween.tween_callback(queue_free)
-	else:
-		var tween := create_tween().set_parallel(true)
-		tween.tween_property(_sprite, "scale", Vector2(3, 3), 0.2)
-		tween.tween_property(_sprite, "modulate:a", 0.0, 0.2)
-		tween.tween_property(_glow, "scale", Vector2(3, 3), 0.2)
-		tween.tween_property(_glow, "modulate:a", 0.0, 0.2)
-		tween.tween_callback(queue_free)
+	# 停止物理处理，防止 tween 期间 _lifetime 到 0 提前 free
+	set_process(false)
+	set_physics_process(false)
+
+	# 吸附动画：向上飞出一段距离 + 缩小消失（不受距离影响，总是可见）
+	var tween := create_tween().set_parallel(true)
+	var fly_up: Vector2 = global_position + Vector2(0, -120)
+	tween.tween_property(self, "global_position", fly_up, 1.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_sprite, "scale", Vector2(0.1, 0.1), 0.8)
+	tween.tween_property(_sprite, "modulate:a", 0.0, 1.0)
+	tween.tween_property(_glow, "scale", Vector2(0.1, 0.1), 0.8)
+	tween.tween_property(_glow, "modulate:a", 0.0, 1.0)
+	tween.tween_callback(queue_free)
 
 func _bomb_effect() -> void:
 	SFX.play_explosion()
