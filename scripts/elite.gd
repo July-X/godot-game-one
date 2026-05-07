@@ -227,7 +227,7 @@ func _update_shield(delta: float) -> void:
 	if _shield <= 0 and _health > 0:
 		_shield_regen_timer -= delta
 		if _shield_regen_timer <= 0:
-			_shield = min(_shield + 5, _max_shield)
+			# 移除护盾恢复
 			_shield_regen_timer = SHIELD_REGEN_TIME
 		# shield visible via circle
 			var tween := create_tween()
