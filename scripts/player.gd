@@ -422,17 +422,10 @@ func _rebuild_shields() -> void:
 		child.queue_free()
 	if layers <= 0:
 		return
-	var level: int = GameState.shoot_level
-	var level_scale: float = 1.0 + level * 0.12
-	var max_display: int = min(layers, 5)
-	var count: int = max_display
-	var base_radius: float = (32.0 + _sprite.texture.get_width() * 0.35) * level_scale
-	for i in range(count):
-		var ring := ShieldRing.new()
-		var radius: float = base_radius + i * 6.0
-		ring.setup(radius, 1.0 - float(i) / float(count) * 0.5)
-		ring.z_index = 3
-		_shield_container.add_child(ring)
+	var ring := ShieldRing.new()
+	ring.setup(layers, 1.0)
+	ring.z_index = 3
+	_shield_container.add_child(ring)
 
 func take_damage(amount: float = 1.0) -> void:
 	if _invincible_timer > 0:
