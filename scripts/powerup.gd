@@ -64,7 +64,7 @@ func collect() -> void:
 		var tween := create_tween().set_parallel(true)
 		var target: Vector2 = player.global_position
 		# 无论距离远近，至少 0.25s，让吸附效果肉眼可见
-		var dur: float = max(global_position.distance_to(target) / 400.0, 0.25)
+		var dur: float = max(global_position.distance_to(target) / 200.0, 1.0)
 		tween.tween_property(self, "global_position", target, dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		tween.tween_property(_sprite, "scale", Vector2(0.2, 0.2), dur)
 		tween.tween_property(_sprite, "modulate:a", 0.0, dur)
