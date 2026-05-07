@@ -21,8 +21,8 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 	var h: int = 96 + level * 8
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 
 	## 机身颜色随等级变化
 	var body_r: float = 0.12 + level * 0.04
@@ -90,7 +90,7 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 						img.set_pixel(px, py, Color(1.0, 0.2, 0.1, 0.7) if i == 0 else Color(0.1, 0.8, 0.2, 0.7))
 
 	## ===== 翼尖武器挂架（随等级变大变强） =====
-	var mount_size: int = 1 + level / 2
+	var mount_size: int = 1 + int(level * 0.5)
 	for i in [-1, 1]:
 		var mpx: int = cx + i * (16 + level * 2)
 		var mpy: int = cy + 8
@@ -102,7 +102,7 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 					img.set_pixel(px, py, Color(0.5, 0.5, 0.55, 0.9))
 	## ===== 炮管（随等级增长加粗加长） =====
 	var barrel_len: int = 8 + level * 3
-	var barrel_w: int = 1 + level / 2
+	var barrel_w: int = 1 + int(level * 0.5)
 	for i in [-1, 1]:
 		var bx: int = cx + i * 14
 		for dy in range(-barrel_len, 0):
@@ -167,7 +167,7 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 				img.set_pixel(x, y, Color(0.05, 0.05, 0.08, 0.9 * inner))
 
 	## ===== 引擎喷口+尾焰 =====
-	var nozzle_count: int = 2 + level / 2
+	var nozzle_count: int = 2 + int(level * 0.5)
 	for i in range(nozzle_count):
 		var px: int = cx - nozzle_count * 3 + i * 6 + 3
 		for y in range(h - 14, h - 4):
@@ -210,8 +210,8 @@ func create_enemy_sprite(type: int = 0) -> ImageTexture:
 	var size: int = 48 + type * 8
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = size / 2
-	var cy: int = size / 2
+	var cx: int = int(size * 0.5)
+	var cy: int = int(size * 0.5)
 	match type:
 		0: _draw_enemy_type0(img, cx, cy, size)
 		1: _draw_enemy_type1(img, cx, cy, size)
@@ -228,8 +228,8 @@ func _draw_enemy_type0(img: Image, cx: int, cy: int, size: int) -> void:
 			if dx + dy < 1.0:
 				var t: float = dx + dy
 				img.set_pixel(x, y, Color(0.8 - t * 0.3, 0.15 + t * 0.1, 0.1, 1.0))
-	_set_eye(img, cx - size / 5, cy - size / 8, size / 5)
-	_set_eye(img, cx + size / 5, cy - size / 8, size / 5)
+	_set_eye(img, cx - int(size * 0.2), cy - int(size * 0.125), int(size * 0.2))
+	_set_eye(img, cx + int(size * 0.2), cy - int(size * 0.125), int(size * 0.2))
 
 func _draw_enemy_type1(img: Image, cx: int, cy: int, size: int) -> void:
 	for y in range(size):
@@ -240,8 +240,8 @@ func _draw_enemy_type1(img: Image, cx: int, cy: int, size: int) -> void:
 			if dist < 1.0:
 				var t: float = dist
 				img.set_pixel(x, y, Color(0.1 + t * 0.1, 0.7 - t * 0.2, 0.2 + t * 0.1, 1.0))
-	_set_eye(img, cx - size / 5, cy - size / 8, size / 5)
-	_set_eye(img, cx + size / 5, cy - size / 8, size / 5)
+	_set_eye(img, cx - int(size * 0.2), cy - int(size * 0.125), int(size * 0.2))
+	_set_eye(img, cx + int(size * 0.2), cy - size / 8, size / 5)
 
 func _draw_enemy_type2(img: Image, cx: int, cy: int, size: int) -> void:
 	for y in range(size):
@@ -252,8 +252,8 @@ func _draw_enemy_type2(img: Image, cx: int, cy: int, size: int) -> void:
 			if dist < size * 0.42:
 				var t: float = dist / (size * 0.42)
 				img.set_pixel(x, y, Color(0.6 - t * 0.2, 0.1 + t * 0.1, 0.8 - t * 0.3, 1.0))
-	_set_eye(img, cx - size / 4, cy - size / 6, size / 4)
-	_set_eye(img, cx + size / 4, cy - size / 6, size / 4)
+	_set_eye(img, cx - int(size * 0.25), cy - int(size * 0.1667), int(size * 0.25))
+	_set_eye(img, cx + int(size * 0.25), cy - int(size * 0.1667), size / 4)
 
 func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 	for dy in range(-r, r + 1):
@@ -263,7 +263,7 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 				var py: int = y + dy
 				if px >= 0 and px < img.get_width() and py >= 0 and py < img.get_height():
 					img.set_pixel(px, py, Color(1.0, 0.9, 0.2, 1.0))
-					if dx * dx + dy * dy <= (r / 2) * (r / 2):
+					if dx * dx + dy * dy <= (int(r * 0.5)) * (int(r * 0.5)):
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
 var _asteroid_cache: Dictionary = {}
@@ -345,10 +345,10 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 						img.set_pixel(x, y, Color(min(existing.r + ha * 0.4, 1.0), min(existing.g + ha * 0.3, 1.0), min(existing.b + ha * 0.15, 1.0), existing.a))
 						break
 	## 陨石坑
-	for i in range(size / 4):
+	for i in range(int(size * 0.25)):
 		var cx2: int = randi_range(max_r * 0.2, max_r * 1.4)
 		var cy2: int = randi_range(max_r * 0.2, max_r * 1.4)
-		var cr: int = randi_range(2, size / 6)
+		var cr: int = randi_range(2, int(size * 0.1667))
 		for dy in range(-cr, cr + 1):
 			for dx in range(-cr, cr + 1):
 				var d2: float = sqrt(float(dx * dx + dy * dy))
@@ -386,8 +386,8 @@ func create_elite_sprite() -> ImageTexture:
 	var h: int = 120
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	## 主体机身（深红）
 	for y in range(18, h - 12):
 		for x in range(12, w - 12):
@@ -498,10 +498,10 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 		for y in range(h):
 			var t: float = 1.0 - abs(y - cy) / float(cy)
 			var alpha: float = clamp(t * 3.0, 0.0, 1.0)
-			img.set_pixel(size / 2, y, Color(1.0, 1.0, 1.0, alpha))
+			img.set_pixel(int(size * 0.5), y, Color(1.0, 1.0, 1.0, alpha))
 			if level >= 4:
-				img.set_pixel(size / 2 - 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
-				img.set_pixel(size / 2 + 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
+				img.set_pixel(int(size * 0.5) - 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
+				img.set_pixel(int(size * 0.5) + 1, y, Color(1.0, 1.0, 0.8, alpha * 0.5))
 	var tex := ImageTexture.create_from_image(img)
 	_bullet_cache[key] = tex
 	return tex
@@ -519,8 +519,8 @@ func create_powerup_sprite(type: String) -> ImageTexture:
 	var h: int = 32
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	var col: Color
 	match type:
 		"spread": col = Color(0.2, 0.9, 0.3)
@@ -553,8 +553,8 @@ var _powerup_cache: Dictionary = {}
 
 func _draw_glow_ring(img: Image, w: int, h: int, col: Color) -> void:
 	var r: int = 14
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	for y in range(h):
 		for x in range(w):
 			if img.get_pixel(x, y).a > 0:
@@ -566,8 +566,8 @@ func _draw_glow_ring(img: Image, w: int, h: int, col: Color) -> void:
 				img.set_pixel(x, y, Color(col.r, col.g, col.b, 0.2))
 
 func _draw_heart(img: Image, w: int, h: int, col: Color) -> void:
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	for y in range(h):
 		for x in range(w):
 			var dx: float = float(x - cx) / 14.0
@@ -581,8 +581,8 @@ func _draw_heart(img: Image, w: int, h: int, col: Color) -> void:
 				img.set_pixel(x, y, Color(r, g, b, 1.0))
 
 func _draw_star(img: Image, w: int, h: int, col: Color) -> void:
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	for y in range(h):
 		for x in range(w):
 			var inside: bool = false
@@ -606,8 +606,8 @@ func _draw_star(img: Image, w: int, h: int, col: Color) -> void:
 				img.set_pixel(x, y, Color(col.r * (1.0 - d * 0.2), col.g * (1.0 - d * 0.2), col.b * (1.0 - d * 0.2), 1.0))
 
 func _draw_diamond(img: Image, w: int, h: int, col: Color) -> void:
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	for y in range(h):
 		for x in range(w):
 			var dx: float = abs(float(x - cx)) / 16.0
@@ -620,8 +620,8 @@ func _draw_diamond(img: Image, w: int, h: int, col: Color) -> void:
 				img.set_pixel(x, y, Color(rr, gg, bb, 1.0))
 
 func _draw_hexagon(img: Image, w: int, h: int, col: Color) -> void:
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	for y in range(h):
 		for x in range(w):
 			var inside: bool = false
@@ -643,8 +643,8 @@ func _draw_hexagon(img: Image, w: int, h: int, col: Color) -> void:
 				img.set_pixel(x, y, Color(col.r * (1.0 - d * 0.2), col.g * (1.0 - d * 0.2), col.b * (1.0 - d * 0.2), 1.0))
 
 func _draw_bomb(img: Image, w: int, h: int, col: Color) -> void:
-	var cx: int = w / 2
-	var cy: int = h / 2
+	var cx: int = int(w * 0.5)
+	var cy: int = int(h * 0.5)
 	## 圆
 	for y in range(h):
 		for x in range(w):
@@ -687,8 +687,8 @@ func create_explosion_frames() -> Array[ImageTexture]:
 		var radius: float = 8.0 + progress * 24.0
 		for y in range(size):
 			for x in range(size):
-				var dx: float = float(x - size / 2)
-				var dy: float = float(y - size / 2)
+				var dx: float = float(x - int(size * 0.5))
+				var dy: float = float(y - int(size * 0.5))
 				var dist: float = sqrt(dx * dx + dy * dy)
 				if dist < radius:
 					var t: float = dist / radius
