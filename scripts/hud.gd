@@ -5,7 +5,7 @@ extends CanvasLayer
 @onready var _level_label: Label = $LevelLabel
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _hp_num: Label = $HealthBar/HPNum
-@onready var _powerup_display: HBoxContainer = $PowerupDisplay
+@onready var _powerup_display: VBoxContainer = $PowerupDisplay
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
@@ -219,9 +219,9 @@ func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
 		child.queue_free()
 	var labels := {
-		"spread": {"name": "SPR", "color": Color(0.3, 1.0, 0.4), "bar": Color(0.2, 0.8, 0.3)},
-		"speed": {"name": "SPD", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
-		"power": {"name": "POW", "color": Color(1.0, 0.4, 0.3), "bar": Color(0.9, 0.3, 0.2)},
+		"spread": {"name": "扩散", "color": Color(0.3, 1.0, 0.4), "bar": Color(0.2, 0.8, 0.3)},
+		"speed": {"name": "速射", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
+		"power": {"name": "威力", "color": Color(1.0, 0.4, 0.3), "bar": Color(0.9, 0.3, 0.2)},
 	}
 	for type in labels:
 		var level: int = 0
@@ -239,7 +239,6 @@ func _update_powerup_display() -> void:
 
 		# 行容器: SPR ████░░  8/15
 		var row := HBoxContainer.new()
-		row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		_powerup_display.add_child(row)
 
 		# 名称标签
