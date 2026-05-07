@@ -78,7 +78,9 @@ func _physics_process(delta: float) -> void:
 func _move_chase(delta: float) -> void:
 	if _target and is_instance_valid(_target):
 		var to_target: Vector2 = global_position.direction_to(_target.global_position)
-		velocity = velocity.lerp(to_target * move_speed, 1.5 * delta)
+		var wobble: float = sin(_wobble_timer) * 0.3
+		var drift := Vector2(-to_target.y, to_target.x) * wobble
+		velocity = velocity.lerp((to_target + drift).normalized() * move_speed, 3.0 * delta)
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, 50.0 * delta)
 
@@ -88,7 +90,7 @@ func _move_zigzag(delta: float) -> void:
 		var perp: Vector2 = Vector2(-to_target.y, to_target.x)
 		var wobble: float = sin(_wobble_timer) * 0.6
 		var dir: Vector2 = (to_target + perp * wobble).normalized()
-		velocity = velocity.lerp(dir * move_speed, 1.2 * delta)
+		velocity = velocity.lerp(dir * move_speed, 3.0 * delta)
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, 50.0 * delta)
 
@@ -99,8 +101,8 @@ func _move_orbit(delta: float) -> void:
 		var dist: float = global_position.distance_to(_target.global_position)
 		var target_dist: float = 200.0
 		var radial: float = (dist - target_dist) / target_dist
-		var dir: Vector2 = (perp.normalized() * 0.7 + to_target.normalized() * -radial * 0.3).normalized()
-		velocity = velocity.lerp(dir * move_speed, 1.0 * delta)
+		var dir: Vector2 = (perp.normalized() * 0.8 + to_target.normalized() * -radial * 0.3).normalized()
+		velocity = velocity.lerp(dir * move_speed, 3.0 * delta)
 	else:
 		velocity = velocity.move_toward(Vector2.ZERO, 50.0 * delta)
 

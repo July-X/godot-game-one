@@ -16,7 +16,7 @@ var total_kills: int = 0
 var last_elite_threshold: int = 0
 var elite_encounter_count: int = 0
 var post_elite_multiplier: float = 1.0
-var current_health: int = 3
+var current_health: int = 2000
 var max_health: int = 3
 var shield_layers: int = 0
 var game_running: bool = false
@@ -40,8 +40,8 @@ func reset_game() -> void:
 	last_elite_threshold = 0
 	elite_encounter_count = 0
 	post_elite_multiplier = 1.0
-	current_health = 200
-	max_health = 200
+	current_health = 2000
+	max_health = 2000
 	shield_layers = 0
 	death_message = ""
 	game_running = true
@@ -94,10 +94,9 @@ func take_damage(amount: int = 1) -> void:
 			game_over.emit(score, level)
 
 func heal(amount: int = 1) -> void:
-	if current_health >= max_health:
-		max_health += amount
-	current_health = min(current_health + amount, max_health)
-	health_changed.emit(current_health, max_health)
+	if current_health < max_health:
+		current_health = min(current_health + amount, max_health)
+		health_changed.emit(current_health, max_health)
 	SFX.play_ui_select()
 
 func collect_powerup(type: String) -> void:
@@ -105,14 +104,10 @@ func collect_powerup(type: String) -> void:
 	SFX.play_ui_confirm()
 	match type:
 		"spread":
-			if shoot_level >= 15:
-				heal(1)
-			else:
-				shoot_level = min(shoot_level + 1, 15)
+			if shoot_level < 10:
+				shoot_level = min(shoot_level + 1, 10)
 		"speed":
-			if shoot_speed_level >= 15:
-				heal(1)
-			else:
+			if shoot_speed_level < 15:
 				shoot_speed_level = min(shoot_speed_level + 1, 15)
 		"power":
 			if bullet_power_level >= 15:

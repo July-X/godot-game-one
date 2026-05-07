@@ -236,10 +236,10 @@ func _update_powerup_display() -> void:
 		match type:
 			"spread":
 				level = GameState.shoot_level
-				max_level = 20
+				max_level = 10
 			"speed":
 				level = GameState.shoot_speed_level
-				max_level = 20
+				max_level = 10
 			"power":
 				level = GameState.bullet_power_level
 				max_level = 50
