@@ -1,6 +1,22 @@
 extends Node
 
+## 尝试加载预制的像素 PNG 贴图，不存在则返回 null
+## 注：Godot 导入 PNG 为 CompressedTexture2D，需转为 ImageTexture 保持类型一致
+func _load_png(path: String) -> ImageTexture:
+	var full_path: String = "res://assets/sprites/" + path
+	if ResourceLoader.exists(full_path):
+		var tex = load(full_path)
+		if tex is Texture2D:
+			var img = tex.get_image()
+			if img:
+				return ImageTexture.create_from_image(img)
+	return null
+
 func create_player_sprite(level: int = 1) -> ImageTexture:
+	var png := _load_png("player/base.png")
+	if png:
+		return png
+
 	var w: int = 64 + level * 8
 	var h: int = 96 + level * 8
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
@@ -187,6 +203,10 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 	return tex
 
 func create_enemy_sprite(type: int = 0) -> ImageTexture:
+	var png := _load_png("enemies/type_%d.png" % type)
+	if png:
+		return png
+
 	var size: int = 48 + type * 8
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
@@ -246,7 +266,16 @@ func _set_eye(img: Image, x: int, y: int, r: int) -> void:
 					if dx * dx + dy * dy <= (r / 2) * (r / 2):
 						img.set_pixel(px, py, Color(0.2, 0.0, 0.0, 1.0))
 
+var _asteroid_cache: Dictionary = {}
+
 func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
+	## 缓存已生成的陨石纹理，避免每颗陨石重绘数千像素
+	if _asteroid_cache.has(size):
+		sprite.texture = _asteroid_cache[size]
+		sprite.z_index = 1
+		sprite.self_modulate = Color(1.3, 1.1, 0.9, 1.0)
+		return
+
 	var img := Image.create(size + 10, size + 10, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var cx: int = (size + 10) / 2
@@ -331,7 +360,9 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 						if _point_in_polygon(pt, vertices):
 							var depth: float = 1.0 - d2 / float(cr)
 							img.set_pixel(px, py, Color(base_r * 0.3, base_g * 0.3, base_b * 0.3, depth * 0.85))
-	sprite.texture = ImageTexture.create_from_image(img)
+	var tex := ImageTexture.create_from_image(img)
+	_asteroid_cache[size] = tex
+	sprite.texture = tex
 	sprite.z_index = 1
 	sprite.self_modulate = Color(1.3, 1.1, 0.9, 1.0)
 
@@ -347,6 +378,10 @@ func _point_in_polygon(point: Vector2, vertices: Array[Vector2]) -> bool:
 	return inside
 
 func create_boss_sprite() -> ImageTexture:
+	var png := _load_png("boss/boss.png")
+	if png:
+		return png
+
 	var w: int = 160
 	var h: int = 120
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
@@ -424,6 +459,17 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 	if _bullet_cache.has(key):
 		return _bullet_cache[key]
 
+	if is_player:
+		var png := _load_png("bullets/player_lv%d.png" % level)
+		if png:
+			_bullet_cache[key] = png
+			return png
+	else:
+		var png := _load_png("bullets/enemy.png")
+		if png:
+			_bullet_cache[key] = png
+			return png
+
 	var size: int = 8 if is_player else 12
 	var h: int = size * 3
 	var img := Image.create(size, h, false, Image.FORMAT_RGBA8)
@@ -463,6 +509,11 @@ func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 func create_powerup_sprite(type: String) -> ImageTexture:
 	if _powerup_cache.has(type):
 		return _powerup_cache[type]
+
+	var png := _load_png("powerups/%s.png" % type)
+	if png:
+		_powerup_cache[type] = png
+		return png
 
 	var w: int = 32
 	var h: int = 32
@@ -621,6 +672,13 @@ func _draw_bomb(img: Image, w: int, h: int, col: Color) -> void:
 
 func create_explosion_frames() -> Array[ImageTexture]:
 	var frames: Array[ImageTexture] = []
+	for f in range(8):
+		var png := _load_png("explosion/frame_%d.png" % f)
+		if png:
+			frames.append(png)
+	if not frames.is_empty():
+		return frames
+
 	for f in range(10):
 		var size: int = 64
 		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
