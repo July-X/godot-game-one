@@ -215,12 +215,8 @@ func _update_score(score: int) -> void:
 func _update_level(level: int) -> void:
 	_level_label.text = "等级 %d" % level
 
-func _update_health(current: int, maximum: int) -> void:
-	if _health_bar:
-		_health_bar.max_value = maximum
-		_health_bar.value = current
-	if _hp_num:
-		_hp_num.text = "HP %d/%d" % [current, maximum]
+func _update_health(_current: int, _maximum: int) -> void:
+	pass
 
 func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():

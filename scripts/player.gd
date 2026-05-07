@@ -28,7 +28,6 @@ var _touch_move: Vector2 = Vector2.ZERO
 @onready var _muzzle_flash: Sprite2D = $MuzzleFlash
 @onready var _pickup_area: Area2D = $PickupArea
 @onready var _engine_glow: Sprite2D = $EngineGlow
-@onready var _health_bar: ProgressBar = $HealthBar
 @onready var _shield_container: Node2D = $ShieldContainer
 
 func _ready() -> void:
@@ -149,19 +148,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		_sprite.modulate.a = 1.0
 
-	## 更新血条
-	if _health_bar:
-		_health_bar.max_value = GameState.max_health
-		_health_bar.value = GameState.current_health
-		var ratio: float = float(GameState.current_health) / float(GameState.max_health)
-		var bar_color: Color
-		if ratio > 0.6:
-			bar_color = Color(0.25, 0.85, 0.35, 1.0)
-		elif ratio > 0.3:
-			bar_color = Color(0.9, 0.8, 0.15, 1.0)
-		else:
-			bar_color = Color(0.9, 0.2, 0.15, 1.0)
-		_health_bar.add_theme_stylebox_override("fill", _make_fill_style(bar_color))
+
 
 func _update_walk_animation() -> void:
 	var swing: float = sin(_walk_cycle) * 0.02
