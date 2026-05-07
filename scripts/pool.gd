@@ -42,7 +42,12 @@ func acquire(type_name: String, scene: PackedScene) -> Node:
 	else:
 		node = pool.pop_back()
 
-	# 节点没有父节点（setup/release 已移除），调用者可直接 add_child
+	# 如果节点仍在场景树中（release 的 call_deferred 尚未执行），移出
+	if node.is_inside_tree():
+		var p = node.get_parent()
+		if p != null:
+			p.remove_child(node)
+
 	node.set_process(true)
 	node.set_physics_process(true)
 	node.visible = true
@@ -67,9 +72,11 @@ func release(node: Node) -> void:
 	if node.has_method("reset"):
 		node.reset()
 
-	# 移出场景树
+	# 延迟移出场景树（避免 physics callback 中直接移除 CollisionObject）
 	if node.is_inside_tree():
-		node.get_parent().remove_child(node)
+		var p = node.get_parent()
+		if p != null:
+			p.call_deferred("remove_child", node)
 
 	var pool: Array = _pools.get(type_name)
 	if pool != null and pool.size() < MAX_POOL_SIZE:
