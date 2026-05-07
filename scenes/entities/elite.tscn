@@ -18,7 +18,7 @@ fill_to = Vector2(0.5, 0.0)
 radius = 52.0
 
 [sub_resource type="Gradient" id="4"]
-colors = PackedColorArray(0.2, 0.6, 1.0, 0.6, 0.5, 0.8, 1.0, 0.0)
+colors = PackedColorArray(0.6, 0.08, 0.04, 0.5, 0.4, 0.04, 0.02, 0.0)
 offsets = PackedFloat32Array(0.0, 1.0)
 
 [sub_resource type="GradientTexture2D" id="5"]

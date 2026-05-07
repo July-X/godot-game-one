@@ -303,18 +303,19 @@ func _on_elite_died() -> void:
 func _show_elite_warning() -> void:
 	var warning := Label.new()
 	warning.text = "警告: 精英怪 来袭"
-	warning.add_theme_font_size_override("font_size", 32)
+	warning.add_theme_font_size_override("font_size", 36)
 	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.1, 1.0))
-	warning.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
+	warning.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
 	warning.add_theme_constant_override("shadow_outline_size", 2)
 	warning.horizontal_alignment = 1
 	warning.vertical_alignment = 1
-	warning.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	warning.position = Vector2(0, 300)
+	warning.size = Vector2(1280, 60)
 	warning.z_index = 100
 	add_child(warning)
 	var tween := create_tween()
 	tween.tween_property(warning, "modulate:a", 1.0, 0.3)
-	tween.tween_interval(1.0)
+	tween.tween_interval(1.2)
 	tween.tween_property(warning, "modulate:a", 0.0, 0.5)
 	tween.tween_callback(warning.queue_free)
 
