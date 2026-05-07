@@ -35,6 +35,7 @@ var _touch_move: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	add_to_group("player")
 	_muzzle_flash.visible = false
+	_setup_flame_system()
 	_update_appearance()
 	_update_pickup_radius()
 	if _pickup_area:
@@ -46,16 +47,71 @@ func _ready() -> void:
 		if mc:
 			mc.move_input.connect(_on_mobile_move)
 
-func _update_appearance() -> void:
+func _setup_flame_system() -> void:
+	## 纯 Sprite2D 粒子系统（跨平台兼容）
+	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 1))
+	var tex := ImageTexture.create_from_image(img)
+	for i in range(10):
+		var s := Sprite2D.new()
+		s.texture = tex
+		s.visible = false
+		s.position = Vector2(0, 30)  # 船尾
+		s.scale = Vector2(1.5, 1.5)
+		s.centered = true
+		add_child(s)
+		_flame_pool.append(s)
+
+func _update_flame(delta: float) -> void:
+	_flame_timer += delta
+	if _flame_timer > 0.04:
+		_flame_timer = 0.0
+		_spawn_flame_particle()
+	for s in _flame_pool:
+		if s.visible:
+			s.position.y += delta * 100.0
+			s.scale.x *= 1.0 + delta * 3.0
+			s.scale.y *= 1.0 + delta * 5.0
+			s.position.x += delta * randf_range(-25.0, 25.0)
+			s.modulate.a -= delta * 3.5
+			s.modulate = Color(
+				max(0.0, s.modulate.r - delta * 1.5),
+				max(0.0, s.modulate.g - delta * 2.0),
+				max(0.0, s.modulate.b - delta * 3.0),
+				s.modulate.a
+			)
+			if s.modulate.a <= 0.0:
+				s.visible = false
+
+func _spawn_flame_particle() -> void:
+	for s in _flame_pool:
+		if not s.visible:
+			s.visible = true
+			s.position = Vector2(randf_range(-2.0, 2.0), 30.0)
+			s.scale = Vector2(randf_range(0.8, 1.8), randf_range(1.0, 2.5))
+			s.modulate = Color(
+				1.0,
+				randf_range(0.4, 0.8),
+				randf_range(0.0, 0.2),
+				randf_range(0.6, 0.9)
+			)
+			s.rotation = randf_range(-0.25, 0.25)
+			return
+
+func _update_flame_intensity(level: int) -> void:
+	var intensity: float = 0.5 + level * 0.15
+	for s in _flame_pool:
+		if s.visible:
+			s.modulate.a = min(s.modulate.a * (intensity + 0.2), 0.95)
+
+func _update_appearance() -> void:func _update_appearance() -> void:
 	var level: int = GameState.shoot_level
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_player_sprite(level)
 	if _engine_glow:
-		var glow_intensity: float = 1.0 + level * 0.3
-		_engine_glow.modulate = Color(1.0, 0.6, 0.2, 0.6 * glow_intensity)
-		_engine_glow.scale = Vector2(1.0 + level * 0.15, 1.0 + level * 0.15)
-		if _engine_glow.texture == null and ResourceLoader.exists("res://assets/sprites/ui/engine_flame.png"):
-			_engine_glow.texture = load("res://assets/sprites/ui/engine_flame.png")
+		_engine_glow.visible = false
+	## 更新尾焰粒子强度
+	_update_flame_intensity(level)
 
 func _update_pickup_radius() -> void:
 	## 拾取范围 = 3倍飞机模型大小（飞机约64宽，3倍=192，取280留余量）
@@ -71,6 +127,7 @@ func _on_mobile_move(vec: Vector2) -> void:
 	_touch_move = vec
 
 func _physics_process(delta: float) -> void:
+	_update_flame(delta)
 	if not GameState.game_running:
 		return
 
