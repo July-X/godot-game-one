@@ -35,6 +35,7 @@ var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _shield_sprite: Sprite2D = $ShieldSprite
+var _shield_circle: Node2D = null
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _turret_l: Node2D = $TurretL
 @onready var _turret_r: Node2D = $TurretR
@@ -42,7 +43,13 @@ var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 func _ready() -> void:
 	add_to_group("enemies")
 	_sprite.texture = SpriteFactory.create_elite_sprite()
-	_shield_sprite.modulate = Color(1.0, 0.7, 0.15, 0.5)
+	_shield_sprite.visible = false
+	_shield_circle = Node2D.new()
+	_shield_circle.set_script(preload("res://scripts/shield_circle.gd"))
+	_shield_circle.z_index = 3
+	_shield_circle.position = Vector2(0, 0)
+	add_child(_shield_circle)
+	_shield_circle.setup(80.0, Color(1.0, 0.7, 0.15, 0.5))
 	_shoot_timer = randf_range(0.5, 1.5)
 	_dodge_direction = 1.0 if randf() > 0.5 else -1.0
 
@@ -222,16 +229,16 @@ func _update_shield(delta: float) -> void:
 		if _shield_regen_timer <= 0:
 			_shield = min(_shield + 5, _max_shield)
 			_shield_regen_timer = SHIELD_REGEN_TIME
-			_shield_sprite.visible = true
+		# shield visible via circle
 			var tween := create_tween()
-			tween.tween_property(_shield_sprite, "modulate:a", 0.5, 0.3)
+			tween.tween_callback(func(): if _shield_circle: _shield_circle.set_color(Color(1.0, 0.7, 0.15, 0.5)))
 	if _shield > 0:
-		_shield_sprite.visible = true
+		# shield visible via circle
 		var alpha: float = 0.25 + 0.25 * abs(sin(Time.get_ticks_msec() * 0.003))
 		var shield_ratio: float = float(_shield) / float(_max_shield)
 		var intensity: float = 0.4 + (1.0 - shield_ratio) * 0.5
-		_shield_sprite.modulate = Color(0.8 + intensity * 0.2, 0.5 + intensity * 0.3, 0.1, alpha)
-		_shield_sprite.scale = Vector2(1.0, 1.0) * (0.9 + 0.1 * abs(sin(Time.get_ticks_msec() * 0.002)))
+		if _shield_circle: _shield_circle.set_color(Color(0.8 + intensity * 0.2, 0.5 + intensity * 0.3, 0.1, alpha))
+
 	else:
 		_shield_sprite.visible = false
 
@@ -241,9 +248,9 @@ func take_damage(amount: int = 1) -> void:
 	if _shield > 0:
 		_shield -= amount
 		_spawn_shield_hit_effect()
-		_shield_sprite.modulate = Color(1.0, 0.9, 0.5, 0.9)
+		if _shield_circle: _shield_circle.set_color(Color(1.0, 0.9, 0.5, 0.9))
 		var tween := create_tween()
-		tween.tween_property(_shield_sprite, "modulate", Color(0.6, 0.1, 0.05, 0.5), 0.08)
+		tween.tween_callback(func(): if _shield_circle: _shield_circle.set_color(Color(0.8, 0.5, 0.1, 0.5)))
 		if _shield <= 0:
 			_shield_break_effect()
 		return
@@ -265,8 +272,9 @@ func _shield_break_effect() -> void:
 		var exp = _explosion_scene.instantiate()
 		get_tree().current_scene.add_child(exp)
 		exp.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
-	_shield_sprite.visible = false
 	_shield_regen_timer = SHIELD_REGEN_TIME
+	if _shield_circle:
+		_shield_circle.set_color(Color(0, 0, 0, 0))
 
 func _update_health_bar() -> void:
 	if _health_bar:
