@@ -60,4 +60,4 @@ collision_mask = 8
 [node name="CollisionShape2D" type="CollisionShape2D" parent="PickupArea"]
 shape = SubResource("7")
 
-[node name="[node name="ShieldContainer" type="Node2D" parent="."]
+[node name="ShieldContainer" type="Node2D" parent="."]
