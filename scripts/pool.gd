@@ -37,13 +37,16 @@ func acquire(type_name: String, scene: PackedScene) -> Node:
 		setup(type_name, scene)
 		pool = _pools[type_name]
 
+	var node: Node
 	if pool.is_empty():
-		# 池耗尽，创建新节点（不阻塞）
-		var obj := scene.instantiate()
-		_active[obj] = type_name
-		return obj
+		node = scene.instantiate()
+	else:
+		node = pool.pop_back()
 
-	var node: Node = pool.pop_back()
+	# 从 Pool 父节点移除，让调用者 add_child 到场景树
+	if node.get_parent() != null:
+		node.get_parent().remove_child(node)
+
 	node.set_process(true)
 	node.set_physics_process(true)
 	node.visible = true
