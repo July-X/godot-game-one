@@ -3,6 +3,7 @@ extends CanvasLayer
 @onready var _score_label: Label = $ScoreLabel
 @onready var _level_label: Label = $LevelLabel
 @onready var _health_bar: ProgressBar = $HealthBar
+@onready var _hp_num: Label = $HealthBar/HPNum
 @onready var _powerup_display: HBoxContainer = $PowerupDisplay
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -152,14 +153,16 @@ func _update_health(current: int, maximum: int) -> void:
 	if _health_bar:
 		_health_bar.max_value = maximum
 		_health_bar.value = current
+	if _hp_num:
+		_hp_num.text = "%d/%d" % [current, maximum]
 
 func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
 		child.queue_free()
 	var labels := {
-		"spread": {"color": Color(0.3, 1.0, 0.4, 1.0), "name": "扩散"},
-		"speed": {"color": Color(0.4, 0.7, 1.0, 1.0), "name": "速射"},
-		"power": {"color": Color(1.0, 0.4, 0.3, 1.0), "name": "威力"},
+		"spread": {"color": Color(0.3, 1.0, 0.4, 1.0), "name": "SPR", "bar": Color(0.2, 0.8, 0.3, 1)},
+		"speed": {"color": Color(0.4, 0.7, 1.0, 1.0), "name": "SPD", "bar": Color(0.3, 0.6, 1.0, 1)},
+		"power": {"color": Color(1.0, 0.4, 0.3, 1.0), "name": "POW", "bar": Color(0.9, 0.3, 0.2, 1)},
 	}
 	for type in labels:
 		var level: int = 0
@@ -168,18 +171,22 @@ func _update_powerup_display() -> void:
 			"speed": level = GameState.shoot_speed_level
 			"power": level = GameState.bullet_power_level
 		if level > 0:
-			var container := HBoxContainer.new()
-			var label := Label.new()
-			label.text = labels[type].name + ":"
-			label.add_theme_color_override("font_color", labels[type].color)
-			label.add_theme_font_size_override("font_size", 13)
-			container.add_child(label)
-			var text_label := Label.new()
-			text_label.text = "%d/15" % level
-			text_label.add_theme_color_override("font_color", labels[type].color)
-			text_label.add_theme_font_size_override("font_size", 13)
-			container.add_child(text_label)
-			_powerup_display.add_child(container)
+			var block := ColorRect.new()
+			block.custom_minimum_size = Vector2(80, 18)
+			block.size = Vector2(80, 18)
+			block.color = labels[type].bar
+			block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+			# Inner label
+			var lbl := Label.new()
+			lbl.text = "%s %d/15" % [labels[type].name, level]
+			lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+			lbl.add_theme_font_size_override("font_size", 11)
+			lbl.horizontal_alignment = 1
+			lbl.vertical_alignment = 1
+			lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			block.add_child(lbl)
+			_powerup_display.add_child(block)
 
 func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()
