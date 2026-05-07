@@ -261,8 +261,8 @@ func _try_pickup_nearby() -> void:
 	var powerups := get_tree().get_nodes_in_group("powerups")
 	for pu in powerups:
 		if pu.is_inside_tree() and global_position.distance_to(pu.global_position) < _pickup_radius:
-			if pu.has_method("collect"):
-				pu.collect()
+			if pu.has_method("start_magnet"):
+				pu.start_magnet(self)
 
 func _get_missile_tier() -> int:
 	var level: int = GameState.shoot_level
@@ -352,8 +352,8 @@ func _fire_laser() -> void:
 	SFX.play_shoot()
 
 func _on_pickup_body_entered(body: Node2D) -> void:
-	if body.is_in_group("powerups") and body.has_method("collect"):
-		body.collect()
+	if body.is_in_group("powerups") and body.has_method("start_magnet"):
+		body.start_magnet(self)
 
 var _shield_dirty: bool = false
 

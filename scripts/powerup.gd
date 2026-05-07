@@ -22,17 +22,24 @@ func _apply_sprite() -> void:
 var _glow_time: float = 0.0
 
 func _physics_process(delta: float) -> void:
+	## 磁铁吸引模式：向玩家飞行
+	if _magnet_target and is_instance_valid(_magnet_target):
+		var dir: Vector2 = global_position.direction_to(_magnet_target.global_position)
+		global_position += dir * _magnet_speed * delta
+		if global_position.distance_to(_magnet_target.global_position) < 40.0:
+			collect()
+			return
+		return  # 磁铁模式下跳过常规脉动，加载更少
+
 	_bob_timer += delta * 3.0
 	_sprite.position.y = sin(_bob_timer) * 4.0
 	_sprite.rotation += delta * 1.5
 
-	## 闪光脉冲（用一个统一的时间值，避免多次调 Time.get_ticks_msec）
 	_glow_time += delta
 	var t: float = _glow_time
 	var pulse: float = 0.4 + abs(sin(t * 12.0)) * 0.6
 	_sprite.modulate.a = pulse * 0.6 + 0.4
 
-	## 外发光脉动
 	if _glow:
 		var glow_a: float = 0.2 + abs(sin(t * 8.0)) * 0.35
 		_glow.modulate.a = glow_a
@@ -42,34 +49,33 @@ func _physics_process(delta: float) -> void:
 	_lifetime -= delta
 	if _lifetime <= 0:
 		queue_free()
-	## 闪烁警告
 	if _lifetime < 3.0:
 		var blink: float = 0.3 + abs(sin(_lifetime * 12)) * 0.7
 		_sprite.modulate.a = blink
 
 var _collected: bool = false
 
+func start_magnet(target: Node2D) -> void:
+	_magnet_target = target
+
 func collect() -> void:
 	if _collected:
 		return
 	_collected = true
+	_magnet_target = null
 
 	GameState.collect_powerup(_type)
 	if _type == "bomb":
 		_bomb_effect()
 
-	# 停止物理处理，防止 tween 期间 _lifetime 到 0 提前 free
 	set_process(false)
 	set_physics_process(false)
 
-	# 吸附动画：向上飞出一段距离 + 缩小消失（不受距离影响，总是可见）
 	var tween := create_tween().set_parallel(true)
-	var fly_up: Vector2 = global_position + Vector2(0, -120)
-	tween.tween_property(self, "global_position", fly_up, 1.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(_sprite, "scale", Vector2(0.1, 0.1), 0.8)
-	tween.tween_property(_sprite, "modulate:a", 0.0, 1.0)
-	tween.tween_property(_glow, "scale", Vector2(0.1, 0.1), 0.8)
-	tween.tween_property(_glow, "modulate:a", 0.0, 1.0)
+	tween.tween_property(_sprite, "scale", Vector2(0.1, 0.1), 0.4)
+	tween.tween_property(_sprite, "modulate:a", 0.0, 0.4)
+	tween.tween_property(_glow, "scale", Vector2(0.1, 0.1), 0.4)
+	tween.tween_property(_glow, "modulate:a", 0.0, 0.4)
 	tween.tween_callback(queue_free)
 
 func _bomb_effect() -> void:
