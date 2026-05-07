@@ -25,7 +25,6 @@ func setup(type_name: String, scene: PackedScene, size: int = DEFAULT_POOL_SIZE)
 		obj.set_physics_process(false)
 		obj.visible = false
 		obj.set_name("%s_pooled_%d" % [type_name, i])
-		add_child(obj)
 		arr.append(obj)
 	_pools[type_name] = arr
 
@@ -43,10 +42,7 @@ func acquire(type_name: String, scene: PackedScene) -> Node:
 	else:
 		node = pool.pop_back()
 
-	# 从 Pool 父节点移除，让调用者 add_child 到场景树
-	if node.get_parent() != null:
-		node.get_parent().remove_child(node)
-
+	# 节点没有父节点（setup/release 已移除），调用者可直接 add_child
 	node.set_process(true)
 	node.set_physics_process(true)
 	node.visible = true
@@ -71,10 +67,9 @@ func release(node: Node) -> void:
 	if node.has_method("reset"):
 		node.reset()
 
-	# 移出场景树但保留为 pool 的子节点
+	# 移出场景树
 	if node.is_inside_tree():
 		node.get_parent().remove_child(node)
-		add_child(node)
 
 	var pool: Array = _pools.get(type_name)
 	if pool != null and pool.size() < MAX_POOL_SIZE:
