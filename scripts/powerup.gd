@@ -28,6 +28,12 @@ func _physics_process(delta: float) -> void:
 	if _magnet_target and is_instance_valid(_magnet_target):
 		var dir: Vector2 = global_position.direction_to(_magnet_target.global_position)
 		global_position += dir * _magnet_speed * delta
+		# 接近玩家时逐渐透明
+		var mag_dist: float = global_position.distance_to(_magnet_target.global_position)
+		var mag_fade: float = clamp(mag_dist / 300.0, 0.1, 1.0)
+		_sprite.modulate.a = mag_fade
+		if _glow:
+			_glow.modulate.a = mag_fade * 0.6
 		if global_position.distance_to(_magnet_target.global_position) < 40.0:
 			collect()
 			return
@@ -59,6 +65,9 @@ var _collected: bool = false
 
 func start_magnet(target: Node2D) -> void:
 	_magnet_target = target
+	_sprite.modulate.a = 1.0
+	if _glow:
+		_glow.modulate.a = 1.0
 
 func collect() -> void:
 	if _collected:
