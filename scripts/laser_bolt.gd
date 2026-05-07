@@ -8,6 +8,11 @@ var _chain_max: int = 4
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var LightningLine = preload("res://scripts/lightning_line.gd")
 var _line_points: PackedVector2Array = PackedVector2Array()
+var _has_bounced: bool = false
+var _target: Node2D = null
+## 寻敌角度（两条射线宽度 × 2，即 0.15×2×2 = 0.6 弧度）
+const HOMING_ANGLE: float = 0.6
+const HOMING_SPEED: float = 4.0
 
 func _ready() -> void:
 	add_to_group("player_bullets")
@@ -18,10 +23,23 @@ func setup(pos: Vector2, angle: float, damage: float) -> void:
 	_direction = Vector2.from_angle(angle)
 	rotation = angle
 	_damage = damage
+	_target = null
+	_has_bounced = false
 
 var _trail_frame_skip: int = 0
 
 func _physics_process(delta: float) -> void:
+	## 自动寻敌：在锥形范围内找最近敌人
+	_find_target_in_cone()
+
+	if _target != null and is_instance_valid(_target):
+		var to_target: Vector2 = global_position.direction_to(_target.global_position)
+		var angle_diff: float = abs(_direction.angle_to(to_target))
+		if angle_diff < HOMING_ANGLE:
+			_direction = _direction.lerp(to_target, HOMING_SPEED * delta).normalized()
+			rotation = _direction.angle()
+			_speed = 900.0  # 寻敌时减速
+
 	global_position += _direction * _speed * delta
 	_lifetime -= delta
 	_line_points.append(global_position)
@@ -30,12 +48,48 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 	var screen := get_viewport_rect().size
-	if global_position.x < -80 or global_position.x > screen.x + 80 or global_position.y < -80 or global_position.y > screen.y + 80:
+	if not _has_bounced:
+		var bounced: bool = false
+		if global_position.x < 20:
+			_direction.x = abs(_direction.x); bounced = true
+		elif global_position.x > screen.x - 20:
+			_direction.x = -abs(_direction.x); bounced = true
+		if global_position.y < 20:
+			_direction.y = abs(_direction.y); bounced = true
+		elif global_position.y > screen.y - 20:
+			_direction.y = -abs(_direction.y); bounced = true
+		if bounced:
+			_has_bounced = true
+			_direction = _direction.normalized()
+			rotation = _direction.angle()
+			_speed = 1200.0
+	# 反弹后或超出更远距离再回收
+	var margin: float = 120.0 if _has_bounced else 80.0
+	if global_position.x < -margin or global_position.x > screen.x + margin \
+		or global_position.y < -margin or global_position.y > screen.y + margin:
 		queue_free()
 
 	_trail_frame_skip += 1
 	if _trail_frame_skip % 2 == 0:
 		queue_redraw()
+
+func _find_target_in_cone() -> void:
+	if _target != null and is_instance_valid(_target):
+		return
+	var best: Node2D = null
+	var best_dist: float = 99999.0
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	for e in enemies:
+		if not is_instance_valid(e):
+			continue
+		var to_e: Vector2 = global_position.direction_to(e.global_position)
+		var diff: float = abs(_direction.angle_to(to_e))
+		if diff < HOMING_ANGLE:
+			var d: float = global_position.distance_squared_to(e.global_position)
+			if d < best_dist:
+				best_dist = d
+				best = e
+	_target = best
 
 func _draw() -> void:
 	if _line_points.size() > 1:
