@@ -3,14 +3,17 @@ extends Node
 var _bgm_player: AudioStreamPlayer = null
 var _is_playing: bool = false
 
+var _bgm_stream: AudioStreamWAV = null
+
 func _ready() -> void:
 	_bgm_player = AudioStreamPlayer.new()
 	add_child(_bgm_player)
+	_bgm_stream = _generate_bgm()
 
 func play_bgm() -> void:
-	if _bgm_player == null:
+	if _bgm_player == null or _bgm_stream == null:
 		return
-	_bgm_player.stream = _generate_bgm()
+	_bgm_player.stream = _bgm_stream
 	_bgm_player.volume_db = -6.0
 	_bgm_player.play()
 	_is_playing = true
@@ -23,8 +26,9 @@ func stop_bgm() -> void:
 	_is_playing = false
 
 func _on_bgm_finished() -> void:
-	if _bgm_player != null:
-		_bgm_player.stream = _generate_bgm()
+	## 复用预生成的 BGM 流，避免每 12 秒重计算
+	if _bgm_player != null and _bgm_stream != null:
+		_bgm_player.stream = _bgm_stream
 		_bgm_player.play()
 
 func _generate_bgm() -> AudioStreamWAV:
