@@ -284,7 +284,7 @@ func _spawn_asteroid() -> void:
 func _on_elite_spawn_requested() -> void:
 	if _elite != null and is_instance_valid(_elite):
 		return
-	_spawn_elite()
+	call_deferred("_spawn_elite")
 
 func _spawn_elite() -> void:
 	_show_elite_warning()
