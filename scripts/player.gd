@@ -53,8 +53,14 @@ func _update_appearance() -> void:
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_player_sprite(level)
 	if _engine_glow:
-		_engine_glow.visible = false
-	## 更新尾焰粒子强度
+		_engine_glow.visible = true
+		_engine_glow.position.y = 32.0
+		_engine_glow.modulate = Color(1.0, 0.6, 0.2, 0.6 + level * 0.2)
+		_engine_glow.scale = Vector2(1.0, 1.0 + level * 0.06)
+		if _engine_glow.texture == null:
+			var tex_path: String = "res://assets/sprites/ui/engine_flame.png"
+			if ResourceLoader.exists(tex_path):
+				_engine_glow.texture = load(tex_path)
 
 
 func _update_pickup_radius() -> void:

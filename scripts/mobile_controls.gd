@@ -1,7 +1,7 @@
 extends CanvasLayer
 
-@export var joystick_radius: float = 140.0
-@export var base_offset: Vector2 = Vector2(170.0, 550.0)
+@export var joystick_radius: float = 112.0
+@export var base_offset: Vector2 = Vector2(140.0, 550.0)
 @export var knob_scale: float = 0.38
 var _move_vector: Vector2 = Vector2.ZERO
 var _joystick_center: Vector2 = Vector2.ZERO
