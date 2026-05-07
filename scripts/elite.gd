@@ -57,9 +57,10 @@ func set_target(target: Node2D) -> void:
 	_target = target
 
 func set_difficulty(mult: float) -> void:
-	_health = int(50.0 * mult)
+	var lv: int = GameState.level
+	_health = int((50.0 + lv * 15.0) * mult)
 	_max_health = _health
-	_shield = int(80.0 * mult)
+	_shield = int((80.0 + lv * 10.0) * mult)
 	_max_shield = _shield
 	BASE_SPEED = 50.0 * mult
 	CHASE_SPEED = 65.0 * mult
