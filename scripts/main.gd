@@ -65,7 +65,7 @@ func _create_parallax_background() -> void:
 		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 		for y in range(size):
 			for x in range(size):
-				var d: float = sqrt(float(x - size / 2) * float(x - size / 2) + float(y - size / 2) * float(y - size / 2))
+				var d: float = sqrt(float(x - size * 0.5) * float(x - size * 0.5) + float(y - size * 0.5) * float(y - size * 0.5))
 				if d < float(size) / 2.0:
 					img.set_pixel(x, y, Color(b, b * 0.9, b * blue_tint, 1.0))
 		star.texture = ImageTexture.create_from_image(img)
@@ -154,8 +154,8 @@ func _create_parallax_background() -> void:
 		var pc_b: float = randf_range(0.35, 0.65)
 		for y in range(p_size):
 			for x in range(p_size):
-				var dx: float = float(x - p_size / 2)
-				var dy: float = float(y - p_size / 2)
+				var dx: float = float(x - p_size * 0.5)
+				var dy: float = float(y - p_size * 0.5)
 				var d: float = sqrt(dx * dx + dy * dy)
 				var mr: float = float(p_size) / 2.0
 				if d < mr:
@@ -169,7 +169,7 @@ func _create_parallax_background() -> void:
 			var ring_r: float = float(p_size) / 2.0 * 1.4
 			for y in range(p_size):
 				for x in range(p_size):
-					var d2: float = sqrt(float(x - p_size / 2) * float(x - p_size / 2) + float(y - p_size / 2) * float(y - p_size / 2))
+					var d2: float = sqrt(float(x - p_size * 0.5) * float(x - p_size * 0.5) + float(y - p_size * 0.5) * float(y - p_size * 0.5))
 					if d2 > ring_r - 2.0 and d2 < ring_r + 2.0:
 						var ring_a: float = 0.4 * (1.0 - abs(d2 - ring_r) / 2.0)
 						img.set_pixel(x, y, Color(pc_r * 1.2, pc_g * 1.2, pc_b * 1.2, ring_a))
