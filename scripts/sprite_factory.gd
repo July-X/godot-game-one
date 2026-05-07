@@ -278,8 +278,8 @@ func apply_asteroid_texture(sprite: Sprite2D, size: int) -> void:
 
 	var img := Image.create(size + 10, size + 10, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var cx: int = (size + 10) / 2
-	var cy: int = (size + 10) / 2
+	var cx: int = int((size + 10) * 0.5)
+	var cy: int = int((size + 10) * 0.5)
 	var base_r: float = randf_range(0.55, 0.85)
 	var base_g: float = randf_range(0.35, 0.55)
 	var base_b: float = randf_range(0.15, 0.35)
