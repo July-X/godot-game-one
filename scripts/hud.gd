@@ -17,7 +17,7 @@ extends CanvasLayer
 var _damage_flash: ColorRect
 
 ## 技能槽数据（新增技能只需在这里加一条）
-## {name, icon, action, key, overlay_style, bar_color}
+## {name, action, key, bar_color}
 var _skill_data: Array[Dictionary] = []
 ## 运行时生成的技能槽节点列表
 var _skill_slots: Array[Dictionary] = []
@@ -48,15 +48,13 @@ func _process(_delta: float) -> void:
 func _setup_skill_bar() -> void:
 	_skill_data = [
 		{
-			"name": "激光", "icon": "◎",
+			"name": "激光",
 			"action": "laser", "key": KEY_Q,
-			"overlay": 1,  # CIRCLE
 			"bar_color": Color(0.25, 0.12, 0.85),
 		},
 		{
-			"name": "散射", "icon": "△",
+			"name": "散射",
 			"action": "skill", "key": KEY_SPACE,
-			"overlay": 0,  # TRIANGLE
 			"bar_color": Color(0.15, 0.72, 0.28),
 		},
 	]
@@ -97,7 +95,6 @@ func _create_skill_slot(data: Dictionary) -> void:
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.color = Color(1, 1, 1, 0)
 	overlay.set_script(preload("res://scripts/cooldown_overlay.gd"))
-	overlay.overlay_style = data.overlay as int
 	btn.add_child(overlay)
 
 	# 技能图标（AI 生成像素图）
@@ -223,7 +220,7 @@ func _update_health(current: int, maximum: int) -> void:
 		_health_bar.max_value = maximum
 		_health_bar.value = current
 	if _hp_num:
-		_hp_num.text = "%d/%d" % [current, maximum]
+		_hp_num.text = "HP %d/%d" % [current, maximum]
 
 func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
