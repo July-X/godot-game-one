@@ -163,20 +163,20 @@ func _on_body_entered(body: Node) -> void
 ```gdscript
 # 新增方法
 func heal(amount: int) -> void:
-    """恢复生命值，不超过 max_health"""
-    if current_health >= max_health:
-        return
-    current_health = min(current_health + amount, max_health)
-    took_damage.emit(current_health, max_health)  # 复用伤害信号通知 HUD
-    SFX.play_pickup()
-    _spawn_heal_number(amount)
+	"""恢复生命值，不超过 max_health"""
+	if current_health >= max_health:
+		return
+	current_health = min(current_health + amount, max_health)
+	took_damage.emit(current_health, max_health)  # 复用伤害信号通知 HUD
+	SFX.play_pickup()
+	_spawn_heal_number(amount)
 
 func _spawn_heal_number(amount: int) -> void:
-    """显示绿色治疗数字"""
-    var dn := _damage_number_scene.instantiate()
-    get_tree().current_scene.add_child(dn)
-    dn.global_position = global_position + Vector3(0, 1.2, 0)
-    dn.setup_heal(amount)  # 新增方法
+	"""显示绿色治疗数字"""
+	var dn := _damage_number_scene.instantiate()
+	get_tree().current_scene.add_child(dn)
+	dn.global_position = global_position + Vector3(0, 1.2, 0)
+	dn.setup_heal(amount)  # 新增方法
 ```
 
 ### 3.4 damage_number.gd 修改
@@ -184,27 +184,27 @@ func _spawn_heal_number(amount: int) -> void:
 ```gdscript
 # 修改后
 func setup(amount: int, is_player: bool = false, custom_color: Color = Color.TRANSPARENT) -> void:
-    label.text = str(amount)
-    if custom_color != Color.TRANSPARENT:
-        label.modulate = custom_color
-    elif is_player:
-        label.modulate = Color(1.0, 0.3, 0.2, 1.0)
-    else:
-        label.modulate = Color(1.0, 0.85, 0.3, 1.0)
+	label.text = str(amount)
+	if custom_color != Color.TRANSPARENT:
+		label.modulate = custom_color
+	elif is_player:
+		label.modulate = Color(1.0, 0.3, 0.2, 1.0)
+	else:
+		label.modulate = Color(1.0, 0.85, 0.3, 1.0)
 
 # 新增方法
 func setup_heal(amount: int) -> void:
-    label.text = "+" + str(amount)
-    label.modulate = Color(0.2, 0.9, 0.3, 1.0)  # 绿色
+	label.text = "+" + str(amount)
+	label.modulate = Color(0.2, 0.9, 0.3, 1.0)  # 绿色
 ```
 
 ### 3.5 SFXManager 新增方法
 
 ```gdscript
 func play_pickup() -> void:
-    var player := _get_available_player()
-    player.stream = _generate_tone(800.0, 0.08, 0.3)
-    player.play()
+	var player := _get_available_player()
+	player.stream = _generate_tone(800.0, 0.08, 0.3)
+	player.play()
 ```
 
 ### 3.6 Level 04 脚本（`level_04.gd`）
@@ -217,15 +217,15 @@ signal boss_defeated
 @onready var boss_node = $Boss
 
 func _ready() -> void:
-    if boss_node and boss_node.has_method("connect"):
-        boss_node.defeated.connect(_on_boss_defeated)
+	if boss_node and boss_node.has_method("connect"):
+		boss_node.defeated.connect(_on_boss_defeated)
 
 func _on_boss_defeated() -> void:
-    boss_defeated.emit()
-    # 通知 main.gd
-    var main = get_tree().current_scene
-    if main != null and main.has_method("notify_boss_defeated"):
-        main.notify_boss_defeated()
+	boss_defeated.emit()
+	# 通知 main.gd
+	var main = get_tree().current_scene
+	if main != null and main.has_method("notify_boss_defeated"):
+		main.notify_boss_defeated()
 ```
 
 ### 3.7 main.gd 新增/修改接口
@@ -233,34 +233,34 @@ func _on_boss_defeated() -> void:
 ```gdscript
 # 修改 _level_scenes
 var _level_scenes: Dictionary = {
-    1: preload("res://scenes/levels/level_01.tscn"),
-    2: preload("res://scenes/levels/level_02.tscn"),
-    3: preload("res://scenes/levels/level_03.tscn"),
-    4: preload("res://scenes/levels/level_04.tscn")  # 新增
+	1: preload("res://scenes/levels/level_01.tscn"),
+	2: preload("res://scenes/levels/level_02.tscn"),
+	3: preload("res://scenes/levels/level_03.tscn"),
+	4: preload("res://scenes/levels/level_04.tscn")  # 新增
 }
 
 # 新增方法
 func notify_boss_defeated() -> void:
-    """Boss 被击败，触发专属结算"""
-    _enemy_count = 0
-    _kill_count += 1
-    _trigger_boss_result()
+	"""Boss 被击败，触发专属结算"""
+	_enemy_count = 0
+	_kill_count += 1
+	_trigger_boss_result()
 
 func _trigger_boss_result() -> void:
-    """Boss 关卡专属结算"""
-    if _result_shown:
-        return
-    _result_shown = true
-    BGM.stop_music()
-    GameState.set_run_state("boss_defeated")
-    _hide_game_hud()
-    
-    var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
-    SaveSystem.record_run(_kill_count, elapsed, true)
-    
-    screen_transition.fade_out(0.3)
-    await screen_transition.transition_finished
-    hud.show_boss_result_screen("FINAL BOSS DEFEATED", _kill_count, _total_enemies, _get_elapsed_time())
+	"""Boss 关卡专属结算"""
+	if _result_shown:
+		return
+	_result_shown = true
+	BGM.stop_music()
+	GameState.set_run_state("boss_defeated")
+	_hide_game_hud()
+	
+	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
+	SaveSystem.record_run(_kill_count, elapsed, true)
+	
+	screen_transition.fade_out(0.3)
+	await screen_transition.transition_finished
+	hud.show_boss_result_screen("FINAL BOSS DEFEATED", _kill_count, _total_enemies, _get_elapsed_time())
 ```
 
 ---
@@ -271,69 +271,69 @@ func _trigger_boss_result() -> void:
 
 ```mermaid
 sequenceDiagram
-    participant P as Player
-    participant H as HealthPack
-    participant S as SFXManager
-    participant D as DamageNumber
-    participant G as GameState
+	participant P as Player
+	participant H as HealthPack
+	participant S as SFXManager
+	participant D as DamageNumber
+	participant G as GameState
 
-    P->>H: 触碰（Area3D body_entered）
-    H->>P: heal(2)
-    P->>P: current_health += 2
-    P->>P: took_damage.emit() 更新HUD
-    P->>D: setup_heal(2)
-    D->>D: 显示绿色 "+2"
-    H->>S: play_pickup()
-    H->>H: queue_free()
+	P->>H: 触碰（Area3D body_entered）
+	H->>P: heal(2)
+	P->>P: current_health += 2
+	P->>P: took_damage.emit() 更新HUD
+	P->>D: setup_heal(2)
+	D->>D: 显示绿色 "+2"
+	H->>S: play_pickup()
+	H->>H: queue_free()
 ```
 
 ### 4.2 Boss Phase 切换流程
 
 ```mermaid
 sequenceDiagram
-    participant B as Boss
-    participant S as SFXManager
-    participant C as Camera
-    participant D as DamageNumber
-    participant M as Material
+	participant B as Boss
+	participant S as SFXManager
+	participant C as Camera
+	participant D as DamageNumber
+	participant M as Material
 
-    Player->>B: projectile 命中
-    B->>B: take_damage(1)
-    B->>B: health -= 1
-    B->>D: 显示伤害数字
-    
-    alt health <= 7 且 Phase == 1
-        B->>B: _switch_phase(2)
-        B->>B: move_speed = 3.5
-        B->>B: shoot_cooldown = 1.5s
-        B->>M: emission = 深红常亮
-        B->>S: play_explosion()
-        B->>C: 屏幕震动（通过 GameState 或事件）
-    end
+	Player->>B: projectile 命中
+	B->>B: take_damage(1)
+	B->>B: health -= 1
+	B->>D: 显示伤害数字
+	
+	alt health <= 7 且 Phase == 1
+		B->>B: _switch_phase(2)
+		B->>B: move_speed = 3.5
+		B->>B: shoot_cooldown = 1.5s
+		B->>M: emission = 深红常亮
+		B->>S: play_explosion()
+		B->>C: 屏幕震动（通过 GameState 或事件）
+	end
 ```
 
 ### 4.3 Boss 死亡→结算流程
 
 ```mermaid
 sequenceDiagram
-    participant B as Boss
-    participant L as Level04
-    participant M as Main
-    participant H as HUD
-    participant BGM as BGMManager
-    participant S as SaveSystem
+	participant B as Boss
+	participant L as Level04
+	participant M as Main
+	participant H as HUD
+	participant BGM as BGMManager
+	participant S as SaveSystem
 
-    Player->>B: 最后一击
-    B->>B: take_damage()
-    B->>B: health <= 0
-    B->>B: defeated.emit()
-    B->>L: _on_boss_defeated()
-    L->>M: notify_boss_defeated()
-    M->>M: _trigger_boss_result()
-    M->>BGM: stop_music()
-    M->>M: GameState.set_run_state("boss_defeated")
-    M->>S: record_run()
-    M->>H: show_boss_result_screen("FINAL BOSS DEFEATED")
+	Player->>B: 最后一击
+	B->>B: take_damage()
+	B->>B: health <= 0
+	B->>B: defeated.emit()
+	B->>L: _on_boss_defeated()
+	L->>M: notify_boss_defeated()
+	M->>M: _trigger_boss_result()
+	M->>BGM: stop_music()
+	M->>M: GameState.set_run_state("boss_defeated")
+	M->>S: record_run()
+	M->>H: show_boss_result_screen("FINAL BOSS DEFEATED")
 ```
 
 ---
@@ -408,76 +408,76 @@ Level04 (Node3D)  # 脚本: level_04.gd
 
 ```gdscript
 func _ready() -> void:
-    GameState.reset_run()
-    _level_scenes = {
-        1: preload("res://scenes/levels/level_01.tscn"),
-        2: preload("res://scenes/levels/level_02.tscn"),
-        3: preload("res://scenes/levels/level_03.tscn"),
-        4: preload("res://scenes/levels/level_04.tscn")  # 新增
-    }
-    _current_level = 1
-    # ...
+	GameState.reset_run()
+	_level_scenes = {
+		1: preload("res://scenes/levels/level_01.tscn"),
+		2: preload("res://scenes/levels/level_02.tscn"),
+		3: preload("res://scenes/levels/level_03.tscn"),
+		4: preload("res://scenes/levels/level_04.tscn")  # 新增
+	}
+	_current_level = 1
+	# ...
 ```
 
 ### 7.2 添加 Boss 关卡判定
 
 ```gdscript
 func _is_boss_level() -> bool:
-    return _current_level == 4
+	return _current_level == 4
 ```
 
 ### 7.3 修改 _bind_level 添加 Boss 信号连接
 
 ```gdscript
 func _bind_level() -> void:
-    # ... 原有逻辑 ...
-    
-    # Boss 关卡特殊绑定
-    if _is_boss_level() and level.has_method("notify_boss_defeated"):
-        if level.has_signal("boss_defeated"):
-            level.boss_defeated.connect(_on_boss_defeated)
+	# ... 原有逻辑 ...
+	
+	# Boss 关卡特殊绑定
+	if _is_boss_level() and level.has_method("notify_boss_defeated"):
+		if level.has_signal("boss_defeated"):
+			level.boss_defeated.connect(_on_boss_defeated)
 ```
 
 ### 7.4 添加 Boss 结算处理方法
 
 ```gdscript
 func _on_boss_defeated() -> void:
-    notify_boss_defeated()
+	notify_boss_defeated()
 
 func notify_boss_defeated() -> void:
-    if _result_shown:
-        return
-    _result_shown = true
-    
-    BGM.stop_music()
-    GameState.set_run_state("boss_defeated")
-    GameState.set_story_line("FINAL BOSS DEFEATED")
-    _hide_game_hud()
-    
-    var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
-    SaveSystem.record_run(_kill_count, elapsed, true)
-    
-    # 检查成就
-    var new_achievements: Array = Achievements.check_achievements(
-        _kill_count, _total_enemies, elapsed, true, _hp_lost
-    )
-    if new_achievements.size() > 0:
-        hud.show_achievement_unlocks(new_achievements)
-    
-    screen_transition.fade_out(0.5)
-    await screen_transition.transition_finished
-    hud.show_boss_result_screen("FINAL BOSS DEFEATED", _kill_count, _total_enemies, _get_elapsed_time())
+	if _result_shown:
+		return
+	_result_shown = true
+	
+	BGM.stop_music()
+	GameState.set_run_state("boss_defeated")
+	GameState.set_story_line("FINAL BOSS DEFEATED")
+	_hide_game_hud()
+	
+	var elapsed: float = Time.get_ticks_msec() / 1000.0 - _start_time
+	SaveSystem.record_run(_kill_count, elapsed, true)
+	
+	# 检查成就
+	var new_achievements: Array = Achievements.check_achievements(
+		_kill_count, _total_enemies, elapsed, true, _hp_lost
+	)
+	if new_achievements.size() > 0:
+		hud.show_achievement_unlocks(new_achievements)
+	
+	screen_transition.fade_out(0.5)
+	await screen_transition.transition_finished
+	hud.show_boss_result_screen("FINAL BOSS DEFEATED", _kill_count, _total_enemies, _get_elapsed_time())
 ```
 
 ### 7.5 修改 _on_player_reached_exit 处理 Boss 关卡
 
 ```gdscript
 func _on_player_reached_exit() -> void:
-    # Boss 关卡无出口，不应触发此方法
-    if _is_boss_level():
-        return
-    
-    # ... 原有逻辑 ...
+	# Boss 关卡无出口，不应触发此方法
+	if _is_boss_level():
+		return
+	
+	# ... 原有逻辑 ...
 ```
 
 ### 7.6 添加 Boss 结算画面支持（HUD）
@@ -486,12 +486,12 @@ func _on_player_reached_exit() -> void:
 
 ```gdscript
 func show_boss_result_screen(message: String, kills: int, total: int, time: String) -> void:
-    # 显示 Boss 击败专属结算画面
-    # 可以复用 show_result_screen 但使用不同样式
-    result_title.text = message
-    result_kills.text = "Kills: %d / %d" % [kills, total]
-    result_time.text = "Time: %s" % time
-    result_screen.visible = true
+	# 显示 Boss 击败专属结算画面
+	# 可以复用 show_result_screen 但使用不同样式
+	result_title.text = message
+	result_kills.text = "Kills: %d / %d" % [kills, total]
+	result_time.text = "Time: %s" % time
+	result_screen.visible = true
 ```
 
 ---
@@ -527,67 +527,67 @@ func show_boss_result_screen(message: String, kills: int, total: int, time: Stri
 
 ```gdscript
 func take_damage(amount: int = 1) -> void:
-    if _dead:
-        return
-    current_health -= amount
-    _spawn_damage_number(amount)
-    
-    # Phase 切换检测
-    if current_health <= phase_threshold and _current_phase == 1:
-        _switch_phase(2)
-    
-    if current_health <= 0:
-        _dead = true
-        defeated.emit()
-        SFX.play_enemy_death()
-        _death_animation()
-    else:
-        SFX.play_enemy_hurt()
-        _flash_hit()
+	if _dead:
+		return
+	current_health -= amount
+	_spawn_damage_number(amount)
+	
+	# Phase 切换检测
+	if current_health <= phase_threshold and _current_phase == 1:
+		_switch_phase(2)
+	
+	if current_health <= 0:
+		_dead = true
+		defeated.emit()
+		SFX.play_enemy_death()
+		_death_animation()
+	else:
+		SFX.play_enemy_hurt()
+		_flash_hit()
 
 func _switch_phase(new_phase: int) -> void:
-    _current_phase = new_phase
-    phase_changed.emit(new_phase)
-    
-    if new_phase == 2:
-        # 修改移动速度和射击冷却
-        # 注意：这里需要修改导出变量，实际在 _physics_process 中读取
-        # 或者通过 set_deferred 修改
-        
-        # 切换材质为深红常亮
-        if _model_root:
-            for child in _model_root.get_children():
-                if child is MeshInstance3D and child.material_override:
-                    var mat = child.material_override as StandardMaterial3D
-                    if mat:
-                        mat.albedo_color = Color(0.8, 0.2, 0.1)
-                        mat.emission_enabled = true
-                        mat.emission = Color(0.9, 0.1, 0.1)
-                        mat.emission_energy_multiplier = 1.5
-        
-        # 屏幕震动 + 爆炸音效
-        SFX.play_explosion()
-        # TODO: 触发屏幕震动（需要 Camera 引用或信号）
-        
-        # 通知 HUD/GameState
-        GameState.set_story_line("Boss enraged! Speed and fire rate increased!")
+	_current_phase = new_phase
+	phase_changed.emit(new_phase)
+	
+	if new_phase == 2:
+		# 修改移动速度和射击冷却
+		# 注意：这里需要修改导出变量，实际在 _physics_process 中读取
+		# 或者通过 set_deferred 修改
+		
+		# 切换材质为深红常亮
+		if _model_root:
+			for child in _model_root.get_children():
+				if child is MeshInstance3D and child.material_override:
+					var mat = child.material_override as StandardMaterial3D
+					if mat:
+						mat.albedo_color = Color(0.8, 0.2, 0.1)
+						mat.emission_enabled = true
+						mat.emission = Color(0.9, 0.1, 0.1)
+						mat.emission_energy_multiplier = 1.5
+		
+		# 屏幕震动 + 爆炸音效
+		SFX.play_explosion()
+		# TODO: 触发屏幕震动（需要 Camera 引用或信号）
+		
+		# 通知 HUD/GameState
+		GameState.set_story_line("Boss enraged! Speed and fire rate increased!")
 ```
 
 ### 9.2 血包旋转+浮动动画实现
 
 ```gdscript
 func _ready() -> void:
-    body_entered.connect(_on_body_entered)
-    _base_y = global_position.y
+	body_entered.connect(_on_body_entered)
+	_base_y = global_position.y
 
 func _process(delta: float) -> void:
-    # 旋转
-    rotate_y(deg_to_rad(rotation_speed * delta))
-    
-    # 浮动
-    _time += delta
-    var new_y = _base_y + sin(_time * float_speed) * float_amplitude
-    global_position.y = new_y
+	# 旋转
+	rotate_y(deg_to_rad(rotation_speed * delta))
+	
+	# 浮动
+	_time += delta
+	var new_y = _base_y + sin(_time * float_speed) * float_amplitude
+	global_position.y = new_y
 ```
 
 ---
