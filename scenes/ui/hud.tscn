@@ -67,15 +67,24 @@ max_value = 3.0
 value = 3.0
 show_percentage = false
 
+[node name="HPLabel" type="Label" parent="HealthBar"]
+layout_mode = 0
+offset_left = 2.0
+offset_right = 24.0
+theme_override_colors/font_color = Color(0.6, 0.8, 1.0, 1)
+theme_override_font_sizes/font_size = 13
+text = "HP"
+vertical_alignment = 1
+
 [node name="HPNum" type="Label" parent="HealthBar"]
 layout_mode = 0
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = 8.0
-offset_right = 32.0
+offset_right = 36.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 15
-text = "3/3"
+theme_override_font_sizes/font_size = 14
+text = "200/200"
 vertical_alignment = 1
 
 [node name="PowerupDisplay" type="VBoxContainer" parent="."]
@@ -103,8 +112,8 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -480.0
-offset_top = -110.0
+offset_left = -320.0
+offset_top = -180.0
 offset_right = -20.0
 offset_bottom = -18.0
 theme_override_constants/separation = 8
@@ -120,6 +129,7 @@ offset_right = -16.0
 offset_bottom = 280.0
 grow_horizontal = 0
 theme_override_styles/panel = SubResource("3")
+modulate = Color(1, 1, 1, 0.7)
 
 [node name="LeaderboardLabel" type="Label" parent="LeaderboardPanel"]
 layout_mode = 0

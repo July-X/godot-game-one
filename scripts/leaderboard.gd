@@ -6,7 +6,7 @@ var _entries: Array[Dictionary] = []
 
 func add_entry(score: int, level: int) -> void:
 	var now := Time.get_datetime_dict_from_system()
-	var timestamp: String = "%04d-%02d-%02d %02d:%02d" % [now.year, now.month, now.day, now.hour, now.minute]
+	var timestamp: String = "%02d:%02d" % [now.hour, now.minute]
 	_entries.append({"score": score, "level": level, "time": timestamp})
 	_entries.sort_custom(func(a, b): return a.score > b.score)
 	if _entries.size() > MAX_ENTRIES:

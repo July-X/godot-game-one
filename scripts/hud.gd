@@ -66,7 +66,7 @@ func _setup_skill_bar() -> void:
 
 ## 动态创建单个技能按钮
 func _create_skill_slot(data: Dictionary) -> void:
-	var slot_size := Vector2(72, 72)
+	var slot_size := Vector2(144, 144)
 
 	# Button 容器
 	var btn := Button.new()
@@ -105,7 +105,7 @@ func _create_skill_slot(data: Dictionary) -> void:
 	lbl.size = slot_size
 	lbl.text = data.icon
 	lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0, 1))
-	lbl.add_theme_font_size_override("font_size", 28)
+	lbl.add_theme_font_size_override("font_size", 44)
 	lbl.horizontal_alignment = 1
 	lbl.vertical_alignment = 1
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -148,10 +148,10 @@ func _update_cooldowns() -> void:
 		slot.overlay.set_ready_progress(progress)
 		if cd > 0:
 			slot.label.text = str(int(ceil(cd)))
-			slot.label.add_theme_font_size_override("font_size", 26)
+			slot.label.add_theme_font_size_override("font_size", 40)
 		else:
 			slot.label.text = slot.data.icon
-			slot.label.add_theme_font_size_override("font_size", 28)
+			slot.label.add_theme_font_size_override("font_size", 44)
 
 ## ── 技能触发 ────────────────────────────────────────────────
 
@@ -225,14 +225,20 @@ func _update_powerup_display() -> void:
 	}
 	for type in labels:
 		var level: int = 0
+		var max_level: int = 15
 		match type:
-			"spread": level = GameState.shoot_level
-			"speed": level = GameState.shoot_speed_level
-			"power": level = GameState.bullet_power_level
+			"spread":
+				level = GameState.shoot_level
+				max_level = 20
+			"speed":
+				level = GameState.shoot_speed_level
+				max_level = 20
+			"power":
+				level = GameState.bullet_power_level
+				max_level = 50
 		if level <= 0:
 			continue
 
-		var max_level: int = 15
 		var bar_w: int = 120
 		var bar_h: int = 14
 		var fill_w: int = int(bar_w * float(level) / float(max_level))
@@ -304,10 +310,12 @@ func _refresh_leaderboard() -> void:
 	var entries := Leaderboard.get_entries()
 	for entry in entries:
 		var label := Label.new()
-		label.add_theme_font_size_override("font_size", 12)
-		label.add_theme_color_override("font_color", Color(0.8, 0.85, 1.0, 0.9))
+		label.add_theme_font_size_override("font_size", 11)
+		label.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0, 0.8))
 		label.horizontal_alignment = 1
-		label.text = "#%d  %s  —  %s  (等级%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
+		label.vertical_alignment = 1
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.text = "#%d  %s\n%s  (Lv.%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
 		_perm_leaderboard_entries.add_child(label)
 
 func _update_platform_hints() -> void:

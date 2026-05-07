@@ -40,8 +40,8 @@ func reset_game() -> void:
 	last_boss_threshold = 0
 	boss_encounter_count = 0
 	post_boss_multiplier = 1.0
-	current_health = 3
-	max_health = 3
+	current_health = 200
+	max_health = 200
 	shield_layers = 0
 	death_message = ""
 	game_running = true
@@ -73,7 +73,7 @@ func level_up() -> void:
 	level += 1
 	kills = 0
 	kills_for_next_level = 10 + level * 5
-	bullet_power_level = min(bullet_power_level + 1, 15)
+	bullet_power_level = min(bullet_power_level + 1, 50)
 	max_health += 1
 	current_health = min(current_health + 1, max_health)
 	health_changed.emit(current_health, max_health)
@@ -118,7 +118,7 @@ func collect_powerup(type: String) -> void:
 			if bullet_power_level >= 15:
 				heal(1)
 			else:
-				bullet_power_level = min(bullet_power_level + 1, 15)
+				bullet_power_level = min(bullet_power_level + 1, 50)
 		"heal":
 			heal(max(ceil(max_health * 0.1), 1))
 		"bomb":
