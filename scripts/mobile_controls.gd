@@ -78,10 +78,10 @@ func _build_visual_nodes() -> void:
 	_base_style.border_width_top = 3
 	_base_style.border_width_right = 3
 	_base_style.border_width_bottom = 3
-	_base_style.corner_radius_top_left = 0
-	_base_style.corner_radius_top_right = 0
-	_base_style.corner_radius_bottom_left = 0
-	_base_style.corner_radius_bottom_right = 0
+	_base_style.corner_radius_top_left = int(joystick_radius)
+	_base_style.corner_radius_top_right = int(joystick_radius)
+	_base_style.corner_radius_bottom_left = int(joystick_radius)
+	_base_style.corner_radius_bottom_right = int(joystick_radius)
 	_base_node.add_theme_stylebox_override("panel", _base_style)
 	_ui_root.add_child(_base_node)
 	var knob_radius: float = joystick_radius * knob_scale
@@ -95,10 +95,10 @@ func _build_visual_nodes() -> void:
 	_knob_style.border_width_top = 2
 	_knob_style.border_width_right = 2
 	_knob_style.border_width_bottom = 2
-	_knob_style.corner_radius_top_left = 0
-	_knob_style.corner_radius_top_right = 0
-	_knob_style.corner_radius_bottom_left = 0
-	_knob_style.corner_radius_bottom_right = 0
+	_knob_style.corner_radius_top_left = int(knob_radius)
+	_knob_style.corner_radius_top_right = int(knob_radius)
+	_knob_style.corner_radius_bottom_left = int(knob_radius)
+	_knob_style.corner_radius_bottom_right = int(knob_radius)
 	_knob_node.add_theme_stylebox_override("panel", _knob_style)
 	_ui_root.add_child(_knob_node)
 
