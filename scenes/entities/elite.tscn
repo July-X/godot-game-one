@@ -73,6 +73,7 @@ shape = SubResource("6")
 
 [node name="ShieldSprite" type="Sprite2D" parent="."]
 texture = SubResource("5")
+centered = true
 modulate = Color(0.3, 0.6, 1.0, 0.45)
 
 [node name="TurretL" type="Node2D" parent="."]

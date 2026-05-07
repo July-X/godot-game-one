@@ -5,6 +5,8 @@ extends CanvasLayer
 @onready var _level_label: Label = $LevelLabel
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _hp_num: Label = $HealthBar/HPNum
+@onready var _health_bar: ProgressBar = $HealthBar
+@onready var _hp_num: Label = $HealthBar/HPNum
 @onready var _powerup_display: VBoxContainer = $PowerupDisplay
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -215,8 +217,12 @@ func _update_score(score: int) -> void:
 func _update_level(level: int) -> void:
 	_level_label.text = "等级 %d" % level
 
-func _update_health(_current: int, _maximum: int) -> void:
-	pass
+func _update_health(current: int, maximum: int) -> void:
+	if _health_bar:
+		_health_bar.max_value = maximum
+		_health_bar.value = current
+	if _hp_num:
+		_hp_num.text = "%d/%d" % [current, maximum]
 
 func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
