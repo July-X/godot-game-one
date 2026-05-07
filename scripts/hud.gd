@@ -81,6 +81,7 @@ func _create_skill_slot(data: Dictionary) -> void:
 	btn.add_theme_stylebox_override("disabled", empty_sb)
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.pressed.connect(_on_skill_slot_pressed.bind(data))
+	btn.gui_input.connect(_on_skill_slot_gui_input.bind(data))
 
 	# 半透明背景框
 	var bg := ColorRect.new()
@@ -123,6 +124,13 @@ func _on_skill_slot_pressed(data: Dictionary) -> void:
 	match data.action:
 		"skill": _trigger_skill()
 		"laser": _trigger_laser()
+
+## 移动端触屏技能按钮
+func _on_skill_slot_gui_input(event: InputEvent, data: Dictionary) -> void:
+	if event is InputEventScreenTouch and event.pressed:
+		match data.action:
+			"skill": _trigger_skill()
+			"laser": _trigger_laser()
 
 func _update_cooldowns() -> void:
 	for slot in _skill_slots:
@@ -211,9 +219,9 @@ func _update_powerup_display() -> void:
 	for child in _powerup_display.get_children():
 		child.queue_free()
 	var labels := {
-		"spread": {"color": Color(0.3, 1.0, 0.4, 1.0), "name": "SPR", "bar": Color(0.2, 0.8, 0.3, 1)},
-		"speed": {"color": Color(0.4, 0.7, 1.0, 1.0), "name": "SPD", "bar": Color(0.3, 0.6, 1.0, 1)},
-		"power": {"color": Color(1.0, 0.4, 0.3, 1.0), "name": "POW", "bar": Color(0.9, 0.3, 0.2, 1)},
+		"spread": {"name": "SPR", "color": Color(0.3, 1.0, 0.4), "bar": Color(0.2, 0.8, 0.3)},
+		"speed": {"name": "SPD", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
+		"power": {"name": "POW", "color": Color(1.0, 0.4, 0.3), "bar": Color(0.9, 0.3, 0.2)},
 	}
 	for type in labels:
 		var level: int = 0
@@ -221,21 +229,52 @@ func _update_powerup_display() -> void:
 			"spread": level = GameState.shoot_level
 			"speed": level = GameState.shoot_speed_level
 			"power": level = GameState.bullet_power_level
-		if level > 0:
-			var block := ColorRect.new()
-			block.custom_minimum_size = Vector2(80, 18)
-			block.size = Vector2(80, 18)
-			block.color = labels[type].bar
-			block.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var lbl := Label.new()
-			lbl.text = "%s %d/15" % [labels[type].name, level]
-			lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
-			lbl.add_theme_font_size_override("font_size", 11)
-			lbl.horizontal_alignment = 1
-			lbl.vertical_alignment = 1
-			lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			block.add_child(lbl)
-			_powerup_display.add_child(block)
+		if level <= 0:
+			continue
+
+		var max_level: int = 15
+		var bar_w: int = 120
+		var bar_h: int = 14
+		var fill_w: int = int(bar_w * float(level) / float(max_level))
+
+		# 行容器: SPR ████░░  8/15
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		_powerup_display.add_child(row)
+
+		# 名称标签
+		var name_lbl := Label.new()
+		name_lbl.text = labels[type].name + "  "
+		name_lbl.add_theme_color_override("font_color", labels[type].color)
+		name_lbl.add_theme_font_size_override("font_size", 12)
+		name_lbl.vertical_alignment = 1
+		row.add_child(name_lbl)
+
+		# 进度条背景
+		var bg := ColorRect.new()
+		bg.custom_minimum_size = Vector2(bar_w, bar_h)
+		bg.size = Vector2(bar_w, bar_h)
+		bg.color = Color(0.08, 0.08, 0.15, 0.7)
+		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(bg)
+
+		# 进度条填充
+		var fill := ColorRect.new()
+		fill.size = Vector2(fill_w, bar_h)
+		fill.color = labels[type].bar
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bg.add_child(fill)
+
+		# 数值标签（覆盖在进度条上）
+		var val_lbl := Label.new()
+		val_lbl.size = Vector2(bar_w, bar_h)
+		val_lbl.text = "%d/%d" % [level, max_level]
+		val_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+		val_lbl.add_theme_font_size_override("font_size", 10)
+		val_lbl.horizontal_alignment = 1
+		val_lbl.vertical_alignment = 1
+		val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bg.add_child(val_lbl)
 
 func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()
