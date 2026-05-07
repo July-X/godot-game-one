@@ -7,4 +7,5 @@ backup_3d/
 *.uid
 backup_3d/
 .workbuddy/
-android/
+android/__pycache__/
+*.pyc
