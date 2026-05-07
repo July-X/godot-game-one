@@ -100,16 +100,16 @@ func _create_skill_slot(data: Dictionary) -> void:
 	overlay.overlay_style = data.overlay as int
 	btn.add_child(overlay)
 
-	# 图标标签
-	var lbl := Label.new()
-	lbl.size = slot_size
-	lbl.text = data.icon
-	lbl.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0, 1))
-	lbl.add_theme_font_size_override("font_size", 44)
-	lbl.horizontal_alignment = 1
-	lbl.vertical_alignment = 1
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(lbl)
+	# 技能图标（AI 生成像素图）
+	var icon_tex := TextureRect.new()
+	icon_tex.size = slot_size
+	icon_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon_tex.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	icon_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tex_path: String = "res://assets/sprites/ui/skill_%s.png" % data.action
+	if ResourceLoader.exists(tex_path):
+		icon_tex.texture = load(tex_path)
+	btn.add_child(icon_tex)
 
 	_skill_bar.add_child(btn)
 	_skill_slots.append({
@@ -314,7 +314,6 @@ func _refresh_leaderboard() -> void:
 		label.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0, 0.8))
 		label.horizontal_alignment = 1
 		label.vertical_alignment = 1
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.text = "#%d  %s\n%s  (Lv.%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
 		_perm_leaderboard_entries.add_child(label)
 

@@ -20,6 +20,7 @@ var _head_bob_timer: float = 0.0
 var _missile_timer: float = 0.0
 var _missile_pods: Array[Node2D] = []
 var _missile_pod_built: int = 0
+var _engine_particles: CpuParticles2D = null
 var _pickup_radius: float = 280.0
 var _mobile_mode: bool = false
 var _touch_move: Vector2 = Vector2.ZERO
@@ -34,11 +35,9 @@ var _touch_move: Vector2 = Vector2.ZERO
 func _ready() -> void:
 	add_to_group("player")
 	_muzzle_flash.visible = false
+	_setup_engine_particles()
 	_update_appearance()
 	_update_pickup_radius()
-	## 引擎尾焰设为锥形精灵
-	if _engine_glow and ResourceLoader.exists("res://assets/sprites/ui/engine_flame.png"):
-		_engine_glow.texture = load("res://assets/sprites/ui/engine_flame.png")
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
@@ -47,6 +46,58 @@ func _ready() -> void:
 		var mc = get_tree().current_scene.find_child("MobileControls", true, false)
 		if mc:
 			mc.move_input.connect(_on_mobile_move)
+
+func _setup_engine_particles() -> void:
+	## 引擎尾焰粒子系统
+	_engine_glow.visible = false  # 隐藏旧静态精灵
+	var p := CpuParticles2D.new()
+	p.name = "EngineParticles"
+	p.emitting = true
+	p.amount = 8
+	p.lifetime = 0.35
+	p.one_shot = false
+	p.preprocess = 0.1
+	p.explosiveness = 0.0
+	p.randomness = 0.4
+	p.fixed_fps = 0
+	p.fract_delta = true
+	p.visibility_rect = Rect2(-16, -32, 32, 48)
+	p.position = Vector2(0, 40)  # 船尾位置
+
+	var mat := ParticleProcessMaterial.new()
+	mat.direction = Vector2.DOWN
+	mat.spread = 25.0
+	mat.gravity = Vector2(0, 20)
+	mat.initial_velocity_min = 40.0
+	mat.initial_velocity_max = 80.0
+	mat.scale_min = 1.0
+	mat.scale_max = 2.5
+	mat.color = Color(1.0, 0.55, 0.15, 0.85)
+	mat.angle_min = 0
+	mat.angle_max = 360
+	mat.angular_velocity_min = -180
+	mat.angular_velocity_max = 180
+	mat.lifetime_randomness = 0.3
+	p.process_material = mat
+
+	# 简单白色像素纹理
+	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 1))
+	p.texture = ImageTexture.create_from_image(img)
+	p.scale_amount_curve = _make_flame_curve()
+
+	add_child(p)
+	_engine_particles = p
+
+func _make_flame_curve() -> Curve:
+	var c := Curve.new()
+	c.min_value = 0.0
+	c.max_value = 1.0
+	c.add_point(Vector2(0.0, 0.2))
+	c.add_point(Vector2(0.3, 1.0))
+	c.add_point(Vector2(0.7, 0.6))
+	c.add_point(Vector2(1.0, 0.0))
+	return c
 
 func _update_appearance() -> void:
 	var level: int = GameState.shoot_level
@@ -160,13 +211,13 @@ func _update_walk_animation() -> void:
 	var swing: float = sin(_walk_cycle) * 0.02
 	var bounce: float = abs(sin(_walk_cycle)) * 0.01
 	_sprite.rotation = swing
-	if _engine_glow:
-		_engine_glow.position.y = 32.0 + bounce * 20.0
+	if _engine_particles:
+		_engine_particles.position.y = 40.0 + bounce * 15.0
 
 func _reset_pose() -> void:
 	_sprite.rotation = 0.0
-	if _engine_glow:
-		_engine_glow.position.y = 32.0
+	if _engine_particles:
+		_engine_particles.position.y = 40.0
 
 func _shoot() -> void:
 	_shoot_timer = GameState.get_shoot_cooldown()
