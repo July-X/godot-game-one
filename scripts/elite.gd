@@ -42,7 +42,7 @@ var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 func _ready() -> void:
 	add_to_group("enemies")
 	_sprite.texture = SpriteFactory.create_elite_sprite()
-	_shield_sprite.modulate = Color(0.6, 0.1, 0.05, 0.5)
+	_shield_sprite.modulate = Color(1.0, 0.7, 0.15, 0.5)
 	_shoot_timer = randf_range(0.5, 1.5)
 	_dodge_direction = 1.0 if randf() > 0.5 else -1.0
 
@@ -230,7 +230,7 @@ func _update_shield(delta: float) -> void:
 		var alpha: float = 0.25 + 0.25 * abs(sin(Time.get_ticks_msec() * 0.003))
 		var shield_ratio: float = float(_shield) / float(_max_shield)
 		var intensity: float = 0.4 + (1.0 - shield_ratio) * 0.5
-		_shield_sprite.modulate = Color(0.5 + intensity * 0.3, 0.08, 0.04, alpha)
+		_shield_sprite.modulate = Color(0.8 + intensity * 0.2, 0.5 + intensity * 0.3, 0.1, alpha)
 		_shield_sprite.scale = Vector2(1.0, 1.0) * (0.9 + 0.1 * abs(sin(Time.get_ticks_msec() * 0.002)))
 	else:
 		_shield_sprite.visible = false
@@ -241,7 +241,7 @@ func take_damage(amount: int = 1) -> void:
 	if _shield > 0:
 		_shield -= amount
 		_spawn_shield_hit_effect()
-		_shield_sprite.modulate = Color(1.0, 0.5, 0.3, 0.8)
+		_shield_sprite.modulate = Color(1.0, 0.9, 0.5, 0.9)
 		var tween := create_tween()
 		tween.tween_property(_shield_sprite, "modulate", Color(0.6, 0.1, 0.05, 0.5), 0.08)
 		if _shield <= 0:
