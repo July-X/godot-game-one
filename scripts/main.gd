@@ -311,8 +311,8 @@ func _show_elite_warning() -> void:
 	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.1, 1.0))
 	warning.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
 	warning.add_theme_constant_override("shadow_outline_size", 2)
-	warning.horizontal_alignment = 1
-	warning.vertical_alignment = 1
+	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	warning.position = Vector2(0, 300)
 	warning.size = Vector2(1280, 60)
 	warning.z_index = 100
