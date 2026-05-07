@@ -103,7 +103,7 @@ func _update_flame_intensity(level: int) -> void:
 		if s.visible:
 			s.modulate.a = min(s.modulate.a * (intensity + 0.2), 0.95)
 
-func _update_appearance() -> void:func _update_appearance() -> void:
+func _update_appearance() -> void:
 	var level: int = GameState.shoot_level
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_player_sprite(level)
