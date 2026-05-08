@@ -362,7 +362,6 @@ func _on_boss_died() -> void:
 func _show_boss_warning() -> void:
 	var cl := CanvasLayer.new()
 	cl.layer = 10
-	cl.z_index = 200
 	add_child(cl)
 
 	var overlay := ColorRect.new()
