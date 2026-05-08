@@ -23,6 +23,10 @@
 - 玩家
 - 2 到 4 种敌人类型
 - 用于尾声的头目或中头目
+- Boss 贴图资源路径固定为 `assets/sprites/enemies/boss/boss.png`，优先使用仓库 AI 生成流程产物，不存在时才回退程序化占位图
+- 玩家升级外形资源路径固定为 `assets/sprites/player/variants/lv01.png`~`lv05.png`，按“每 5 级一档”切换
+- Boss 变体资源路径固定为 `assets/sprites/enemies/boss/boss_01.png`~`boss_05.png`，每次出场轮换
+- Boss 阶段使用单独氛围配置：背景偏红、BGM 提升音高与音量，强化阶段感；结束后恢复常规配置
 
 ### 环境
 

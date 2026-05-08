@@ -4,6 +4,7 @@ var _bgm_player: AudioStreamPlayer = null
 var _is_playing: bool = false
 
 var _bgm_stream: AudioStreamWAV = null
+var _boss_mode: bool = false
 
 func _ready() -> void:
 	_bgm_player = AudioStreamPlayer.new()
@@ -11,11 +12,21 @@ func _ready() -> void:
 	_bgm_stream = _generate_bgm()
 
 func play_bgm() -> void:
+	_boss_mode = false
+	_play_with_profile(-6.0, 1.0)
+
+func play_boss_bgm() -> void:
+	_boss_mode = true
+	_play_with_profile(-3.5, 1.18)
+
+func _play_with_profile(volume_db: float, pitch_scale: float) -> void:
 	if _bgm_player == null or _bgm_stream == null:
 		return
 	_bgm_player.stream = _bgm_stream
-	_bgm_player.volume_db = -6.0
-	_bgm_player.play()
+	_bgm_player.volume_db = volume_db
+	_bgm_player.pitch_scale = pitch_scale
+	if not _bgm_player.playing:
+		_bgm_player.play()
 	_is_playing = true
 	if not _bgm_player.finished.is_connected(_on_bgm_finished):
 		_bgm_player.finished.connect(_on_bgm_finished)
@@ -29,6 +40,7 @@ func _on_bgm_finished() -> void:
 	## 复用预生成的 BGM 流，避免每 12 秒重计算
 	if _bgm_player != null and _bgm_stream != null:
 		_bgm_player.stream = _bgm_stream
+		_bgm_player.pitch_scale = 1.18 if _boss_mode else 1.0
 		_bgm_player.play()
 
 func _generate_bgm() -> AudioStreamWAV:

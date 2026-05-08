@@ -49,18 +49,24 @@ func _ready() -> void:
 
 
 func _update_appearance() -> void:
-	var level: int = GameState.shoot_level
+	var visual_tier: int = _get_visual_tier()
+	var shoot_level: int = GameState.shoot_level
 	if _sprite:
-		_sprite.texture = SpriteFactory.create_player_sprite(level)
+		_sprite.texture = SpriteFactory.create_player_sprite(visual_tier)
 	if _engine_glow:
 		_engine_glow.visible = true
 		_engine_glow.position.y = 32.0
-		_engine_glow.modulate = Color(1.0, 0.6, 0.2, 0.6 + level * 0.2)
-		_engine_glow.scale = Vector2(1.0, 1.0 + level * 0.06)
+		_engine_glow.modulate = Color(1.0, 0.6, 0.2, 0.6 + shoot_level * 0.2)
+		_engine_glow.scale = Vector2(1.0, 1.0 + shoot_level * 0.06)
 		if _engine_glow.texture == null:
 			var tex_path: String = "res://assets/sprites/ui/engine_flame.png"
 			if ResourceLoader.exists(tex_path):
 				_engine_glow.texture = load(tex_path)
+
+func _get_visual_tier() -> int:
+	## 外形按角色等级分档：每 5 级一档，最多 5 档
+	var tier := int((GameState.level - 1) / 5) + 1
+	return clampi(tier, 1, 5)
 
 
 func _update_pickup_radius() -> void:

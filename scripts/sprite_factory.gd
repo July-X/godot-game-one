@@ -10,9 +10,18 @@ func _load_png(path: String) -> ImageTexture:
 			var img = tex.get_image()
 			if img:
 				return ImageTexture.create_from_image(img)
+	if FileAccess.file_exists(full_path):
+		var raw_img: Image = Image.load_from_file(full_path)
+		if raw_img and not raw_img.is_empty():
+			return ImageTexture.create_from_image(raw_img)
 	return null
 
 func create_player_sprite(level: int = 1) -> ImageTexture:
+	var clamped_level: int = maxi(level, 1)
+	var variant_png := _load_png("player/variants/lv%02d.png" % clamped_level)
+	if variant_png:
+		return variant_png
+
 	var png := _load_png("player/base.png")
 	if png:
 		return png
@@ -202,7 +211,12 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 
-func create_boss_sprite() -> ImageTexture:
+func create_boss_sprite(variant_id: int = 0) -> ImageTexture:
+	if variant_id > 0:
+		var variant_png := _load_png("enemies/boss/boss_%02d.png" % variant_id)
+		if variant_png:
+			return variant_png
+
 	var png := _load_png("enemies/boss/boss.png")
 	if png:
 		return png

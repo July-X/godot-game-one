@@ -28,6 +28,8 @@ func reset() -> void:
 	_has_bounced = false
 	_level = 1
 	_lifetime = 4.0
+	remove_from_group("player_bullets")
+	remove_from_group("enemy_bullets")
 	_sprite.modulate = Color(1, 1, 1, 1)
 
 func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0) -> void:
@@ -39,13 +41,17 @@ func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: in
 	_has_bounced = false
 	_level = level
 	_speed = speed
+	remove_from_group("player_bullets")
+	remove_from_group("enemy_bullets")
 	if is_player:
 		add_to_group("player_bullets")
+	else:
+		add_to_group("enemy_bullets")
 	_apply_bullet_appearance()
 
 func _exit_tree() -> void:
-	if _is_player_bullet:
-		remove_from_group("player_bullets")
+	remove_from_group("player_bullets")
+	remove_from_group("enemy_bullets")
 
 func _apply_bullet_appearance() -> void:
 	if _is_player_bullet:

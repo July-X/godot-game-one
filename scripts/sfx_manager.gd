@@ -11,7 +11,7 @@ var _stream_ui_select: AudioStreamWAV
 var _stream_explosion: AudioStreamWAV
 
 func _ready() -> void:
-	_stream_shoot = _generate_sweep(1200.0, 400.0, 0.06, 0.2)
+	_stream_shoot = _generate_sweep(1200.0, 400.0, 0.06, 0.15)
 	_stream_enemy_death = _generate_sweep(600.0, 100.0, 0.15, 0.3)
 	_stream_player_hurt = _generate_tone(200.0, 0.2, 0.4)
 	_stream_ui_confirm = _generate_tone(800.0, 0.08, 0.25)

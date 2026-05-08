@@ -14,6 +14,11 @@ var _player: Node2D = null
 var _hud: Node = null
 var _elite: Node2D = null
 var _boss: Node2D = null
+var _boss_variant_cycle: Array[int] = []
+var _boss_variant_last: int = 0
+var _current_boss_variant_id: int = 0
+var _boss_fight_active: bool = false
+var _pending_boss_level: int = 0
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
 var _asteroid_timer: float = 0.0
@@ -39,6 +44,25 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
+	_debug_log_variant_assets()
+	_update_variant_debug_overlay()
+
+func _debug_log_variant_assets() -> void:
+	var boss_count := 0
+	for i in range(1, 100):
+		var p := "res://assets/sprites/enemies/boss/boss_%02d.png" % i
+		if not ResourceLoader.exists(p) and not FileAccess.file_exists(p):
+			break
+		boss_count += 1
+
+	var player_count := 0
+	for i in range(1, 100):
+		var p := "res://assets/sprites/player/variants/lv%02d.png" % i
+		if not ResourceLoader.exists(p) and not FileAccess.file_exists(p):
+			break
+		player_count += 1
+
+	print("[variants] boss=", boss_count, " player=", player_count)
 
 func _create_parallax_background() -> void:
 	if _bg_color:
@@ -194,6 +218,7 @@ func _spawn_player() -> void:
 func _spawn_hud() -> void:
 	_hud = _hud_scene.instantiate()
 	add_child(_hud)
+	_update_variant_debug_overlay()
 
 func _spawn_mobile_controls() -> void:
 	if OS.has_feature("android") or OS.has_feature("ios"):
@@ -308,6 +333,10 @@ func _spawn_elite() -> void:
 func _on_elite_died() -> void:
 	_elite = null
 	GameState.post_elite_multiplier = 1.0 + GameState.elite_encounter_count * 0.05
+	if _pending_boss_level > 0 and GameState.game_running:
+		var pending_level: int = _pending_boss_level
+		_pending_boss_level = 0
+		call_deferred("_on_boss_spawn_requested", pending_level)
 
 func _show_elite_warning() -> void:
 	var warning := Label.new()
@@ -336,7 +365,10 @@ func _on_boss_spawn_requested(level: int) -> void:
 	if not GameState.game_running:
 		return
 	if _elite != null and is_instance_valid(_elite):
+		## 精英仍在场时，缓存本次 Boss 触发，待精英死亡后立即补发
+		_pending_boss_level = maxi(_pending_boss_level, level)
 		return
+	_pending_boss_level = 0
 	_show_boss_warning()
 	var timer := get_tree().create_timer(2.0)
 	timer.timeout.connect(func():
@@ -344,8 +376,13 @@ func _on_boss_spawn_requested(level: int) -> void:
 	)
 
 func _spawn_boss(level: int) -> void:
+	_enter_boss_fight_mode()
 	_boss = _boss_scene.instantiate()
 	_boss.position = Vector2(640, -80)
+	var variant_id := _pick_boss_variant_id()
+	_current_boss_variant_id = variant_id
+	if _boss.has_method("set_sprite_variant"):
+		_boss.set_sprite_variant(variant_id)
 	_boss.setup(level)
 	if _player and is_instance_valid(_player):
 		_boss.set_target(_player)
@@ -353,37 +390,105 @@ func _spawn_boss(level: int) -> void:
 	add_child(_boss)
 	var tween := create_tween()
 	tween.tween_property(_boss, "position", Vector2(640, 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_update_variant_debug_overlay()
+
+func _pick_boss_variant_id() -> int:
+	var variant_count := 0
+	for i in range(1, 100):
+		var p := "res://assets/sprites/enemies/boss/boss_%02d.png" % i
+		if not ResourceLoader.exists(p) and not FileAccess.file_exists(p):
+			break
+		variant_count += 1
+	if variant_count <= 0:
+		return 0
+
+	if _boss_variant_cycle.is_empty():
+		for id in range(1, variant_count + 1):
+			_boss_variant_cycle.append(id)
+		_boss_variant_cycle.shuffle()
+
+	if _boss_variant_cycle.size() >= 2 and _boss_variant_cycle[0] == _boss_variant_last:
+		var tmp: int = _boss_variant_cycle[0]
+		_boss_variant_cycle[0] = _boss_variant_cycle[1]
+		_boss_variant_cycle[1] = tmp
+
+	var picked: int = _boss_variant_cycle.pop_front()
+	_boss_variant_last = picked
+	return picked
 
 func _on_boss_died() -> void:
 	_boss = null
 	GameState.force_set_boss_active(false)
+	_exit_boss_fight_mode()
+	_update_variant_debug_overlay()
 	_show_reward_panel()
 
+func _enter_boss_fight_mode() -> void:
+	_boss_fight_active = true
+	_clear_non_boss_entities()
+	if _bg_color:
+		_bg_color.color = Color(0.14, 0.03, 0.03, 1.0)
+	if BGM and BGM.has_method("play_boss_bgm"):
+		BGM.play_boss_bgm()
+
+func _exit_boss_fight_mode() -> void:
+	_boss_fight_active = false
+	if _bg_color:
+		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
+	if BGM and BGM.has_method("play_bgm"):
+		BGM.play_bgm()
+
+func _clear_non_boss_entities() -> void:
+	for n in get_tree().get_nodes_in_group("enemies"):
+		if n == _boss:
+			continue
+		if n and is_instance_valid(n):
+			n.queue_free()
+	for a in get_tree().get_nodes_in_group("asteroids"):
+		if a and is_instance_valid(a):
+			a.queue_free()
+	for b in get_tree().get_nodes_in_group("player_bullets"):
+		if b and is_instance_valid(b):
+			b.queue_free()
+	for b in get_tree().get_nodes_in_group("enemy_bullets"):
+		if b and is_instance_valid(b):
+			b.queue_free()
+	for p in get_tree().get_nodes_in_group("powerups"):
+		if p and is_instance_valid(p):
+			p.queue_free()
+
 func _show_boss_warning() -> void:
+	var screen := get_viewport_rect().size
+	var banner_h: float = maxf(96.0, screen.y * 0.16)
+	var banner_y := screen.y * 0.28
+
 	var cl := CanvasLayer.new()
 	cl.layer = 10
 	add_child(cl)
 
 	var overlay := ColorRect.new()
-	overlay.color = Color(0.08, 0.0, 0.0, 0.7)
-	overlay.position = Vector2(0, 200)
-	overlay.size = Vector2(1280, 120)
+	overlay.color = Color(0.08, 0.0, 0.0, 0.0)
+	overlay.position = Vector2(0, banner_y)
+	overlay.size = Vector2(screen.x, banner_h)
 	cl.add_child(overlay)
 
 	var warning := Label.new()
-	warning.text = "⚠ BOSS 来袭！"
+	warning.text = "BOSS 来袭！"
 	warning.add_theme_color_override("font_color", Color(1.0, 0.15, 0.25, 1))
 	warning.add_theme_font_size_override("font_size", 52)
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	warning.position = Vector2(0, 200)
-	warning.size = Vector2(1280, 120)
+	warning.position = Vector2(0, banner_y)
+	warning.size = Vector2(screen.x, banner_h)
 	warning.modulate = Color(1, 1, 1, 0)
 	cl.add_child(warning)
-	var tween := create_tween().set_parallel(true)
-	tween.tween_property(warning, "modulate", Color(1, 1, 1, 1), 0.2)
-	tween.tween_interval(2.2)
-	tween.tween_property(warning, "modulate:a", 0.0, 0.3)
+
+	var tween := create_tween()
+	tween.tween_property(overlay, "color:a", 0.72, 0.2)
+	tween.parallel().tween_property(warning, "modulate:a", 1.0, 0.2)
+	tween.tween_interval(2.0)
+	tween.tween_property(overlay, "color:a", 0.0, 0.3)
+	tween.parallel().tween_property(warning, "modulate:a", 0.0, 0.3)
 	tween.tween_callback(cl.queue_free)
 
 var _reward_panel_scene = preload("res://scripts/reward_panel.gd")
@@ -398,9 +503,11 @@ func _show_reward_panel() -> void:
 func _on_reward_chosen(reward_type: String) -> void:
 	if _player and is_instance_valid(_player) and _player.has_method("_update_appearance"):
 		_player._update_appearance()
+	_update_variant_debug_overlay()
 
 func _on_player_died() -> void:
 	GameState.game_running = false
+	_pending_boss_level = 0
 	_show_death_marquee()
 
 func _show_death_marquee() -> void:
@@ -433,6 +540,16 @@ func _restart_on_touch() -> void:
 func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
 		_player.on_level_up()
+	_update_variant_debug_overlay()
+
+func _get_player_visual_tier() -> int:
+	var tier := int((GameState.level - 1) / 5) + 1
+	return clampi(tier, 1, 5)
+
+func _update_variant_debug_overlay() -> void:
+	if _hud and is_instance_valid(_hud) and _hud.has_method("set_variant_debug"):
+		var boss_alive := _boss != null and is_instance_valid(_boss)
+		_hud.set_variant_debug(_get_player_visual_tier(), _current_boss_variant_id, boss_alive)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
