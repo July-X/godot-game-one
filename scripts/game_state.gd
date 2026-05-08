@@ -10,6 +10,7 @@ signal skill_used
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
 signal boss_defeated
+signal boss_reward_applied
 
 var score: int = 0
 var level: int = 1
@@ -200,3 +201,6 @@ func on_boss_killed() -> void:
 
 func force_set_boss_active(v: bool) -> void:
 	boss_active = v
+
+func notify_boss_reward_applied() -> void:
+	boss_reward_applied.emit()

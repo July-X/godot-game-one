@@ -131,5 +131,6 @@ func _on_reward_clicked(reward_type: String) -> void:
 		"shield":
 			GameState.shield_layers = min(GameState.shield_layers + 3, 30)
 			GameState.shield_changed.emit(GameState.shield_layers)
+	GameState.notify_boss_reward_applied()
 	reward_chosen.emit(reward_type)
 	queue_free()

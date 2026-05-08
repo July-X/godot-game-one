@@ -217,161 +217,148 @@ func create_boss_sprite(variant_id: int = 0) -> ImageTexture:
 		if variant_png:
 			return variant_png
 
-	var png := _load_png("enemies/boss/boss.png")
-	if png:
-		return png
-	var w: int = 180
-	var h: int = 180
+	var base_png := _load_png("enemies/boss/boss.png")
+	if base_png:
+		return base_png
+
+	var w: int = 192
+	var h: int = 192
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var cx: int = w / 2
 	var cy: int = h / 2
+	var id: int = maxi(variant_id, 1)
 
-	## 背景光晕
+	var hull_col: Color
+	var stripe_col: Color
+	var glow_col: Color
+	match (id - 1) % 5:
+		0:
+			hull_col = Color(0.24, 0.32, 0.42, 1.0)
+			stripe_col = Color(0.85, 0.2, 0.2, 1.0)
+			glow_col = Color(0.45, 0.85, 1.0, 1.0)
+		1:
+			hull_col = Color(0.28, 0.28, 0.36, 1.0)
+			stripe_col = Color(0.95, 0.55, 0.1, 1.0)
+			glow_col = Color(0.3, 1.0, 0.8, 1.0)
+		2:
+			hull_col = Color(0.18, 0.3, 0.38, 1.0)
+			stripe_col = Color(0.35, 0.75, 1.0, 1.0)
+			glow_col = Color(0.85, 0.95, 1.0, 1.0)
+		3:
+			hull_col = Color(0.3, 0.24, 0.34, 1.0)
+			stripe_col = Color(0.9, 0.25, 0.75, 1.0)
+			glow_col = Color(0.95, 0.65, 1.0, 1.0)
+		_:
+			hull_col = Color(0.26, 0.3, 0.34, 1.0)
+			stripe_col = Color(0.95, 0.82, 0.2, 1.0)
+			glow_col = Color(1.0, 0.92, 0.65, 1.0)
+
+	# Main fuselage (pointing up)
 	for y in range(h):
 		for x in range(w):
-			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d < 85.0:
-				var t: float = d / 85.0
-				var glow: float = (1.0 - t) * (1.0 - t) * 0.08
-				if glow > 0.005:
-					img.set_pixel(x, y, Color(0.15, 0.05, 0.25, glow))
-
-	## 主体核心 — 暗紫/黑金属质感
-	for y in range(26, h - 26):
-		for x in range(16, w - 16):
 			var dx: float = float(x - cx)
-			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			var body_r: float = 54.0 + sin(dy * 0.1) * 8.0
-			if d < body_r:
-				var t: float = d / body_r
-				var center_dist: float = abs(dy) / body_r
-				var r: float = 0.28 + (1.0 - center_dist) * 0.15
-				var g: float = 0.06 + (1.0 - center_dist) * 0.06
-				var b: float = 0.32 + (1.0 - center_dist) * 0.18
-				var a: float = 1.0 - t * 0.25
-				img.set_pixel(x, y, Color(r - t * 0.1, g - t * 0.03, b - t * 0.1, a))
+			var t_y: float = (dy + 72.0) / 144.0
+			if t_y < 0.0 or t_y > 1.0:
+				continue
+			var half_w: float = 14.0 + sin(t_y * PI) * 26.0
+			if dy < -40.0:
+				half_w = max(4.0, 14.0 + (dy + 40.0) * 0.55)
+			elif dy > 38.0:
+				half_w = max(8.0, 40.0 - (dy - 38.0) * 0.6)
+			if abs(dx) <= half_w and dy > -76.0 and dy < 74.0:
+				var edge: float = 1.0 - abs(dx) / max(half_w, 1.0)
+				var shade: float = 0.72 + edge * 0.28
+				var cockpit_shadow: float = 1.0
+				if dy < -8.0:
+					cockpit_shadow = 0.85
+				img.set_pixel(x, y, Color(hull_col.r * shade * cockpit_shadow, hull_col.g * shade * cockpit_shadow, hull_col.b * shade * cockpit_shadow, 1.0))
 
-	## 外装甲环 — 深紫科幻风格
-	for y in range(h):
-		for x in range(w):
-			var dx: float = float(x - cx)
-			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d > 58.0 and d < 72.0:
-				var ring_t: float = (d - 58.0) / 14.0
-				var edge_bright: float = 0.6 + sin(dx * 0.15 + dy * 0.1) * 0.2
-				img.set_pixel(x, y, Color(
-					(0.45 + ring_t * 0.2) * edge_bright,
-					(0.12 + ring_t * 0.05) * edge_bright,
-					(0.5 + ring_t * 0.15) * edge_bright,
-					0.85 + abs(d - 65.0) * 0.02
-				))
-
-	## 能量环 — 内侧发光
-	for y in range(h):
-		for x in range(w):
-			var dx: float = float(x - cx)
-			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d > 50.0 and d < 56.0:
-				var glow: float = 0.3 * (1.0 - abs(d - 53.0) / 3.0)
-				img.set_pixel(x, y, Color(0.35, 0.1, 0.7, glow))
-
-	## 核心眼 — 发光红色
-	for y in range(h):
-		for x in range(w):
-			var dx: float = float(x - cx)
-			var dy: float = float(y - cy)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d < 16.0:
-				var t: float = d / 16.0
-				var eye_r: float = 0.95 - t * 0.3
-				var eye_g: float = 0.12 - t * 0.08
-				var eye_b: float = 0.08 - t * 0.05
-				img.set_pixel(x, y, Color(eye_r, eye_g, eye_b, 1.0))
-			elif d < 22.0 and d >= 16.0:
-				var glow: float = 0.5 * (1.0 - (d - 16.0) / 6.0)
-				img.set_pixel(x, y, Color(0.6, 0.05, 0.05, glow))
-
-	## 瞳孔亮点
-	for y in range(h):
-		for x in range(w):
-			var dx: float = float(x - cx)
-			var dy: float = float(y - cy - 3)
-			var d: float = sqrt(dx * dx + dy * dy)
-			if d < 5.0:
-				var t: float = d / 5.0
-				img.set_pixel(x, y, Color(1.0, 0.6 - t * 0.3, 0.4 - t * 0.3, 1.0 - t))
-			elif d < 8.0:
-				var g: float = 0.2 * (1.0 - (d - 5.0) / 3.0)
-				img.set_pixel(x, y, Color(0.8, 0.3, 0.1, g))
-
-	## 侧翼 — 后掠式暗红能量翼
+	# Swept wings
 	for side in [-1, 1]:
-		for y in range(cy - 44, cy + 44):
-			for x in range(max(0, cx + side * 48), min(w, cx + side * 88)):
-				var t: float = float(abs(x - cx) - 48) / 40.0
-				var wing_w: float = 1.0 - float(abs(y - cy)) / 44.0
-				if t > 0 and t < 1.0 and wing_w > 0:
-					var alpha: float = wing_w * (1.0 - t * 0.85) * 0.85
-					var highlight: float = 0.5 + sin(float(x) * 0.12 + float(y) * 0.08) * 0.3
-					img.set_pixel(x, y, Color(
-						0.25 * highlight * (1.0 - t * 0.3),
-						0.05 * highlight * (1.0 - t * 0.5),
-						0.3 * highlight * (1.0 + t * 0.2),
-						alpha
-					))
+		for y in range(cy - 24, cy + 56):
+			for x in range(w):
+				var dy2: float = float(y - cy)
+				var outer: float = 60.0 + dy2 * 0.55
+				var inner: float = 28.0 + dy2 * 0.22
+				var dist: float = abs(float(x - cx))
+				if dist >= inner and dist <= outer and dy2 > -24.0 and dy2 < 56.0:
+					if sign(float(x - cx)) != float(side):
+						continue
+					var w_t: float = (dist - inner) / max(outer - inner, 1.0)
+					var alpha: float = 0.95 - w_t * 0.35
+					var wing_shade: float = 0.7 + (1.0 - w_t) * 0.3
+					img.set_pixel(x, y, Color(hull_col.r * wing_shade, hull_col.g * wing_shade, hull_col.b * wing_shade, alpha))
 
-	## 翼尖亮线
+	# Tail fins
 	for side in [-1, 1]:
-		for dy in range(-30, 31):
-			var sx: int = cx + side * 82
-			var sy: int = cy + dy
-			if sy >= -1 and sy < h:
-				var edge_w: float = 1.0 - abs(dy) / 30.0
-				if edge_w > 0:
-					img.set_pixel(sx, sy, Color(0.5, 0.15, 0.6, edge_w * 0.6))
-					if side == -1:
-						img.set_pixel(sx - 1, sy, Color(0.3, 0.1, 0.4, edge_w * 0.3))
-					else:
-						img.set_pixel(sx + 1, sy, Color(0.3, 0.1, 0.4, edge_w * 0.3))
+		for y in range(cy + 34, cy + 78):
+			var height_t: float = float(y - (cy + 34)) / 44.0
+			var max_w: float = 10.0 * (1.0 - height_t)
+			for x in range(cx + side * 30, cx + side * 48):
+				var dx3: float = abs(float(x - (cx + side * 38)))
+				if dx3 <= max_w:
+					img.set_pixel(x, y, Color(hull_col.r * 0.85, hull_col.g * 0.85, hull_col.b * 0.9, 0.95))
 
-	## 能量纹路
-	for i in range(6):
-		var angle: float = float(i) * TAU / 6.0
-		var start_r: float = 24.0
-		var end_r: float = 52.0
-		for r in range(int(start_r), int(end_r)):
-			var a2: float = angle + (r - start_r) * 0.03
-			var px: int = cx + int(cos(a2) * r)
-			var py: int = cy + int(sin(a2) * r)
-			if px >= 0 and px < w and py >= 0 and py < h:
-				var energy: float = 0.08 * (1.0 - (r - start_r) / (end_r - start_r))
-				img.set_pixel(px, py, Color(0.2 + energy, 0.04, 0.35 + energy, energy * 3))
+	# Cockpit glass
+	for y in range(cy - 44, cy - 6):
+		for x in range(cx - 14, cx + 15):
+			var dx4: float = float(x - cx) / 14.0
+			var dy4: float = float(y - (cy - 24)) / 20.0
+			if dx4 * dx4 + dy4 * dy4 <= 1.0:
+				var t2: float = dx4 * dx4 + dy4 * dy4
+				var glass: Color = Color(0.35 + (1.0 - t2) * 0.22, 0.72 + (1.0 - t2) * 0.18, 0.92 + (1.0 - t2) * 0.08, 0.86)
+				img.set_pixel(x, y, glass)
 
-	## 炮塔(4个方向)
-	for i in range(4):
-		var a: float = float(i) * TAU / 4.0
-		var bx: int = cx + int(cos(a) * 54.0)
-		var by: int = cy + int(sin(a) * 54.0)
-		for dy in range(-7, 8):
-			for dx in range(-7, 8):
-				var px: int = bx + dx
-				var py: int = by + dy
-				if px >= 0 and px < w and py >= 0 and py < h:
-					var dd: float = sqrt(float(dx * dx + dy * dy))
-					if dd < 5.0:
-						img.set_pixel(px, py, Color(0.55, 0.12, 0.5, 1.0 - dd * 0.12))
-					elif dd < 7.0:
-						var ring: float = 0.35 * (1.0 - (dd - 5.0) / 2.0)
-						img.set_pixel(px, py, Color(0.3, 0.08, 0.35, ring))
+	# Stripe / paint markings
+	for y in range(cy - 12, cy + 50):
+		for x in range(cx - 6, cx + 7):
+			if (y + id * 3) % 9 <= 3:
+				img.set_pixel(x, y, Color(stripe_col.r, stripe_col.g, stripe_col.b, 0.9))
 
-	var tex := ImageTexture.create_from_image(img)
-	return tex
+	# Weapon pods
+	for side in [-1, 1]:
+		for y in range(cy + 2, cy + 26):
+			for x in range(cx + side * 42, cx + side * 58):
+				var dpx: float = abs(float(x - (cx + side * 50)))
+				var dpy: float = abs(float(y - (cy + 14)))
+				if dpx < 7.0 and dpy < 10.0:
+					img.set_pixel(x, y, Color(0.18, 0.2, 0.24, 0.95))
+
+	# Engine glow
+	var engine_y: int = cy + 68
+	for n in range(-2, 3):
+		var ex: int = cx + n * 12
+		for y in range(engine_y - 10, engine_y + 18):
+			for x in range(ex - 5, ex + 6):
+				var dx5: float = abs(float(x - ex)) / 5.0
+				var dy5: float = float(y - engine_y) / 18.0
+				if dx5 <= 1.0 and dy5 >= -0.55 and dy5 <= 1.0:
+					var flame: float = (1.0 - dx5) * (1.0 - max(dy5, 0.0))
+					var a: float = flame * 0.95
+					img.set_pixel(x, y, Color(glow_col.r, glow_col.g, glow_col.b, a))
+
+	# Outline
+	for y in range(1, h - 1):
+		for x in range(1, w - 1):
+			var p := img.get_pixel(x, y)
+			if p.a <= 0.01:
+				continue
+			var border: bool = false
+			for oy in range(-1, 2):
+				for ox in range(-1, 2):
+					if ox == 0 and oy == 0:
+						continue
+					if img.get_pixel(x + ox, y + oy).a <= 0.01:
+						border = true
+						break
+				if border:
+					break
+			if border:
+				img.set_pixel(x, y, Color(0.04, 0.05, 0.07, 1.0))
+
+	return ImageTexture.create_from_image(img)
 
 func create_enemy_sprite(type: int = 0) -> ImageTexture:
 	var png := _load_png("enemies/type_%d.png" % type)

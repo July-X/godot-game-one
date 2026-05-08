@@ -41,6 +41,7 @@ func _ready() -> void:
 	GameState.health_changed.connect(_on_health_changed)
 	GameState.game_over.connect(_on_game_over)
 	GameState.powerup_collected.connect(_on_powerup_collected)
+	GameState.boss_reward_applied.connect(_on_boss_reward_applied)
 	_update_score(0)
 	_update_level(1)
 	_update_health(3, 3)
@@ -253,6 +254,9 @@ func _on_game_over(final_score: int, final_level: int) -> void:
 func _on_powerup_collected(type: String) -> void:
 	_update_powerup_display()
 
+func _on_boss_reward_applied() -> void:
+	_update_powerup_display()
+
 ## ── 显示更新 ────────────────────────────────────────────────
 
 func _update_score(score: int) -> void:
@@ -333,6 +337,30 @@ func _update_powerup_display() -> void:
 		val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bg.add_child(val_lbl)
+
+	var boss_bonus_lines: Array[String] = []
+	if GameState.extra_bullet_count > 0:
+		boss_bonus_lines.append("Boss奖励: 子弹数量 +%d" % GameState.extra_bullet_count)
+	if GameState.extra_damage_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 额外伤害 +%d" % GameState.extra_damage_bonus)
+	if GameState.laser_cd_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 激光冷却 -%.1fs" % GameState.laser_cd_bonus)
+	if GameState.move_speed_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 移速 +%d%%" % int(round(GameState.move_speed_bonus * 100.0)))
+
+	if boss_bonus_lines.size() > 0:
+		var spacer := Control.new()
+		spacer.custom_minimum_size = Vector2(0, 4)
+		_powerup_display.add_child(spacer)
+		for line in boss_bonus_lines:
+			var bonus_lbl := Label.new()
+			bonus_lbl.text = line
+			bonus_lbl.add_theme_color_override("font_color", Color(0.98, 0.82, 0.35, 0.98))
+			bonus_lbl.add_theme_font_size_override("font_size", 11)
+			bonus_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.85))
+			bonus_lbl.add_theme_constant_override("shadow_outline_size", 1)
+			bonus_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			_powerup_display.add_child(bonus_lbl)
 
 func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()

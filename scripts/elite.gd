@@ -4,6 +4,10 @@ signal elite_died
 
 const MAX_SHIELD: int = 80
 const DODGE_RANGE: float = 280.0
+const ELITE_CLOSE_ESCAPE_DIST: float = 165.0
+const ELITE_CLOSE_ESCAPE_COOLDOWN: float = 0.9
+const ELITE_CLOSE_ESCAPE_PUSH: float = 260.0
+const ELITE_CLOSE_ESCAPE_STRAFE: float = 170.0
 var BASE_SPEED: float = 50.0
 var CHASE_SPEED: float = 65.0
 const SHIELD_REGEN_TIME: float = 3.0
@@ -26,6 +30,7 @@ var _laser_active: bool = false
 var _laser_fire_timer: float = 0.0
 var _summon_timer: float = 0.0
 var _health_at_phase_change: bool = false
+var _close_escape_cooldown: float = 0.0
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
@@ -71,11 +76,13 @@ func _physics_process(delta: float) -> void:
 
 	_handle_movement(delta)
 	_handle_dodge(delta)
+	_apply_close_range_escape(delta)
 	_handle_attacks(delta)
 	_update_shield(delta)
 	_update_angry_mode()
 	_update_health_bar()
 	_shoot_timer -= delta
+	_close_escape_cooldown = max(_close_escape_cooldown - delta, 0.0)
 	_pattern_timer += delta
 
 	move_and_slide()
@@ -114,6 +121,22 @@ func _handle_dodge(delta: float) -> void:
 	_dodge_frame_skip += 1
 	if _dodge_frame_skip % 6 == 0:
 		dodge_nearby_bullets()
+
+func _apply_close_range_escape(delta: float) -> void:
+	if _close_escape_cooldown > 0.0:
+		return
+	if not _target or not is_instance_valid(_target):
+		return
+	var dist: float = global_position.distance_to(_target.global_position)
+	if dist > ELITE_CLOSE_ESCAPE_DIST:
+		return
+	var to_target: Vector2 = global_position.direction_to(_target.global_position)
+	var away: Vector2 = -to_target
+	var side: Vector2 = Vector2(-to_target.y, to_target.x) * _dodge_direction
+	var escape_vel: Vector2 = away * ELITE_CLOSE_ESCAPE_PUSH + side * ELITE_CLOSE_ESCAPE_STRAFE
+	velocity += escape_vel * delta
+	_close_escape_cooldown = ELITE_CLOSE_ESCAPE_COOLDOWN
+	_dodge_direction *= -1.0
 
 func dodge_nearby_bullets() -> void:
 	if not _target or not is_instance_valid(_target):
