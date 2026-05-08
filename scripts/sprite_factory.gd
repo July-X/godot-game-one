@@ -202,6 +202,72 @@ func create_player_sprite(level: int = 1) -> ImageTexture:
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 
+func create_boss_sprite() -> ImageTexture:
+	var png := _load_png("enemies/boss/boss.png")
+	if png:
+		return png
+	var w: int = 180
+	var h: int = 180
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var cx: int = w / 2
+	var cy: int = h / 2
+	## 主体 — 深紫/黑色核心
+	for y in range(30, h - 30):
+		for x in range(20, w - 20):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			var body_r: float = 50.0 + sin(dy * 0.08) * 10.0
+			if d < body_r:
+				var t: float = d / body_r
+				img.set_pixel(x, y, Color(0.35 - t * 0.15, 0.08 - t * 0.04, 0.35 - t * 0.15, 1.0 - t * 0.3))
+	## 外装甲环
+	for y in range(h):
+		for x in range(w):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			if d > 60.0 and d < 75.0:
+				var t: float = abs(d - 67.0) / 7.0
+				img.set_pixel(x, y, Color(0.5 - t * 0.2, 0.1 - t * 0.05, 0.45 - t * 0.2, 1.0 - t * 0.5))
+	## 红色核心眼
+	for y in range(h):
+		for x in range(w):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			if d < 18.0:
+				var t: float = d / 18.0
+				img.set_pixel(x, y, Color(0.9 - t * 0.3, 0.1 - t * 0.05, 0.1 - t * 0.05, 1.0))
+			elif d < 24.0 and d > 18.0:
+				var t: float = (d - 18.0) / 6.0
+				img.set_pixel(x, y, Color(0.5, 0.05, 0.05, 1.0 - t))
+	## 侧翼
+	for side in [-1, 1]:
+		for y in range(cy - 40, cy + 40):
+			for x in range(max(0, cx + side * 50), max(0, cx + side * 80)):
+				if x >= w: break
+				var t: float = float(abs(x - cx) - 50) / 30.0
+				var wing_w: float = 1.0 - float(abs(y - cy)) / 40.0
+				if t > 0 and t < 1.0 and wing_w > 0:
+					img.set_pixel(x, y, Color(0.3 - t * 0.1, 0.06 - t * 0.03, 0.3 - t * 0.1, wing_w * (1.0 - t * 0.8)))
+	## 炮塔底座
+	for i in range(4):
+		var angle: float = float(i) * TAU / 4.0
+		var bx: int = cx + int(cos(angle) * 55.0)
+		var by: int = cy + int(sin(angle) * 55.0)
+		for dy in range(-6, 7):
+			for dx in range(-6, 7):
+				var px: int = bx + dx
+				var py: int = by + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					var d2: float = sqrt(float(dx * dx + dy * dy))
+					if d2 < 6.0:
+						img.set_pixel(px, py, Color(0.4, 0.1, 0.4, (1.0 - d2 / 6.0) * 0.8))
+	var tex := ImageTexture.create_from_image(img)
+	return tex
+
 func create_enemy_sprite(type: int = 0) -> ImageTexture:
 	var png := _load_png("enemies/type_%d.png" % type)
 	if png:

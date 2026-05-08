@@ -93,7 +93,7 @@ func _physics_process(delta: float) -> void:
 
 	if _mobile_mode:
 		if _touch_move.length() > 0.1:
-			var target: Vector2 = _touch_move * move_speed
+			var target: Vector2 = _touch_move * move_speed * GameState.get_move_speed_multiplier()
 			_mobile_vel = _mobile_vel.lerp(target, 4.0 * delta)
 			velocity = _mobile_vel
 			rotation = velocity.angle() + PI * 0.5
@@ -101,7 +101,7 @@ func _physics_process(delta: float) -> void:
 			_mobile_vel = _mobile_vel.lerp(Vector2.ZERO, 5.0 * delta)
 			velocity = _mobile_vel
 	else:
-		velocity = _mouse_vel.limit_length(move_speed)
+		velocity = _mouse_vel.limit_length(move_speed * GameState.get_move_speed_multiplier())
 		if velocity.length() > 10.0:
 			rotation = velocity.angle() + PI * 0.5
 

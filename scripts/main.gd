@@ -5,6 +5,7 @@ var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
+var _boss_scene = preload("res://scenes/entities/boss.tscn")
 var _asteroid_scene = preload("res://scenes/entities/asteroid.tscn")
 var _hud_scene = preload("res://scenes/ui/hud.tscn")
 var _mobile_controls_scene = preload("res://scenes/ui/mobile_controls.tscn")
@@ -12,6 +13,7 @@ var _mobile_controls_scene = preload("res://scenes/ui/mobile_controls.tscn")
 var _player: Node2D = null
 var _hud: Node = null
 var _elite: Node2D = null
+var _boss: Node2D = null
 var _enemy_spawn_timer: float = 0.0
 var _difficulty_timer: float = 0.0
 var _asteroid_timer: float = 0.0
@@ -36,6 +38,7 @@ func _ready() -> void:
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
+	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
 
 func _create_parallax_background() -> void:
 	if _bg_color:
@@ -205,6 +208,8 @@ func _process(delta: float) -> void:
 
 	if _elite != null and is_instance_valid(_elite):
 		return
+	if _boss != null and is_instance_valid(_boss):
+		return
 
 	_asteroid_timer -= delta
 	if _asteroid_timer <= 0:
@@ -322,6 +327,71 @@ func _show_elite_warning() -> void:
 	tween.tween_interval(1.2)
 	tween.tween_property(warning, "modulate:a", 0.0, 0.5)
 	tween.tween_callback(warning.queue_free)
+
+## ── Boss 系统 ──────────────────────────────────────────────
+
+func _on_boss_spawn_requested(level: int) -> void:
+	if _boss != null and is_instance_valid(_boss):
+		return
+	if not GameState.game_running:
+		return
+	_clear_minions()
+	call_deferred("_spawn_boss", level)
+
+func _clear_minions() -> void:
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	for e in enemies:
+		if e != _boss and is_instance_valid(e):
+			e.queue_free()
+
+func _spawn_boss(level: int) -> void:
+	_show_boss_warning()
+	_boss = _boss_scene.instantiate()
+	_boss.position = Vector2(640, -80)
+	_boss.setup(level)
+	if _player and is_instance_valid(_player):
+		_boss.set_target(_player)
+	_boss.boss_died.connect(_on_boss_died)
+	add_child(_boss)
+	var tween := create_tween()
+	tween.tween_property(_boss, "position", Vector2(640, 160), 2.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _on_boss_died() -> void:
+	_boss = null
+	GameState.force_set_boss_active(false)
+	_show_reward_panel()
+
+func _show_boss_warning() -> void:
+	var warning := Label.new()
+	warning.text = "⚠ BOSS 来袭！"
+	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.4, 1))
+	warning.add_theme_font_size_override("font_size", 36)
+	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	warning.position = Vector2(340, 260)
+	warning.size = Vector2(600, 80)
+	warning.z_index = 150
+	warning.modulate = Color(1, 1, 1, 0)
+	add_child(warning)
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(warning, "modulate", Color(1, 1, 1, 1), 0.2)
+	tween.tween_property(warning, "position:y", 240, 0.3).set_trans(Tween.TRANS_QUAD)
+	tween.tween_interval(1.2)
+	tween.tween_property(warning, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(warning.queue_free)
+
+var _reward_panel_scene = preload("res://scripts/reward_panel.gd")
+
+func _show_reward_panel() -> void:
+	var panel := _reward_panel_scene.new()
+	panel.z_index = 200
+	panel.setup()
+	panel.reward_chosen.connect(_on_reward_chosen)
+	add_child(panel)
+
+func _on_reward_chosen(reward_type: String) -> void:
+	if _player and is_instance_valid(_player) and _player.has_method("_update_appearance"):
+		_player._update_appearance()
 
 func _on_player_died() -> void:
 	GameState.game_running = false

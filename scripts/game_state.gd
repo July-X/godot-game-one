@@ -5,9 +5,11 @@ signal level_changed(new_level)
 signal health_changed(current_health, max_health)
 signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
-signal elite_spawn_requested
 signal shield_changed(layers)
 signal skill_used
+signal elite_spawn_requested
+signal boss_spawn_requested(boss_level)
+signal boss_defeated
 
 var score: int = 0
 var level: int = 1
@@ -17,7 +19,7 @@ var last_elite_threshold: int = 0
 var elite_encounter_count: int = 0
 var post_elite_multiplier: float = 1.0
 var current_health: int = 2000
-var max_health: int = 3
+var max_health: int = 2000
 var shield_layers: int = 0
 var game_running: bool = false
 var death_message: String = ""
@@ -32,14 +34,22 @@ const SKILL_COOLDOWN_MAX: float = 15.0
 var laser_cooldown: float = 0.0
 const LASER_COOLDOWN_MAX: float = 10.0
 
+## Boss 系统
+var boss_active: bool = false
+var boss_encounter_count: int = 0
+var last_boss_level: int = 0
+
+## Boss 奖励属性（击败后永久增加）
+var laser_cd_bonus: float = 0.0        # 激光冷却减少总和
+var extra_bullet_count: int = 0        # 额外子弹数量
+var extra_damage_bonus: int = 0        # 额外子弹伤害
+var move_speed_bonus: float = 0.0      # 移速加成百分比
+
 func reset_game() -> void:
 	score = 0
 	level = 1
 	kills = 0
 	total_kills = 0
-	last_elite_threshold = 0
-	elite_encounter_count = 0
-	post_elite_multiplier = 1.0
 	current_health = 2000
 	max_health = 2000
 	shield_layers = 0
@@ -51,6 +61,16 @@ func reset_game() -> void:
 	skill_cooldown = 0.0
 	laser_cooldown = 0.0
 	kills_for_next_level = 10
+	last_elite_threshold = 0
+	elite_encounter_count = 0
+	post_elite_multiplier = 1.0
+	boss_active = false
+	boss_encounter_count = 0
+	last_boss_level = 0
+	laser_cd_bonus = 0.0
+	extra_bullet_count = 0
+	extra_damage_bonus = 0
+	move_speed_bonus = 0.0
 
 func add_score(amount: int) -> void:
 	score += amount
@@ -78,6 +98,9 @@ func level_up() -> void:
 	health_changed.emit(current_health, max_health)
 	level_changed.emit(level)
 	SFX.play_ui_confirm()
+	if level > 0 and level % 5 == 0 and level != last_boss_level:
+		last_boss_level = level
+		boss_spawn_requested.emit(level)
 
 func take_damage(amount: int = 1) -> void:
 	if shield_layers > 0:
@@ -132,7 +155,7 @@ func tick_skill_cooldown(delta: float) -> void:
 func use_laser() -> bool:
 	if laser_cooldown > 0 or not game_running:
 		return false
-	laser_cooldown = LASER_COOLDOWN_MAX
+	laser_cooldown = get_laser_cooldown_max()
 	return true
 
 func tick_laser_cooldown(delta: float) -> void:
@@ -144,19 +167,36 @@ func get_laser_damage() -> int:
 	var mul: int = level / 10
 	return base * int(pow(2, mul))
 
+func get_laser_cooldown_max() -> float:
+	return max(LASER_COOLDOWN_MAX - laser_cd_bonus, 5.0)
+
 func get_skill_cooldown_ratio() -> float:
 	if skill_cooldown <= 0:
 		return 0.0
 	return skill_cooldown / SKILL_COOLDOWN_MAX
 
 func get_bullet_count() -> int:
-	return min(2 + shoot_level / 3, 8)
+	return min(2 + shoot_level / 3 + extra_bullet_count, 12)
 
 func get_shoot_cooldown() -> float:
 	return max(0.27 - shoot_speed_level * 0.018, 0.08)
 
 func get_bullet_damage() -> int:
-	return 3 + bullet_power_level
+	return 3 + bullet_power_level + extra_damage_bonus
 
 func get_bullet_spread_angle() -> float:
 	return max(30.0 - shoot_level * 4.0, 10.0)
+
+func get_move_speed_multiplier() -> float:
+	return 1.0 + move_speed_bonus
+
+func on_boss_started() -> void:
+	boss_active = true
+	boss_encounter_count += 1
+
+func on_boss_killed() -> void:
+	boss_active = false
+	boss_defeated.emit()
+
+func force_set_boss_active(v: bool) -> void:
+	boss_active = v
