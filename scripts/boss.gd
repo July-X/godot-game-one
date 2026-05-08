@@ -32,7 +32,7 @@ func setup(level: int) -> void:
 	_level = level
 	var player_dps := _calc_player_dps()
 	_mult = 1.0 + GameState.boss_encounter_count * 0.3
-	_max_health = player_dps * 1.5 * _mult * 4.0
+	_max_health = player_dps * _mult * 3.0
 	_health = _max_health
 	_shoot_angle_offset = randf() * TAU
 	_circle_dir = 1.0 if randf() < 0.5 else -1.0
@@ -159,7 +159,7 @@ func _tick_retreat(delta: float) -> void:
 ## ── 攻击模式 ────────────────────────────────────────────────
 
 func _get_boss_attack_damage() -> int:
-	return max(1, int(ceil(_calc_player_dps() * 0.15 * _mult)))
+	return max(1, 5 + _level * 2 + GameState.boss_encounter_count * 3)
 
 ## 1. 瞄准射击 — 3/5发追踪弹
 func _do_aimed_shot(delta: float, spd: float) -> void:
@@ -258,21 +258,21 @@ func take_damage(amount: int = 1) -> void:
 		die()
 
 func _hit_flash() -> void:
-	var intensity: float = 2.5
+	var intensity: float = 1.8
 	_sprite.modulate = Color(intensity, intensity, intensity, 1.0)
 	var tween := create_tween()
-	tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.1)
+	tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.08)
 
 func _hit_knockback() -> void:
 	if not _target or not is_instance_valid(_target):
 		return
 	var dir: Vector2 = global_position.direction_to(_target.global_position) * -1.0
-	var push: Vector2 = dir * 60.0
+	var push: Vector2 = dir * 25.0
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(self, "global_position", global_position + push, 0.06).set_ease(Tween.EASE_OUT)
-	tween.tween_property(self, "global_position", global_position, 0.12).set_delay(0.06).set_ease(Tween.EASE_IN)
-	tween.tween_property(_sprite, "scale", Vector2(1.3, 0.9), 0.04).set_ease(Tween.EASE_OUT)
-	tween.tween_property(_sprite, "scale", Vector2(1.2, 1.2), 0.1).set_delay(0.04).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "global_position", global_position + push, 0.04).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "global_position", global_position, 0.1).set_delay(0.04).set_ease(Tween.EASE_IN)
+	tween.tween_property(_sprite, "scale", Vector2(1.15, 1.05), 0.03).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_sprite, "scale", Vector2(1.2, 1.2), 0.08).set_delay(0.03).set_ease(Tween.EASE_OUT)
 
 func die() -> void:
 	GameState.on_boss_killed()

@@ -338,7 +338,10 @@ func _on_boss_spawn_requested(level: int) -> void:
 	if _elite != null and is_instance_valid(_elite):
 		return
 	_show_boss_warning()
-	call_deferred("_spawn_boss", level)
+	var timer := get_tree().create_timer(2.0)
+	timer.timeout.connect(func():
+		call_deferred("_spawn_boss", level)
+	)
 
 func _spawn_boss(level: int) -> void:
 	_boss = _boss_scene.instantiate()
@@ -349,7 +352,7 @@ func _spawn_boss(level: int) -> void:
 	_boss.boss_died.connect(_on_boss_died)
 	add_child(_boss)
 	var tween := create_tween()
-	tween.tween_property(_boss, "position", Vector2(640, 160), 2.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_boss, "position", Vector2(640, 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_boss_died() -> void:
 	_boss = null
@@ -357,23 +360,32 @@ func _on_boss_died() -> void:
 	_show_reward_panel()
 
 func _show_boss_warning() -> void:
+	var cl := CanvasLayer.new()
+	cl.layer = 10
+	cl.z_index = 200
+	add_child(cl)
+
+	var overlay := ColorRect.new()
+	overlay.color = Color(0.08, 0.0, 0.0, 0.7)
+	overlay.position = Vector2(0, 200)
+	overlay.size = Vector2(1280, 120)
+	cl.add_child(overlay)
+
 	var warning := Label.new()
 	warning.text = "⚠ BOSS 来袭！"
-	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.3, 1))
-	warning.add_theme_font_size_override("font_size", 42)
+	warning.add_theme_color_override("font_color", Color(1.0, 0.15, 0.25, 1))
+	warning.add_theme_font_size_override("font_size", 52)
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	warning.position = Vector2(0, 260)
-	warning.size = Vector2(1280, 80)
-	warning.z_index = 150
+	warning.position = Vector2(0, 200)
+	warning.size = Vector2(1280, 120)
 	warning.modulate = Color(1, 1, 1, 0)
-	add_child(warning)
+	cl.add_child(warning)
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(warning, "modulate", Color(1, 1, 1, 1), 0.25)
-	tween.tween_property(warning, "position:y", 240, 0.35).set_trans(Tween.TRANS_QUAD)
-	tween.tween_interval(1.8)
-	tween.tween_property(warning, "modulate:a", 0.0, 0.5)
-	tween.tween_callback(warning.queue_free)
+	tween.tween_property(warning, "modulate", Color(1, 1, 1, 1), 0.2)
+	tween.tween_interval(2.2)
+	tween.tween_property(warning, "modulate:a", 0.0, 0.3)
+	tween.tween_callback(cl.queue_free)
 
 var _reward_panel_scene = preload("res://scripts/reward_panel.gd")
 
