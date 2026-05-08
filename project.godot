@@ -15,16 +15,6 @@ run/main_scene="res://scenes/ui/title_screen.tscn"
 config/features=PackedStringArray("4.6")
 config/icon="res://assets/sprites/ui/icon.png"
 
-
-
-[rendering]
-
-2d/options/use_2d_particle_emitter_feedbacks=false
-2d/gpu_particles_2d/collision_enabled=false
-textures/vram_compression/import_etc2_astc=true
-2d/antialiasing/quality=0
-textures/canvas_textures/default_texture_filter=0
-
 [autoload]
 
 GameState="*res://scripts/game_state.gd"
@@ -46,3 +36,11 @@ window/stretch/mode="viewport"
 2d/default_layer_2="enemies"
 2d/default_layer_3="player"
 2d/default_layer_4="enemy_bullets"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
+textures/vram_compression/import_etc2_astc=true
+2d/options/use_2d_particle_emitter_feedbacks=false
+2d/gpu_particles_2d/collision_enabled=false
+2d/antialiasing/quality=0

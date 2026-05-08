@@ -335,17 +335,12 @@ func _on_boss_spawn_requested(level: int) -> void:
 		return
 	if not GameState.game_running:
 		return
-	_clear_minions()
+	if _elite != null and is_instance_valid(_elite):
+		return
+	_show_boss_warning()
 	call_deferred("_spawn_boss", level)
 
-func _clear_minions() -> void:
-	var enemies := get_tree().get_nodes_in_group("enemies")
-	for e in enemies:
-		if e != _boss and is_instance_valid(e):
-			e.queue_free()
-
 func _spawn_boss(level: int) -> void:
-	_show_boss_warning()
 	_boss = _boss_scene.instantiate()
 	_boss.position = Vector2(640, -80)
 	_boss.setup(level)
@@ -364,20 +359,20 @@ func _on_boss_died() -> void:
 func _show_boss_warning() -> void:
 	var warning := Label.new()
 	warning.text = "⚠ BOSS 来袭！"
-	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.4, 1))
-	warning.add_theme_font_size_override("font_size", 36)
+	warning.add_theme_color_override("font_color", Color(1.0, 0.2, 0.3, 1))
+	warning.add_theme_font_size_override("font_size", 42)
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	warning.position = Vector2(340, 260)
-	warning.size = Vector2(600, 80)
+	warning.position = Vector2(0, 260)
+	warning.size = Vector2(1280, 80)
 	warning.z_index = 150
 	warning.modulate = Color(1, 1, 1, 0)
 	add_child(warning)
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(warning, "modulate", Color(1, 1, 1, 1), 0.2)
-	tween.tween_property(warning, "position:y", 240, 0.3).set_trans(Tween.TRANS_QUAD)
-	tween.tween_interval(1.2)
-	tween.tween_property(warning, "modulate:a", 0.0, 0.4)
+	tween.tween_property(warning, "modulate", Color(1, 1, 1, 1), 0.25)
+	tween.tween_property(warning, "position:y", 240, 0.35).set_trans(Tween.TRANS_QUAD)
+	tween.tween_interval(1.8)
+	tween.tween_property(warning, "modulate:a", 0.0, 0.5)
 	tween.tween_callback(warning.queue_free)
 
 var _reward_panel_scene = preload("res://scripts/reward_panel.gd")

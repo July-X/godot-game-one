@@ -5,6 +5,9 @@ signal reward_chosen(reward_type: String)
 var _rewards: Array[Dictionary] = []
 
 func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_STOP
+
+func setup() -> void:
 	anchor_left = 0.5
 	anchor_top = 0.5
 	anchor_right = 0.5
@@ -13,18 +16,15 @@ func _ready() -> void:
 	offset_top = -120.0
 	offset_right = 250.0
 	offset_bottom = 120.0
-	mouse_filter = Control.MOUSE_FILTER_STOP
-
-func setup() -> void:
 	for child in get_children():
 		child.queue_free()
 	_rewards = _generate_rewards()
-	_build_ui()
+	call_deferred("_build_ui")
 
 func _generate_rewards() -> Array[Dictionary]:
 	var pool: Array[Dictionary] = [
 		{"type": "laser_cd", "name": "激光加速", "desc": "激光冷却 -1s", "icon": "⚡"},
-		{"type": "bullet_count", "name": "弹幕扩展", "desc": "子弹 +1", "icon": "✦"},
+		{"type": "bullet_count", "name": "弹幕扩展", "desc": "子弹数量 +1", "icon": "✦"},
 		{"type": "damage", "name": "火力增强", "desc": "子弹伤害 +2", "icon": "🔥"},
 		{"type": "speed", "name": "机动强化", "desc": "移速 +10%", "icon": "➤"},
 		{"type": "shield", "name": "护盾充能", "desc": "护盾 +3 层", "icon": "🛡"},
@@ -110,15 +110,12 @@ func _build_ui() -> void:
 		hover_border.border_width_right = 2
 		hover_border.border_width_bottom = 2
 		hover_border.border_color = Color(0.7, 0.5, 1.0, 1.0)
-
-		var orig_bg: Color = sb.bg_color
 		btn.mouse_entered.connect(func():
 			card.add_theme_stylebox_override("panel", hover_border)
 		)
 		btn.mouse_exited.connect(func():
 			card.add_theme_stylebox_override("panel", sb)
 		)
-
 		add_child(card)
 
 func _on_reward_clicked(reward_type: String) -> void:

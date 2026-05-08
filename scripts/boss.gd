@@ -13,9 +13,11 @@ var _health: float = 80.0
 var _level: int = 5
 var _mult: float = 1.0
 var _circle_angle: float = 0.0
+var _circle_dir: float = 1.0
 var _attack_index: int = 0
 var _shoot_timer: float = 0.0
 var _shoot_angle_offset: float = 0.0
+var _circle_radius: float = 220.0
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
@@ -28,10 +30,12 @@ var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
 func setup(level: int) -> void:
 	_level = level
+	var player_dps := _calc_player_dps()
 	_mult = 1.0 + GameState.boss_encounter_count * 0.3
-	_max_health = 80.0 * _mult * (1.0 + float(level) * 0.08)
+	_max_health = player_dps * 1.5 * _mult * 4.0
 	_health = _max_health
 	_shoot_angle_offset = randf() * TAU
+	_circle_dir = 1.0 if randf() < 0.5 else -1.0
 
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_boss_sprite()
@@ -41,7 +45,13 @@ func setup(level: int) -> void:
 	if _label:
 		_label.text = "暗影主宰 Lv%d" % level
 	add_to_group("boss")
-	add_to_group("enemies")
+
+func _calc_player_dps() -> float:
+	var count: float = GameState.get_bullet_count()
+	var dmg: float = GameState.get_bullet_damage()
+	var cd: float = GameState.get_shoot_cooldown()
+	var dps: float = count * dmg / cd
+	return max(dps, 5.0)
 
 func set_target(target: Node2D) -> void:
 	_target = target
@@ -72,8 +82,6 @@ func _physics_process(delta: float) -> void:
 	if _health_bar:
 		_health_bar.value = _health
 
-	queue_redraw()
-
 ## ── 状态切换 ────────────────────────────────────────────────
 
 func _pick_state() -> void:
@@ -83,9 +91,9 @@ func _pick_state() -> void:
 		_state_timer = _state_duration
 		return
 	match randi() % 4:
-		0: _enter_state(State.CIRCLE, randf_range(2.0, 3.5))
+		0: _enter_state(State.CIRCLE, randf_range(1.5, 3.0))
 		1: _enter_state(State.ATTACK, randf_range(1.2, 2.5))
-		2: _enter_state(State.RETREAT, randf_range(1.0, 1.8))
+		2: _enter_state(State.RETREAT, randf_range(0.8, 1.5))
 		3: _enter_state(State.CIRCLE, randf_range(1.5, 3.0))
 
 func _enter_state(s: int, dur: float) -> void:
@@ -101,18 +109,20 @@ func _check_enrage() -> void:
 		modulate = Color(1.4, 0.6, 0.4, 1.0)
 		if _label:
 			_label.text = "⚠ 暗影主宰 愤怒!"
+		_circle_radius = 160.0
+		_circle_dir *= -1.0
 
 ## ── idle ──
 func _tick_idle(delta: float) -> void:
 	if _state_timer <= 0:
 		_pick_state()
 
-## ── circle ──
+## ── circle（机动增强）──
 func _tick_circle(delta: float) -> void:
-	_circle_angle += delta * 1.2 * (1.0 + _level * 0.02)
-	var radius: float = 220.0
-	var pos: Vector2 = _target.global_position + Vector2(cos(_circle_angle), sin(_circle_angle)) * radius
-	global_position = global_position.lerp(pos, 2.0 * delta)
+	var spd: float = 2.0 * (1.0 + _level * 0.04) * (1.5 if _state == State.ENRAGED else 1.0)
+	_circle_angle += delta * spd * _circle_dir
+	var pos: Vector2 = _target.global_position + Vector2(cos(_circle_angle), sin(_circle_angle)) * _circle_radius
+	global_position = global_position.lerp(pos, 3.0 * delta)
 	rotation = global_position.angle_to_point(_target.global_position) + PI * 0.5
 
 	if _state_timer <= 0:
@@ -128,6 +138,8 @@ func _tick_attack(delta: float) -> void:
 		2: _do_rotation_ring(delta, spd_boost)
 		3: _do_summon(delta, spd_boost)
 		4: _do_charge(delta, spd_boost)
+	var follow: float = 5.0 if _state == State.ENRAGED else 3.0
+	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, follow * delta)
 
 	if _state_timer <= 0:
 		_check_enrage()
@@ -135,8 +147,9 @@ func _tick_attack(delta: float) -> void:
 
 ## ── retreat ──
 func _tick_retreat(delta: float) -> void:
+	var spd: float = 120.0 * (1.5 if _state == State.ENRAGED else 1.0)
 	var away: Vector2 = global_position.direction_to(_target.global_position) * -1.0
-	global_position += away * 80.0 * delta
+	global_position += away * spd * delta
 	rotation = global_position.angle_to_point(_target.global_position) + PI * 0.5
 	if _state_timer <= 0:
 		_check_enrage()
@@ -144,18 +157,21 @@ func _tick_retreat(delta: float) -> void:
 
 ## ── 攻击模式 ────────────────────────────────────────────────
 
+func _get_boss_attack_damage() -> int:
+	return max(1, int(ceil(_calc_player_dps() * 0.15 * _mult)))
+
 ## 1. 瞄准射击 — 3/5发追踪弹
 func _do_aimed_shot(delta: float, spd: float) -> void:
 	var count: int = 3 + (1 if _level >= 10 else 0) + (1 if _level >= 15 else 0)
 	if _shoot_timer <= 0:
 		var angle: float = global_position.angle_to_point(_target.global_position)
 		for i in range(count):
-			var a: float = angle + (i - count / 2.0) * 0.08
+			var a: float = angle + (i - count / 2.0) * 0.06
 			var b := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 20, a, ceil(_max_health * 0.03), false, 1, 520.0)
+			b.setup(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), false, 1, 620.0)
 			b.modulate = Color(1.0, 0.3, 0.3, 1.0)
-		_shoot_timer = 0.5 / spd
+		_shoot_timer = 0.4 / spd
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
 
 ## 2. 扇形弹幕 — 5/7/9发
@@ -163,30 +179,29 @@ func _do_fan_spread(delta: float, spd: float) -> void:
 	var count: int = 5 + (2 if _level >= 10 else 0) + (2 if _level >= 15 else 0)
 	if _shoot_timer <= 0:
 		var base: float = global_position.angle_to_point(_target.global_position)
-		var spread: float = PI * 0.4
+		var spread: float = PI * 0.5
 		for i in range(count):
 			var a: float = base - spread * 0.5 + spread * i / (count - 1)
 			var b := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 20, a, ceil(_max_health * 0.02), false, 1, 660.0)
+			b.setup(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), false, 1, 660.0)
 			b.modulate = Color(0.4, 0.5, 1.0, 1.0)
-		_shoot_timer = 0.8 / spd
+		_shoot_timer = 0.7 / spd
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
 
 ## 3. 旋转激光 — 6/8/10发环形
 func _do_rotation_ring(delta: float, spd: float) -> void:
 	var count: int = 6 + (2 if _level >= 10 else 0) + (2 if _level >= 15 else 0)
-	var ring_speed: float = 1.5 * spd
+	var ring_speed: float = 2.0 * spd
 	if _shoot_timer <= 0:
-		var enraged_bonus: int = count if _state == State.ENRAGED else 0
-		var total: int = count + enraged_bonus
-		for i in range(count):
+		var total: int = count + (count if _state == State.ENRAGED else 0)
+		for i in range(total):
 			var a: float = _shoot_angle_offset + float(i) * TAU / total
 			var b := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 20, a, ceil(_max_health * 0.015), false, 1, 500.0)
+			b.setup(global_position + Vector2.from_angle(a) * 20, a, ceil(_get_boss_attack_damage() * 0.6), false, 1, 500.0)
 			b.modulate = Color(0.8, 0.2, 0.9, 1.0)
-		_shoot_timer = 1.2 / spd
+		_shoot_timer = 1.0 / spd
 	_shoot_angle_offset += delta * ring_speed
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
 
@@ -200,7 +215,7 @@ func _do_summon(delta: float, spd: float) -> void:
 			e.position = global_position + Vector2(cos(angle), sin(angle)) * 60
 			e.enemy_type = randi() % 3
 			e.health = max(1, int(_level * 0.5))
-			e.move_speed = 60.0 + _level * 4.0
+			e.move_speed = 80.0 + _level * 5.0
 			e.shoot_cooldown = max(1.5 - _level * 0.06, 0.5)
 			e.drop_chance = 0.0
 			if _target and is_instance_valid(_target):
@@ -215,7 +230,7 @@ func _do_charge(delta: float, spd: float) -> void:
 	if _shoot_timer <= 0:
 		_enter_state(State.ATTACK, 0.8)
 		var dir: Vector2 = global_position.direction_to(_target.global_position)
-		var speed: float = 400.0 + _level * 12.0
+		var speed: float = 500.0 + _level * 15.0
 		velocity = dir * speed
 		_shoot_timer = 0.01
 		var tween := create_tween()
@@ -245,23 +260,11 @@ func die() -> void:
 	GameState.add_score(200 * _level)
 	boss_died.emit()
 	call_deferred("_spawn_explosion")
-	call_deferred("_spawn_rewards")
 	queue_free()
 
 func _spawn_explosion() -> void:
 	var exp = _explosion_scene.instantiate()
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
-	exp.scale = Vector2(3, 3)
+	exp.scale = Vector2(4, 4)
 	SFX.play_explosion()
-
-func _spawn_rewards() -> void:
-	for type in ["spread", "speed", "power", "heal", "bomb"]:
-		var pu = preload("res://scenes/entities/powerup.tscn").instantiate()
-		get_tree().current_scene.add_child(pu)
-		pu.global_position = global_position + Vector2(randf_range(-40, 40), randf_range(-40, 40))
-		pu.setup(type)
-
-## ── _draw Boss sprite ───────────────────────────────────────
-func _draw() -> void:
-	return
