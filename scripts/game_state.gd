@@ -74,7 +74,6 @@ func level_up() -> void:
 	kills = 0
 	kills_for_next_level = 10 + level * 5
 	bullet_power_level = min(bullet_power_level + 1, 50)
-	max_health += 1
 	current_health = min(current_health + 1, max_health)
 	health_changed.emit(current_health, max_health)
 	level_changed.emit(level)

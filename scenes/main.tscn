@@ -1,27 +1,27 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://ggd54n5uic4"]
 
-[ext_resource type="Script" path="res://scripts/main.gd" id="1"]
-[ext_resource type="Script" path="res://scripts/mobile_controls.gd" id="2"]
+[ext_resource type="Script" uid="uid://ynas1xbwywjy" path="res://scripts/main.gd" id="1"]
+[ext_resource type="Script" uid="uid://dj7762donh8x2" path="res://scripts/mobile_controls.gd" id="2"]
 
-[node name="Main" type="Node2D"]
+[node name="Main" type="Node2D" unique_id=1494631403]
 script = ExtResource("1")
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=690873253]
 position = Vector2(640, 360)
 
-[node name="BgColor" type="ColorRect" parent="."]
+[node name="BgColor" type="ColorRect" parent="." unique_id=1028279153]
 z_index = -100
 offset_left = -100.0
 offset_top = -100.0
 offset_right = 1380.0
 offset_bottom = 820.0
-color = Color(0.06, 0.08, 0.18, 1.0)
+color = Color(0.06, 0.08, 0.18, 1)
 
-[node name="Starfield1" type="Sprite2D" parent="."]
+[node name="Starfield1" type="Sprite2D" parent="." unique_id=1339224260]
 z_index = -2
 
-[node name="Starfield2" type="Sprite2D" parent="."]
+[node name="Starfield2" type="Sprite2D" parent="." unique_id=1183518301]
 z_index = -1
 
-[node name="MobileControls" type="CanvasLayer" parent="."]
+[node name="MobileControls" type="CanvasLayer" parent="." unique_id=443034815]
 script = ExtResource("2")

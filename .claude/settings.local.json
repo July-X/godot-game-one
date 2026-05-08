@@ -1,7 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "godot"
-    ]
+    "allow": ["Bash", "Write", "Read"],
+    "defaultMode": "dontAsk"
   }
 }

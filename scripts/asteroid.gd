@@ -62,5 +62,5 @@ func _on_area_entered(area: Area2D) -> void:
 		var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 		get_tree().current_scene.add_child(hit)
 		hit.global_position = global_position
-	hit.start()
+		hit.start()
 		area.queue_free()

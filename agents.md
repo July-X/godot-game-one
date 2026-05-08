@@ -2,6 +2,20 @@
 
 本文件用于约束 Codex/AI Agent 在本仓库的工作方式，目标是把项目目标、设计决策、实现边界、测试门槛和文档更新要求固定下来，避免后续工作偏离当前项目方向。
 
+## 0. Skill 自动调用规则
+
+- 默认由 Agent 自行判断是否需要调用 skill，不要求用户手动指定。
+- 遇到库、框架、SDK、API、CLI、云服务文档问题时，优先使用 `context7-mcp`，再回答实现细节。
+- 遇到 bug、崩溃、异常行为、回归、性能退化时，优先使用 `diagnose` 或 `systematic-debugging`。
+- 遇到 Godot 相关任务时，优先使用最贴合的 Godot skill：
+  - 代码、场景、脚本、架构：`godot-development` / `godot-gdscript-patterns` / `godot-best-practices`
+  - UI：`godot-ui`
+  - 导出、构建、平台设置：`godot-export-builds`
+- 遇到创建或改造 skill 的任务时，使用 `skill-creator` 或 `write-a-skill`。
+- 如果多个 skill 都适用，选最小、最具体、最贴合当前任务的那一个或那一组。
+- 只有在任务边界不清、且继续推进会有明显风险时，才向用户追问 skill 选择。
+- 每次实际调用了 skill，要在回复里简短说明使用了哪个 skill，以及原因。
+
 ## 1. 项目基线
 
 - **引擎与语言**：Godot 4.x，GDScript。
@@ -27,7 +41,7 @@
   - `docs/Development_Plan.md`
   - `docs/Design_Decisions.md`
   - `docs/art_audio_pipeline.md`
-  - 本文件 `agents.md`
+  - 本文件 `AGENTS.md`
 - 核心脚本要保持可读，复杂逻辑要写清楚用途和设计意图。
 - 如需调整范围，优先保持"一个完整短流程"而不是扩大为开放式大工程。
 
@@ -62,7 +76,10 @@
 
 ## 7. 工作约束
 
-- 优先使用 `rg` 搜索代码和文档。
+- 默认优先使用 `rg` 搜索代码和文档。
+- 除非 `rg` 不可用，否则不要用 `grep` / `find` 作为首选检索方式。
+- 修改文件时默认使用 `apply_patch`，不要用 `cat` / `echo` 之类的方式直接写文件。
+- 修改前先读相关文件，再动手改，避免盲改。
 - 修改前先阅读相关文件，不要直接大改。
 - 新增内容时，优先补文档，再补实现。
 - 保持仓库内文档入口清晰，README 必须能引导到核心设计文档。
