@@ -45,6 +45,7 @@ func setup(level: int) -> void:
 	if _label:
 		_label.text = "暗影主宰 Lv%d" % level
 	add_to_group("boss")
+	add_to_group("enemies")
 
 func _calc_player_dps() -> float:
 	var count: float = GameState.get_bullet_count()
@@ -249,11 +250,29 @@ func _on_summon_died() -> void:
 
 func take_damage(amount: int = 1) -> void:
 	_health -= amount
-	modulate = Color(2.0, 1.2, 1.2, 1.0)
-	var tween := create_tween()
-	tween.tween_property(self, "modulate", Color(1, 1, 1, 1), 0.08)
+	_hit_flash()
+	_hit_knockback()
+	if _health_bar:
+		_health_bar.value = _health
 	if _health <= 0:
 		die()
+
+func _hit_flash() -> void:
+	var intensity: float = 2.5
+	_sprite.modulate = Color(intensity, intensity, intensity, 1.0)
+	var tween := create_tween()
+	tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.1)
+
+func _hit_knockback() -> void:
+	if not _target or not is_instance_valid(_target):
+		return
+	var dir: Vector2 = global_position.direction_to(_target.global_position) * -1.0
+	var push: Vector2 = dir * 60.0
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(self, "global_position", global_position + push, 0.06).set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "global_position", global_position, 0.12).set_delay(0.06).set_ease(Tween.EASE_IN)
+	tween.tween_property(_sprite, "scale", Vector2(1.3, 0.9), 0.04).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_sprite, "scale", Vector2(1.2, 1.2), 0.1).set_delay(0.04).set_ease(Tween.EASE_OUT)
 
 func die() -> void:
 	GameState.on_boss_killed()

@@ -212,59 +212,150 @@ func create_boss_sprite() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var cx: int = w / 2
 	var cy: int = h / 2
-	## 主体 — 深紫/黑色核心
-	for y in range(30, h - 30):
-		for x in range(20, w - 20):
+
+	## 背景光晕
+	for y in range(h):
+		for x in range(w):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			var body_r: float = 50.0 + sin(dy * 0.08) * 10.0
+			if d < 85.0:
+				var t: float = d / 85.0
+				var glow: float = (1.0 - t) * (1.0 - t) * 0.08
+				if glow > 0.005:
+					img.set_pixel(x, y, Color(0.15, 0.05, 0.25, glow))
+
+	## 主体核心 — 暗紫/黑金属质感
+	for y in range(26, h - 26):
+		for x in range(16, w - 16):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			var body_r: float = 54.0 + sin(dy * 0.1) * 8.0
 			if d < body_r:
 				var t: float = d / body_r
-				img.set_pixel(x, y, Color(0.35 - t * 0.15, 0.08 - t * 0.04, 0.35 - t * 0.15, 1.0 - t * 0.3))
-	## 外装甲环
+				var center_dist: float = abs(dy) / body_r
+				var r: float = 0.28 + (1.0 - center_dist) * 0.15
+				var g: float = 0.06 + (1.0 - center_dist) * 0.06
+				var b: float = 0.32 + (1.0 - center_dist) * 0.18
+				var a: float = 1.0 - t * 0.25
+				img.set_pixel(x, y, Color(r - t * 0.1, g - t * 0.03, b - t * 0.1, a))
+
+	## 外装甲环 — 深紫科幻风格
 	for y in range(h):
 		for x in range(w):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			if d > 60.0 and d < 75.0:
-				var t: float = abs(d - 67.0) / 7.0
-				img.set_pixel(x, y, Color(0.5 - t * 0.2, 0.1 - t * 0.05, 0.45 - t * 0.2, 1.0 - t * 0.5))
-	## 红色核心眼
+			if d > 58.0 and d < 72.0:
+				var ring_t: float = (d - 58.0) / 14.0
+				var edge_bright: float = 0.6 + sin(dx * 0.15 + dy * 0.1) * 0.2
+				img.set_pixel(x, y, Color(
+					(0.45 + ring_t * 0.2) * edge_bright,
+					(0.12 + ring_t * 0.05) * edge_bright,
+					(0.5 + ring_t * 0.15) * edge_bright,
+					0.85 + abs(d - 65.0) * 0.02
+				))
+
+	## 能量环 — 内侧发光
 	for y in range(h):
 		for x in range(w):
 			var dx: float = float(x - cx)
 			var dy: float = float(y - cy)
 			var d: float = sqrt(dx * dx + dy * dy)
-			if d < 18.0:
-				var t: float = d / 18.0
-				img.set_pixel(x, y, Color(0.9 - t * 0.3, 0.1 - t * 0.05, 0.1 - t * 0.05, 1.0))
-			elif d < 24.0 and d > 18.0:
-				var t: float = (d - 18.0) / 6.0
-				img.set_pixel(x, y, Color(0.5, 0.05, 0.05, 1.0 - t))
-	## 侧翼
+			if d > 50.0 and d < 56.0:
+				var glow: float = 0.3 * (1.0 - abs(d - 53.0) / 3.0)
+				img.set_pixel(x, y, Color(0.35, 0.1, 0.7, glow))
+
+	## 核心眼 — 发光红色
+	for y in range(h):
+		for x in range(w):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy)
+			var d: float = sqrt(dx * dx + dy * dy)
+			if d < 16.0:
+				var t: float = d / 16.0
+				var eye_r: float = 0.95 - t * 0.3
+				var eye_g: float = 0.12 - t * 0.08
+				var eye_b: float = 0.08 - t * 0.05
+				img.set_pixel(x, y, Color(eye_r, eye_g, eye_b, 1.0))
+			elif d < 22.0 and d >= 16.0:
+				var glow: float = 0.5 * (1.0 - (d - 16.0) / 6.0)
+				img.set_pixel(x, y, Color(0.6, 0.05, 0.05, glow))
+
+	## 瞳孔亮点
+	for y in range(h):
+		for x in range(w):
+			var dx: float = float(x - cx)
+			var dy: float = float(y - cy - 3)
+			var d: float = sqrt(dx * dx + dy * dy)
+			if d < 5.0:
+				var t: float = d / 5.0
+				img.set_pixel(x, y, Color(1.0, 0.6 - t * 0.3, 0.4 - t * 0.3, 1.0 - t))
+			elif d < 8.0:
+				var g: float = 0.2 * (1.0 - (d - 5.0) / 3.0)
+				img.set_pixel(x, y, Color(0.8, 0.3, 0.1, g))
+
+	## 侧翼 — 后掠式暗红能量翼
 	for side in [-1, 1]:
-		for y in range(cy - 40, cy + 40):
-			for x in range(max(0, cx + side * 50), max(0, cx + side * 80)):
-				if x >= w: break
-				var t: float = float(abs(x - cx) - 50) / 30.0
-				var wing_w: float = 1.0 - float(abs(y - cy)) / 40.0
+		for y in range(cy - 44, cy + 44):
+			for x in range(max(0, cx + side * 48), min(w, cx + side * 88)):
+				var t: float = float(abs(x - cx) - 48) / 40.0
+				var wing_w: float = 1.0 - float(abs(y - cy)) / 44.0
 				if t > 0 and t < 1.0 and wing_w > 0:
-					img.set_pixel(x, y, Color(0.3 - t * 0.1, 0.06 - t * 0.03, 0.3 - t * 0.1, wing_w * (1.0 - t * 0.8)))
-	## 炮塔底座
+					var alpha: float = wing_w * (1.0 - t * 0.85) * 0.85
+					var highlight: float = 0.5 + sin(float(x) * 0.12 + float(y) * 0.08) * 0.3
+					img.set_pixel(x, y, Color(
+						0.25 * highlight * (1.0 - t * 0.3),
+						0.05 * highlight * (1.0 - t * 0.5),
+						0.3 * highlight * (1.0 + t * 0.2),
+						alpha
+					))
+
+	## 翼尖亮线
+	for side in [-1, 1]:
+		for dy in range(-30, 31):
+			var sx: int = cx + side * 82
+			var sy: int = cy + dy
+			if sy >= -1 and sy < h:
+				var edge_w: float = 1.0 - abs(dy) / 30.0
+				if edge_w > 0:
+					img.set_pixel(sx, sy, Color(0.5, 0.15, 0.6, edge_w * 0.6))
+					if side == -1:
+						img.set_pixel(sx - 1, sy, Color(0.3, 0.1, 0.4, edge_w * 0.3))
+					else:
+						img.set_pixel(sx + 1, sy, Color(0.3, 0.1, 0.4, edge_w * 0.3))
+
+	## 能量纹路
+	for i in range(6):
+		var angle: float = float(i) * TAU / 6.0
+		var start_r: float = 24.0
+		var end_r: float = 52.0
+		for r in range(int(start_r), int(end_r)):
+			var a2: float = angle + (r - start_r) * 0.03
+			var px: int = cx + int(cos(a2) * r)
+			var py: int = cy + int(sin(a2) * r)
+			if px >= 0 and px < w and py >= 0 and py < h:
+				var energy: float = 0.08 * (1.0 - (r - start_r) / (end_r - start_r))
+				img.set_pixel(px, py, Color(0.2 + energy, 0.04, 0.35 + energy, energy * 3))
+
+	## 炮塔(4个方向)
 	for i in range(4):
-		var angle: float = float(i) * TAU / 4.0
-		var bx: int = cx + int(cos(angle) * 55.0)
-		var by: int = cy + int(sin(angle) * 55.0)
-		for dy in range(-6, 7):
-			for dx in range(-6, 7):
+		var a: float = float(i) * TAU / 4.0
+		var bx: int = cx + int(cos(a) * 54.0)
+		var by: int = cy + int(sin(a) * 54.0)
+		for dy in range(-7, 8):
+			for dx in range(-7, 8):
 				var px: int = bx + dx
 				var py: int = by + dy
 				if px >= 0 and px < w and py >= 0 and py < h:
-					var d2: float = sqrt(float(dx * dx + dy * dy))
-					if d2 < 6.0:
-						img.set_pixel(px, py, Color(0.4, 0.1, 0.4, (1.0 - d2 / 6.0) * 0.8))
+					var dd: float = sqrt(float(dx * dx + dy * dy))
+					if dd < 5.0:
+						img.set_pixel(px, py, Color(0.55, 0.12, 0.5, 1.0 - dd * 0.12))
+					elif dd < 7.0:
+						var ring: float = 0.35 * (1.0 - (dd - 5.0) / 2.0)
+						img.set_pixel(px, py, Color(0.3, 0.08, 0.35, ring))
+
 	var tex := ImageTexture.create_from_image(img)
 	return tex
 
