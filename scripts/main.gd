@@ -1,3 +1,9 @@
+## Main — 主游戏场景控制器
+## 多人模式：通过 MultiplayerSpawner 管理玩家节点的跨端生成和销毁。
+## 服务器（Host peer_id=1）控制所有敌人生成和 GameState 广播；
+## 客户端（Client peer_id=2）只渲染和响应输入。
+##
+## 单机兼容：NetworkManager.is_online() 为 false 时走原有单人逻辑。
 extends Node2D
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
@@ -26,6 +32,16 @@ var _bg_layers: Array[Dictionary] = []
 var _nebulas: Array[Node2D] = []
 var _planets: Array[Node2D] = []
 
+## 多人模式：存储所有已生成的玩家节点（peer_id → Node）
+var _players: Dictionary = {}
+
+## 多人模式：实体追踪（entity_id → Node）
+var _next_entity_id: int = 1000
+var _entities: Dictionary = {}
+var _entity_sync_timer: float = 0.0
+## 待发送的子弹生成数据（Host → Client 或 Client → Host）
+var _pending_bullet_spawns: Array = []
+
 @onready var _bg_color: ColorRect = $BgColor
 
 func _ready() -> void:
@@ -35,7 +51,6 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_create_parallax_background()
 	_spawn_mobile_controls()
-	_spawn_player()
 	_spawn_hud()
 	_start_bgm()
 	Pool.setup("bullet", _bullet_scene, 40)
@@ -45,7 +60,42 @@ func _ready() -> void:
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
 	_debug_log_variant_assets()
-	_update_variant_debug_overlay()
+
+	## 多人：Host 注册网络实体同步
+	if NetworkManager.is_online() and multiplayer.is_server():
+		## 注册子弹批量刷出处理（每帧 flush）
+		set_process(true)
+
+	## 多人模式：订阅连接/断线信号，服务器端负责生成所有玩家
+	if NetworkManager.is_online():
+		NetworkManager.player_connected.connect(_on_multiplayer_player_connected)
+		NetworkManager.player_disconnected.connect(_on_multiplayer_player_disconnected)
+		NetworkManager.server_disconnected.connect(_on_multiplayer_server_disconnected)
+		## 服务器端：为自己和已连接的所有 peer 生成玩家
+		if multiplayer.is_server():
+			_spawn_networked_player(1)  # Host 自己
+			for pid in NetworkManager.connected_peers:
+				_spawn_networked_player(pid)
+		## 客户端：自己的玩家由服务器通过 MultiplayerSpawner 同步过来
+		## 但 _player 引用需要在本地找到（节点名 = str(my_peer_id)）
+		else:
+			## 最多等 0.5s（30 帧）让 MultiplayerSpawner 完成同步
+			var my_id := multiplayer.get_unique_id()
+			var node: Node = null
+			for _attempt in 30:
+				node = get_node_or_null(str(my_id))
+				if node:
+					break
+				await get_tree().process_frame
+			if node:
+				_player = node
+				_player.died.connect(_on_player_died)
+				_players[my_id] = node
+			else:
+				push_warning("[Main] 未能在超时前找到本地玩家节点（peer_id=%d）" % my_id)
+	else:
+		## 单机模式：原有逻辑
+		_spawn_player()
 
 func _debug_log_variant_assets() -> void:
 	var boss_count := 0
@@ -215,10 +265,64 @@ func _spawn_player() -> void:
 	add_child(_player)
 	_player.died.connect(_on_player_died)
 
+
+## 多人模式：服务器端生成指定 peer_id 的玩家节点
+## MultiplayerSpawner 会自动将此节点同步给所有 Client
+func _spawn_networked_player(p_peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return  # 只有服务器可以生成权威节点
+	if _players.has(p_peer_id):
+		return  # 防止重复生成
+	var player := _player_scene.instantiate()
+	## 节点名 = str(peer_id)，player.gd 的 _ready() 会据此设置 multiplayer_authority
+	player.name = str(p_peer_id)
+	## 两个玩家错开初始位置，避免重叠
+	var x_offset: float = 0.0 if p_peer_id == 1 else 200.0
+	player.position = Vector2(540 + x_offset, 500)
+	add_child(player)  # MultiplayerSpawner 监听此节点，自动复制到 Client
+	player.died.connect(_on_networked_player_died.bind(p_peer_id))
+	_players[p_peer_id] = player
+	## 兼容 _player 引用（指向本机玩家）
+	var my_id := multiplayer.get_unique_id()
+	if p_peer_id == my_id:
+		_player = player
+
+
+## 多人模式：新 peer 连接时（只在服务器端触发）
+func _on_multiplayer_player_connected(p_peer_id: int) -> void:
+	if multiplayer.is_server():
+		_spawn_networked_player(p_peer_id)
+
+
+## 多人模式：peer 断线时清理其玩家节点
+func _on_multiplayer_player_disconnected(p_peer_id: int) -> void:
+	if _players.has(p_peer_id):
+		var node: Node2D = _players[p_peer_id]
+		if is_instance_valid(node):
+			node.queue_free()
+		_players.erase(p_peer_id)
+	## 若所有玩家都断开，服务器自己也退出
+	if _players.is_empty() and multiplayer.is_server():
+		_on_player_died()
+
+
+## 多人模式：服务器断开（Client 端触发）
+func _on_multiplayer_server_disconnected() -> void:
+	_show_death_marquee_text("服务器断开连接")
+	await get_tree().create_timer(2.0).timeout
+	get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")
+
+
+## 多人模式：某玩家死亡回调
+func _on_networked_player_died(p_peer_id: int) -> void:
+	_players.erase(p_peer_id)
+	## 合作模式：所有玩家死亡才算游戏结束
+	if _players.is_empty():
+		_on_player_died()
+
 func _spawn_hud() -> void:
 	_hud = _hud_scene.instantiate()
 	add_child(_hud)
-	_update_variant_debug_overlay()
 
 func _spawn_mobile_controls() -> void:
 	if OS.has_feature("android") or OS.has_feature("ios"):
@@ -228,6 +332,15 @@ func _spawn_mobile_controls() -> void:
 func _process(delta: float) -> void:
 	if not GameState.game_running:
 		return
+
+	## 多人：Host 定期同步实体位置 + flush 子弹
+	if NetworkManager.is_online():
+		if multiplayer.is_server():
+			_entity_sync_timer -= delta
+			if _entity_sync_timer <= 0.0:
+				_entity_sync_timer = 0.2  # 5Hz
+				_batch_sync_entity_positions()
+		_flush_bullet_spawns()
 
 	_scroll_background(delta)
 
@@ -295,10 +408,36 @@ func _spawn_enemy() -> void:
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	enemy.enemy_died.connect(_on_enemy_died)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		var eid := _next_entity_id
+		_next_entity_id += 1
+		enemy.entity_id = eid
+		_entities[eid] = enemy
+		enemy.enemy_died.connect(_on_network_enemy_died.bind(eid))
+		_rpc_spawn_enemy.rpc(eid, enemy_type, pos.x, pos.y, enemy.health, enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, mult)
 	add_child(enemy)
 
 func _on_enemy_died() -> void:
 	pass
+
+func _on_network_enemy_died(entity_id: int) -> void:
+	if _entities.has(entity_id):
+		_entities.erase(entity_id)
+	if multiplayer.is_server():
+		_rpc_despawn_entity.rpc(entity_id)
+
+## Client → Host（经 GameState 转发）：敌人受击
+func _on_network_enemy_hit(entity_id: int, damage: int) -> void:
+	if _entities.has(entity_id):
+		var enemy = _entities[entity_id]
+		if is_instance_valid(enemy) and enemy.has_method("take_damage"):
+			enemy.take_damage(damage)
+
+## Client → Host（经 GameState 转发）：玩家受击
+func _on_network_player_hit(damage: int, target_peer_id: int) -> void:
+	var player_node = _players.get(target_peer_id)
+	if player_node and is_instance_valid(player_node) and player_node.has_method("take_damage"):
+		player_node.take_damage(damage)
 
 func _spawn_asteroid() -> void:
 	var asteroid = _asteroid_scene.instantiate()
@@ -326,11 +465,23 @@ func _spawn_elite() -> void:
 	if _player and is_instance_valid(_player):
 		_elite.set_target(_player)
 	_elite.elite_died.connect(_on_elite_died)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		var eid := _next_entity_id
+		_next_entity_id += 1
+		_elite.entity_id = eid
+		_entities[eid] = _elite
+		_rpc_spawn_elite.rpc(eid, elite_mult)
 	add_child(_elite)
 	var tween := create_tween()
 	tween.tween_property(_elite, "position", Vector2(640, 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_elite_died() -> void:
+	if _elite != null:
+		var eid: int = _elite.entity_id
+		if _entities.has(eid):
+			_entities.erase(eid)
+		if multiplayer.is_server():
+			_rpc_despawn_entity.rpc(eid)
 	_elite = null
 	GameState.post_elite_multiplier = 1.0 + GameState.elite_encounter_count * 0.05
 	if _pending_boss_level > 0 and GameState.game_running:
@@ -387,10 +538,15 @@ func _spawn_boss(level: int) -> void:
 	if _player and is_instance_valid(_player):
 		_boss.set_target(_player)
 	_boss.boss_died.connect(_on_boss_died)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		var eid := _next_entity_id
+		_next_entity_id += 1
+		_boss.entity_id = eid
+		_entities[eid] = _boss
+		_rpc_spawn_boss.rpc(eid, level, variant_id)
 	add_child(_boss)
 	var tween := create_tween()
 	tween.tween_property(_boss, "position", Vector2(640, 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_update_variant_debug_overlay()
 
 func _pick_boss_variant_id() -> int:
 	var variant_count := 0
@@ -417,10 +573,15 @@ func _pick_boss_variant_id() -> int:
 	return picked
 
 func _on_boss_died() -> void:
+	if _boss != null:
+		var eid: int = _boss.entity_id
+		if _entities.has(eid):
+			_entities.erase(eid)
+		if multiplayer.is_server():
+			_rpc_despawn_entity.rpc(eid)
 	_boss = null
 	GameState.force_set_boss_active(false)
 	_exit_boss_fight_mode()
-	_update_variant_debug_overlay()
 	_show_reward_panel()
 
 func _enter_boss_fight_mode() -> void:
@@ -503,7 +664,6 @@ func _show_reward_panel() -> void:
 func _on_reward_chosen(reward_type: String) -> void:
 	if _player and is_instance_valid(_player) and _player.has_method("_update_appearance"):
 		_player._update_appearance()
-	_update_variant_debug_overlay()
 
 func _on_player_died() -> void:
 	GameState.game_running = false
@@ -514,7 +674,10 @@ func _show_death_marquee() -> void:
 	var msg: String = GameState.death_message
 	if msg.is_empty():
 		msg = "被击落"
+	_show_death_marquee_text(msg)
 
+
+func _show_death_marquee_text(msg: String) -> void:
 	var banner := Label.new()
 	var screen := get_viewport_rect().size
 	banner.text = "☠  " + msg + "  ☠"
@@ -540,16 +703,7 @@ func _restart_on_touch() -> void:
 func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
 		_player.on_level_up()
-	_update_variant_debug_overlay()
 
-func _get_player_visual_tier() -> int:
-	var tier := int((GameState.level - 1) / 5) + 1
-	return clampi(tier, 1, 5)
-
-func _update_variant_debug_overlay() -> void:
-	if _hud and is_instance_valid(_hud) and _hud.has_method("set_variant_debug"):
-		var boss_alive := _boss != null and is_instance_valid(_boss)
-		_hud.set_variant_debug(_get_player_visual_tier(), _current_boss_variant_id, boss_alive)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
@@ -572,3 +726,134 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _restart() -> void:
 	get_tree().reload_current_scene()
+
+## ── 多人模式 RPC ──────────────────────────────────────────────
+
+## Host → Client：生成敌人幽灵副本
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int, spd: float, cd: float, drop: float, mult: float) -> void:
+	if not NetworkManager.is_online():
+		return
+	var enemy = _enemy_scene.instantiate()
+	enemy.name = str(eid)
+	enemy.entity_id = eid
+	enemy._is_network_ghost = true
+	enemy.enemy_type = etype
+	enemy.position = Vector2(pos_x, pos_y)
+	enemy.health = hp
+	enemy.move_speed = spd
+	enemy.shoot_cooldown = cd
+	enemy.drop_chance = drop
+	if _player and is_instance_valid(_player):
+		enemy.set_target(_player)
+	_entities[eid] = enemy
+	add_child(enemy)
+
+## Host → Client：生成精英幽灵副本
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
+	if not NetworkManager.is_online():
+		return
+	_elite = _elite_scene.instantiate()
+	_elite.name = str(eid)
+	_elite.entity_id = eid
+	_elite._is_network_ghost = true
+	_elite.position = Vector2(640, -60)
+	_elite.set_difficulty(elite_mult)
+	if _player and is_instance_valid(_player):
+		_elite.set_target(_player)
+	_entities[eid] = _elite
+	add_child(_elite)
+
+## Host → Client：生成 Boss 幽灵副本
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_boss(eid: int, level: int, variant_id: int) -> void:
+	if not NetworkManager.is_online():
+		return
+	_boss = _boss_scene.instantiate()
+	_boss.name = str(eid)
+	_boss.entity_id = eid
+	_boss._is_network_ghost = true
+	_boss.position = Vector2(640, -80)
+	if _boss.has_method("set_sprite_variant"):
+		_boss.set_sprite_variant(variant_id)
+	_boss.setup(level)
+	if _player and is_instance_valid(_player):
+		_boss.set_target(_player)
+	_entities[eid] = _boss
+	add_child(_boss)
+
+## Host → Client：销毁实体
+@rpc("authority", "reliable", "call_remote")
+func _rpc_despawn_entity(eid: int) -> void:
+	if _entities.has(eid):
+		var node = _entities[eid]
+		if is_instance_valid(node):
+			node.queue_free()
+		_entities.erase(eid)
+
+## Host → Client：实体位置批量同步（5Hz）
+@rpc("authority", "unreliable", "call_remote")
+func _rpc_sync_entity_positions(data: PackedFloat64Array) -> void:
+	var i := 0
+	while i < data.size():
+		var eid := int(data[i])
+		var x := data[i + 1]
+		var y := data[i + 2]
+		i += 3
+		if _entities.has(eid) and is_instance_valid(_entities[eid]):
+			_entities[eid].global_position = Vector2(x, y)
+
+## Host：打包所有实体位置
+func _batch_sync_entity_positions() -> void:
+	if _entities.is_empty():
+		return
+	var data := PackedFloat64Array()
+	for eid: int in _entities:
+		var node = _entities[eid]
+		if is_instance_valid(node):
+			data.append(eid as float)
+			data.append(node.global_position.x)
+			data.append(node.global_position.y)
+	if data.size() > 0:
+		_rpc_sync_entity_positions.rpc(data)
+
+## 子弹同步 ──────────────────────────────────────────────────
+
+## 注册一颗子弹生成（由 enemy/boss/player 调用）
+func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float, color: Color = Color(1,1,1,1)) -> void:
+	if not NetworkManager.is_online():
+		return
+	_pending_bullet_spawns.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b])
+
+## 每帧 flush 待发送子弹
+func _flush_bullet_spawns() -> void:
+	if _pending_bullet_spawns.is_empty():
+		return
+	var data := _pending_bullet_spawns.duplicate()
+	_pending_bullet_spawns.clear()
+	if multiplayer.is_server():
+		_rpc_spawn_bullets.rpc(data)
+	else:
+		_rpc_spawn_bullets.rpc_id(1, data)
+
+## Host → Client（或 Client → Host）：刷出子弹视觉副本
+@rpc("any_peer", "unreliable", "call_remote")
+func _rpc_spawn_bullets(data: Array) -> void:
+	if not NetworkManager.is_online():
+		return
+	for entry in data:
+		var bullet := Pool.acquire("bullet", _bullet_scene)
+		if bullet == null:
+			continue
+		add_child(bullet)
+		bullet.setup(
+			Vector2(entry[0], entry[1]),  # pos
+			entry[2],                      # angle
+			entry[3] as int,               # damage
+			bool(entry[4]),                # is_player
+			entry[5],                      # level
+			entry[6]                       # speed
+		)
+		if entry.size() > 7:
+			bullet.modulate = Color(entry[7], entry[8], entry[9], 1.0)

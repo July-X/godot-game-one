@@ -1,3 +1,8 @@
+## Player — 玩家飞船控制器
+## 多人设计：每个玩家节点的 multiplayer_authority = 该玩家的 peer_id。
+## 规则：只有本机 authority 处理输入和物理运动；
+##       位置/旋转通过 MultiplayerSynchronizer 同步给其他端。
+## 单机模式下 multiplayer_authority 默认为 1（服务器），与原逻辑兼容。
 extends CharacterBody2D
 
 signal died
@@ -5,6 +10,9 @@ signal died
 @export var move_speed: float = 260.0
 @export var friction: float = 500.0
 @export var mouse_sensitivity: float = 0.008
+
+## 多人模式下标识本玩家属于哪个 peer（生成时由 main.gd 设置）
+var peer_id: int = 1
 
 var _shoot_timer: float = 0.0
 var _invincible_timer: float = 0.0
@@ -32,6 +40,13 @@ var _touch_move: Vector2 = Vector2.ZERO
 @onready var _shield_container: Node2D = $ShieldContainer
 
 func _ready() -> void:
+	## 多人：用节点名（数字字符串）推断 peer_id，设置 multiplayer_authority。
+	## 节点名由 main.gd 在生成时设置为 str(peer_id)。
+	## 单机兼容：节点名非数字时 peer_id 保持默认 1，authority = 1（服务器）。
+	if name.is_valid_int():
+		peer_id = name.to_int()
+	set_multiplayer_authority(peer_id)
+
 	add_to_group("player")
 	_muzzle_flash.visible = false
 	_update_appearance()
@@ -78,6 +93,15 @@ func _update_pickup_radius() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and GameState.game_running and not _mobile_mode:
 		_mouse_vel += event.relative * mouse_sensitivity * move_speed
+	## 技能按键（直接处理，不依赖 HUD/main 转发）
+	if not _mobile_mode and event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_W:
+				if GameState.use_skill():
+					_fire_ring_shotgun()
+			KEY_Q:
+				if GameState.use_laser():
+					_fire_laser()
 
 func _on_mobile_move(vec: Vector2) -> void:
 	_touch_move = vec
@@ -85,6 +109,10 @@ func _on_mobile_move(vec: Vector2) -> void:
 func _physics_process(delta: float) -> void:
 
 	if not GameState.game_running:
+		return
+
+	## 多人：非 authority 端只接收同步数据，不运行本地物理
+	if not is_multiplayer_authority():
 		return
 
 	_shoot_timer -= delta
@@ -130,13 +158,6 @@ func _physics_process(delta: float) -> void:
 	if _shoot_timer <= 0.0:
 		_shoot()
 
-	## 技能
-	if not _mobile_mode and Input.is_key_pressed(KEY_SPACE):
-		if GameState.use_skill():
-			_fire_ring_shotgun()
-	if not _mobile_mode and Input.is_key_pressed(KEY_Q):
-		if GameState.use_laser():
-			_fire_laser()
 
 	## 追踪导弹
 	_spawn_homing_missiles(delta)
@@ -193,6 +214,10 @@ func _shoot() -> void:
 			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, a, damage, true, level, 660.0)
+			if not multiplayer.is_server():
+				var _m = get_tree().current_scene
+				if _m and _m.has_method("register_bullet_spawn"):
+					_m.register_bullet_spawn(global_position + engine_offset + offset, a, damage, true, level, 660.0)
 	elif level >= 8:
 		var max_spread: float = 16.0 + level
 		var positions: Array[float] = []
@@ -204,6 +229,10 @@ func _shoot() -> void:
 			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, a, damage, true, level, 660.0)
+			if not multiplayer.is_server():
+				var _m = get_tree().current_scene
+				if _m and _m.has_method("register_bullet_spawn"):
+					_m.register_bullet_spawn(global_position + engine_offset + offset, a, damage, true, level, 660.0)
 	elif level >= 4:
 		var max_spread: float = 12.0 + level * 3.0
 		var positions: Array[float] = []
@@ -214,6 +243,10 @@ func _shoot() -> void:
 			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
+			if not multiplayer.is_server():
+				var _m = get_tree().current_scene
+				if _m and _m.has_method("register_bullet_spawn"):
+					_m.register_bullet_spawn(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
 	else:
 		var max_spread: float = 10.0 + level * 2.0
 		var positions: Array[float] = []
@@ -224,6 +257,10 @@ func _shoot() -> void:
 			var bullet := Pool.acquire("bullet", _bullet_scene)
 			get_tree().current_scene.add_child(bullet)
 			bullet.setup(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
+			if not multiplayer.is_server():
+				var _m = get_tree().current_scene
+				if _m and _m.has_method("register_bullet_spawn"):
+					_m.register_bullet_spawn(global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
 
 	if _muzzle_flash:
 		_muzzle_flash.visible = true
@@ -248,6 +285,10 @@ func _fire_ring_shotgun() -> void:
 		var bullet := Pool.acquire("bullet", _bullet_scene)
 		get_tree().current_scene.add_child(bullet)
 		bullet.setup(global_position + engine_offset + offset, a, damage, true, 5, 500.0)
+		if not multiplayer.is_server():
+			var _m = get_tree().current_scene
+			if _m and _m.has_method("register_bullet_spawn"):
+				_m.register_bullet_spawn(global_position + engine_offset + offset, a, damage, true, 5, 500.0)
 
 var _pickup_frame_skip: int = 0
 
@@ -375,6 +416,10 @@ func _rebuild_shields() -> void:
 	_shield_container.add_child(ring)
 
 func take_damage(amount: float = 1.0) -> void:
+	## 多人：伤害判定只在服务器（authority of 伤害相关逻辑）执行。
+	## 对于玩家自身节点，authority 是其 peer_id；
+	## take_damage 需要通过 RPC 从服务器传给对应 peer，或在合作模式下
+	## 由服务器直接调用（RPC "authority" 模式），此处先保留单机兼容逻辑。
 	if _invincible_timer > 0:
 		return
 	var actual_damage: int = amount as int

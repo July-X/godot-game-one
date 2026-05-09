@@ -18,6 +18,11 @@ var _shield: int = MAX_SHIELD
 var _max_shield: int = MAX_SHIELD
 var _target: Node2D = null
 var _shoot_timer: float = 0.0
+var entity_id: int = 0
+
+func get_entity_id() -> int:
+	return entity_id
+var _is_network_ghost: bool = false
 var _attack_pattern: int = 0
 var _pattern_timer: float = 0.0
 var _dodge_direction: float = 1.0
@@ -72,6 +77,10 @@ func set_difficulty(mult: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running or _dead:
+		return
+	if _is_network_ghost:
+		if _health_bar:
+			_health_bar.value = _health
 		return
 
 	_handle_movement(delta)

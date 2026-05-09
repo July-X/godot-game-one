@@ -23,9 +23,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -256.0
-offset_top = -120.0
+offset_top = -140.0
 offset_right = 256.0
-offset_bottom = 60.0
+offset_bottom = 40.0
 texture = ExtResource("1")
 expand_mode = 0
 stretch_mode = 0
@@ -37,14 +37,29 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -120.0
-offset_top = 80.0
+offset_top = 60.0
 offset_right = 120.0
-offset_bottom = 110.0
+offset_bottom = 90.0
 theme_override_colors/font_color = Color(0.6, 0.7, 1.0, 1)
 theme_override_font_sizes/font_size = 16
-text = "按 SPACE 或点击开始"
+text = "按 W 或点击开始"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="BtnMultiplayer" type="Button" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = 108.0
+offset_right = 140.0
+offset_bottom = 164.0
+custom_minimum_size = Vector2(280, 56)
+text = "📡  多人联机"
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.3, 1.0, 0.6, 1)
 
 [node name="VersionLabel" type="Label" parent="."]
 anchors_preset = 10

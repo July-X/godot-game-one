@@ -19,6 +19,11 @@ var _shoot_timer: float = 0.0
 var _shoot_angle_offset: float = 0.0
 var _circle_radius: float = 220.0
 var _knockback_tween: Tween = null
+var entity_id: int = 0
+
+func get_entity_id() -> int:
+	return entity_id
+var _is_network_ghost: bool = false
 var _recent_hit_window: float = 0.0
 var _recent_hit_count: int = 0
 var _sprite_variant_id: int = 0
@@ -105,6 +110,10 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
+		return
+	if _is_network_ghost:
+		if _health_bar:
+			_health_bar.value = _health
 		return
 	if not _target or not is_instance_valid(_target):
 		return

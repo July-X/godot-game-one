@@ -23,6 +23,9 @@ BGM="*res://scripts/bgm_manager.gd"
 SpriteFactory="*res://scripts/sprite_factory.gd"
 Leaderboard="*res://scripts/leaderboard.gd"
 Pool="*res://scripts/pool.gd"
+NetworkManager="*res://scripts/network_manager.gd"
+HotspotManager="*res://scripts/hotspot_manager.gd"
+NetworkDiscovery="*res://scripts/network_discovery.gd"
 
 [display]
 

@@ -8,6 +8,11 @@ signal enemy_died
 @export var shoot_cooldown: float = 2.0
 @export var drop_chance: float = 0.20
 
+var entity_id: int = 0
+
+func get_entity_id() -> int:
+	return entity_id
+var _is_network_ghost: bool = false
 var _shoot_timer: float = 0.0
 var _target: Node2D = null
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")

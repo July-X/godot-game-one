@@ -15,11 +15,6 @@ extends CanvasLayer
 @onready var _skill_bar: HBoxContainer = $SkillBar
 
 var _damage_flash: ColorRect
-var _variant_debug_label: Label
-var _variant_debug_enabled: bool = true
-var _variant_player_tier: int = 1
-var _variant_boss_variant: int = 0
-var _variant_boss_alive: bool = false
 
 ## 技能槽数据（新增技能只需在这里加一条）
 ## {name, action, key, bar_color}
@@ -34,7 +29,6 @@ func _ready() -> void:
 	_setup_damage_flash()
 	_update_platform_hints()
 	_setup_skill_bar()
-	_setup_variant_debug()
 
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
@@ -50,45 +44,6 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_cooldowns()
 
-func _setup_variant_debug() -> void:
-	_variant_debug_label = Label.new()
-	_variant_debug_label.name = "VariantDebugLabel"
-	_variant_debug_label.position = Vector2(16, 190)
-	_variant_debug_label.size = Vector2(320, 64)
-	_variant_debug_label.add_theme_color_override("font_color", Color(0.9, 0.95, 1.0, 0.92))
-	_variant_debug_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
-	_variant_debug_label.add_theme_constant_override("shadow_outline_size", 2)
-	_variant_debug_label.add_theme_font_size_override("font_size", 12)
-	_variant_debug_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_variant_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_variant_debug_label.z_index = 160
-	add_child(_variant_debug_label)
-	_refresh_variant_debug_text()
-
-func set_variant_debug_enabled(enabled: bool) -> void:
-	_variant_debug_enabled = enabled
-	if _variant_debug_label:
-		_variant_debug_label.visible = enabled
-	_refresh_variant_debug_text()
-
-func set_variant_debug(player_tier: int, boss_variant: int, boss_alive: bool) -> void:
-	_variant_player_tier = maxi(player_tier, 1)
-	_variant_boss_variant = maxi(boss_variant, 0)
-	_variant_boss_alive = boss_alive
-	_refresh_variant_debug_text()
-
-func _refresh_variant_debug_text() -> void:
-	if not _variant_debug_label:
-		return
-	if not _variant_debug_enabled:
-		_variant_debug_label.text = ""
-		return
-	var boss_text: String = "-"
-	if _variant_boss_variant > 0:
-		boss_text = "boss_%02d" % _variant_boss_variant
-		if not _variant_boss_alive:
-			boss_text += " (idle)"
-	_variant_debug_label.text = "贴图验证\\nPlayer: lv%02d\\nBoss: %s" % [_variant_player_tier, boss_text]
 
 ## ── 动态技能条 ──────────────────────────────────────────────
 ## 定义技能、动态创建按钮、按 action 触发技能
@@ -101,7 +56,7 @@ func _setup_skill_bar() -> void:
 		},
 		{
 			"name": "散射",
-			"action": "skill", "key": KEY_SPACE,
+			"action": "skill", "key": KEY_W,
 			"bar_color": Color(0.15, 0.72, 0.28),
 		},
 	]
@@ -226,12 +181,6 @@ func _trigger_laser() -> void:
 		player._fire_laser()
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
-			KEY_SPACE: _trigger_skill()
-			KEY_Q: _trigger_laser()
 
 ## ── 信号响应 ────────────────────────────────────────────────
 
@@ -404,7 +353,7 @@ func _update_platform_hints() -> void:
 		_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
 		_restart_label.text = "点击屏幕重新开始"
 	else:
-		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  Space - 散射\nR - 重新开始"
+		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\nR - 重新开始"
 		_restart_label.text = "按 R 重新开始"
 
 ## 新增技能：追加到 _skill_data 并重建技能条

@@ -103,30 +103,51 @@ func _on_body_entered(body: Node2D) -> void:
 	if not GameState.game_running:
 		return
 	if _is_player_bullet:
+		## 多人：Client 子弹击中本地幽灵敌人 → 报告 Host
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
-			body.take_damage(_damage)
-			_spawn_hit()
-			_recycle()
+			if NetworkManager.is_online() and not multiplayer.is_server():
+				if body.has_method("get_entity_id"):
+					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), int(_damage))
+				_spawn_hit()
+				_recycle()
+			else:
+				body.take_damage(_damage)
+				_spawn_hit()
+				_recycle()
 	else:
 		if body.is_in_group("player") and body.has_method("take_damage"):
-			var source: String = "弹幕子弹"
-			if _damage >= 0.45:
-				source = "狙击子弹"
-			elif _damage >= 0.25:
-				source = "散弹子弹"
-			GameState.death_message = "被 " + source + " 击落"
-			body.take_damage(_damage)
-			_spawn_hit()
-			_recycle()
+			## 多人：Client 端玩家中弹 → 报告 Host
+			if NetworkManager.is_online() and not multiplayer.is_server():
+				var pid: int = body.peer_id
+				GameState._rpc_report_player_hit.rpc_id(1, int(_damage), pid)
+				_spawn_hit()
+				_recycle()
+			else:
+				var source: String = "弹幕子弹"
+				if _damage >= 0.45:
+					source = "狙击子弹"
+				elif _damage >= 0.25:
+					source = "散弹子弹"
+				GameState.death_message = "被 " + source + " 击落"
+				body.take_damage(_damage)
+				_spawn_hit()
+				_recycle()
 
 func _on_area_entered(area: Area2D) -> void:
 	if not GameState.game_running:
 		return
 	if _is_player_bullet:
 		if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
-			area.get_parent().take_damage(_damage)
-			_spawn_hit()
-			_recycle()
+			if NetworkManager.is_online() and not multiplayer.is_server():
+				var enemy = area.get_parent()
+				if enemy.has_method("get_entity_id"):
+					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), int(_damage))
+				_spawn_hit()
+				_recycle()
+			else:
+				area.get_parent().take_damage(_damage)
+				_spawn_hit()
+				_recycle()
 
 func _spawn_hit() -> void:
 	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
