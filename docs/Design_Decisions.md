@@ -67,6 +67,36 @@
   - `docs/art_audio_pipeline.md`
 - 如果场景或脚本的变更意味着未来的新规则，请写在此处，而不是保持隐含。
 
+## 13. 多人合作模式设计决策（2026-05-09）
+
+### 范围变更确认
+- **原禁止事项已解除**：正式引入 2 人本地近距离联机合作模式。
+- 不引入互联网服务器、不引入云后端、不引入 matchmaking。
+- 仍保持"短流程完成"定位，多人模式是对原单机流程的叠加，不改变核心玩法循环。
+
+### 通讯方案决策：Wi-Fi 热点 LAN + ENet
+- **选用原因**：Godot 4 原生 `ENetMultiplayerPeer` 支持，无需插件，Android 无需额外权限（INTERNET 已涵盖）。
+- **蓝牙/星闪放弃原因**：Godot 4 无内置蓝牙 API；星闪（NearLink）为华为封闭生态，无第三方 SDK；两者集成均需原生插件，开发成本过高。
+- **连接方式**：一台手机开 Wi-Fi 热点作为 Host（服务器，peer_id=1），另一台连接热点作为 Client。Client 输入 Host IP（通常 `192.168.43.1`），无需互联网。
+- **延迟预期**：局域网内 < 10ms，完全满足动作游戏需求。
+
+### 权威模型
+- **服务器权威**：Host（peer_id=1）拥有所有敌人、Boss、弹幕的生命周期控制权。
+- **玩家自主权**：每个玩家节点的 `multiplayer_authority` 设置为其 peer_id，玩家本地直接控制移动，通过 MultiplayerSynchronizer 同步位置给对方。
+- **GameState 同步**：Score、Level、Health 由服务器 RPC 广播，客户端只读。
+
+### 多人玩法设计
+- **模式**：2 人合作，共同击杀敌人，共享积分和进度，各自独立血量。
+- **大厅流程**：标题画面 → 选择 Host/Join → 大厅等待 → Host 按"开始" → 游戏场景。
+- **断线处理**：任意一方断线，游戏暂停并提示，10 秒内未重连则返回大厅。
+- **平台**：纯 Android 双端，iOS 暂不考虑。
+
+### 技术架构
+- `NetworkManager`（Autoload）：管理 ENet 连接，发出 `player_connected` / `player_disconnected` / `server_disconnected` 信号。
+- `MultiplayerSpawner`：挂在 main 场景根节点，统一管理玩家节点的跨端生成。
+- `MultiplayerSynchronizer`：每个 Player 节点子节点，同步 `position`、`rotation`（ON_CHANGE 模式）。
+- 敌人生成、伤害判定、Boss 逻辑均在服务器端执行，通过 MultiplayerSpawner + Synchronizer 同步到 Client。
+
 ## 10. Boss 战手感规则（2026-05-08）
 
 - Boss 受击有“明显反馈”但不允许被连续子弹推离战场。

@@ -164,7 +164,21 @@ godot --headless --path . --quit
 2. 扩展关卡（2-5 个短章节）
 
 **禁止事项**：
-- ❌ 不引入联网、多人、后端服务
+- ✅ ~~不引入联网、多人、后端服务~~ → **已解除**：2026-05-09 正式引入 2 人 Wi-Fi LAN 合作多人模式（无互联网、无云后端）
+- ❌ 不引入云服务器、matchmaking、后端账号系统
 - ❌ 不改为开放世界
 - ❌ 不大幅重排目录结构
 - ❌ 不提交无关格式化噪声
+
+## 13. 多人模式工作约束（2026-05-09）
+
+- 通讯方案固定为 **Wi-Fi 热点 LAN + Godot ENet**，不再讨论蓝牙/星闪方案。
+- 多人模式新增文件：
+  - `scripts/network_manager.gd`（Autoload）
+  - `scenes/ui/lobby.tscn` + `scripts/lobby.gd`
+- 多人模式改动文件：
+  - `scripts/player.gd`（加 authority 守卫 + MultiplayerSynchronizer）
+  - `scripts/main.gd`（加 MultiplayerSpawner + 多玩家生成）
+  - `project.godot`（注册 NetworkManager autoload）
+- 敌人逻辑服务器权威，不在客户端重复执行；客户端只做渲染和输入。
+- 任何 `@rpc("any_peer")` 函数体内必须有 `if not multiplayer.is_server(): return` 守卫。
