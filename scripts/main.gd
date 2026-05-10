@@ -46,6 +46,7 @@ const ENTITY_SYNC_INTERVAL: float = 0.05
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
 var _pending_laser_spawns: Array = []
+var _alive_players: Dictionary = {}
 
 @onready var _bg_color: ColorRect = $BgColor
 
@@ -268,6 +269,8 @@ func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
 	_player.position = Vector2(640, 500)
 	add_child(_player)
+	GameState.ensure_player_state(_player.peer_id)
+	_alive_players[_player.peer_id] = true
 	_player.died.connect(_on_player_died)
 
 
@@ -289,12 +292,16 @@ func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
 	player.name = str(p_peer_id)
 	player.position = _get_networked_player_spawn_position(p_peer_id)
 	add_child(player)
+	GameState.ensure_player_state(p_peer_id)
+	_alive_players[p_peer_id] = true
 	player.died.connect(_on_networked_player_died.bind(p_peer_id))
 	_players[p_peer_id] = player
 	## 兼容 _player 引用（指向本机玩家）
 	var my_id := multiplayer.get_unique_id()
 	if p_peer_id == my_id:
 		_player = player
+	if player.has_method("on_level_up"):
+		player.on_level_up()
 	if announce:
 		_rpc_spawn_networked_player.rpc(p_peer_id, player.position.x, player.position.y)
 
@@ -312,9 +319,12 @@ func _on_multiplayer_player_disconnected(p_peer_id: int) -> void:
 		if is_instance_valid(node):
 			node.queue_free()
 		_players.erase(p_peer_id)
-	## 若所有玩家都断开，服务器自己也退出
-	if _players.is_empty() and multiplayer.is_server():
+	_alive_players.erase(p_peer_id)
+	## 若所有玩家都断开，服务器自己也结束
+	if _alive_players.is_empty() and multiplayer.is_server():
 		_on_player_died()
+	else:
+		_refresh_primary_player_target()
 
 
 ## 多人模式：服务器断开（Client 端触发）
@@ -326,10 +336,28 @@ func _on_multiplayer_server_disconnected() -> void:
 
 ## 多人模式：某玩家死亡回调
 func _on_networked_player_died(p_peer_id: int) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_despawn_player.rpc(p_peer_id)
+	_rpc_despawn_player(p_peer_id)
 	_players.erase(p_peer_id)
+	_alive_players.erase(p_peer_id)
 	## 合作模式：仅当全员死亡（或全部离场）才结束。
-	if _players.is_empty():
+	if _alive_players.is_empty():
 		_on_player_died()
+	else:
+		_refresh_primary_player_target()
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_despawn_player(p_peer_id: int) -> void:
+	if not _players.has(p_peer_id):
+		return
+	var node: Node = _players[p_peer_id]
+	if is_instance_valid(node):
+		node.queue_free()
+	_players.erase(p_peer_id)
+	_alive_players.erase(p_peer_id)
+	if _player != null and is_instance_valid(_player) and _player.name == str(p_peer_id):
+		_player = null
 
 func _spawn_hud() -> void:
 	_hud = _hud_scene.instantiate()
@@ -494,7 +522,7 @@ func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 1) -
 	if _entities.has(entity_id):
 		var node = _entities[entity_id]
 		if is_instance_valid(node) and node.has_method("get_powerup_type"):
-			GameState.collect_powerup(node.get_powerup_type())
+			GameState.collect_powerup(node.get_powerup_type(), collector_peer_id)
 		if is_instance_valid(node):
 			node.queue_free()
 		_entities.erase(entity_id)
@@ -778,12 +806,22 @@ func _on_reward_chosen(reward_type: String) -> void:
 		_player._update_appearance()
 
 func _on_player_died() -> void:
+	if _player and is_instance_valid(_player):
+		_alive_players.erase(_player.peer_id)
+	if NetworkManager.is_online() and not _alive_players.is_empty():
+		_show_death_marquee_text("你已坠毁，等待队友继续战斗")
+		_refresh_primary_player_target()
+		return
 	GameState.stop_game()
 	_pending_boss_level = 0
 	_clear_runtime_entities_on_game_over()
 	_show_death_marquee()
+	if _hud and is_instance_valid(_hud) and _hud.has_method("_on_game_over"):
+		_hud._on_game_over(GameState.score, GameState.level)
 
 func _on_game_over_triggered(final_score: int, final_level: int) -> void:
+	if NetworkManager.is_online() and not _alive_players.is_empty():
+		return
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_force_game_over.rpc(final_score, final_level)
 	_on_player_died()
@@ -902,10 +940,46 @@ func _rpc_spawn_networked_player(p_peer_id: int, pos_x: float, pos_y: float) -> 
 	player.name = str(p_peer_id)
 	player.position = Vector2(pos_x, pos_y)
 	add_child(player)
+	GameState.ensure_player_state(p_peer_id)
 	player.died.connect(_on_networked_player_died.bind(p_peer_id))
 	_players[p_peer_id] = player
+	_alive_players[p_peer_id] = true
 	if p_peer_id == multiplayer.get_unique_id():
 		_player = player
+	if player.has_method("on_level_up"):
+		player.on_level_up()
+	_refresh_primary_player_target()
+
+func _refresh_primary_player_target() -> void:
+	var new_target: Node2D = null
+	if _players.is_empty():
+		return
+	var preferred_id := 1
+	if _alive_players.has(preferred_id):
+		if _players.has(preferred_id) and is_instance_valid(_players[preferred_id]):
+			new_target = _players[preferred_id]
+	if new_target == null:
+		for pid in _alive_players.keys():
+			if _players.has(pid) and is_instance_valid(_players[pid]):
+				new_target = _players[pid]
+				break
+	if new_target == null:
+		return
+	_player = new_target
+	_retarget_hostile_entities(_player)
+
+func _retarget_hostile_entities(target_player: Node2D) -> void:
+	if target_player == null or not is_instance_valid(target_player):
+		return
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e):
+			continue
+		if e.has_method("set_target"):
+			e.set_target(target_player)
+	if _elite != null and is_instance_valid(_elite) and _elite.has_method("set_target"):
+		_elite.set_target(target_player)
+	if _boss != null and is_instance_valid(_boss) and _boss.has_method("set_target"):
+		_boss.set_target(target_player)
 
 
 ## Host → Client：生成敌人幽灵副本

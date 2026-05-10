@@ -6,7 +6,8 @@ signal health_changed(current_health, max_health)
 signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
 signal shield_changed(layers)
-signal skill_used
+signal skill_used(peer_id)
+signal laser_used(peer_id)
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
 signal boss_defeated
@@ -49,10 +50,63 @@ var extra_bullet_count: int = 0        # 额外子弹数量
 var extra_damage_bonus: int = 0        # 额外子弹伤害
 var move_speed_bonus: float = 0.0      # 移速加成百分比
 
+## 多人：按玩家独立属性（key=peer_id 字符串）
+var _player_states: Dictionary = {}
+
 ## ── 网络同步 ──────────────────────────────────────────────────
 var _sync_dirty: bool = false
 var _sync_timer: float = 0.0
 const SYNC_INTERVAL: float = 0.1  # 每 100ms 发送一次
+var _server_player_states: Dictionary = {}
+
+func _local_peer_id() -> int:
+	if NetworkManager.is_online() and multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
+		return multiplayer.get_unique_id()
+	return 1
+
+func _peer_key(peer_id: int) -> String:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	return str(pid)
+
+func _new_player_state() -> Dictionary:
+	return {
+		"current_health": START_HEALTH,
+		"max_health": START_HEALTH,
+		"shield_layers": 0,
+		"shoot_level": 1,
+		"shoot_speed_level": 1,
+		"bullet_power_level": 1,
+		"skill_cooldown": 0.0,
+		"laser_cooldown": 0.0,
+		"laser_cd_bonus": 0.0,
+		"extra_bullet_count": 0,
+		"extra_damage_bonus": 0,
+		"move_speed_bonus": 0.0,
+	}
+
+func _state(peer_id: int = -1) -> Dictionary:
+	var key := _peer_key(peer_id)
+	if not _player_states.has(key):
+		_player_states[key] = _new_player_state()
+	return _player_states[key]
+
+func _sync_local_view() -> void:
+	var s := _state(_local_peer_id())
+	current_health = s.current_health
+	max_health = s.max_health
+	shield_layers = s.shield_layers
+	shoot_level = s.shoot_level
+	shoot_speed_level = s.shoot_speed_level
+	bullet_power_level = s.bullet_power_level
+	skill_cooldown = s.skill_cooldown
+	laser_cooldown = s.laser_cooldown
+	laser_cd_bonus = s.laser_cd_bonus
+	extra_bullet_count = s.extra_bullet_count
+	extra_damage_bonus = s.extra_damage_bonus
+	move_speed_bonus = s.move_speed_bonus
+
+func _is_local_peer(peer_id: int) -> bool:
+	return (peer_id if peer_id > 0 else _local_peer_id()) == _local_peer_id()
 
 func _process(delta: float) -> void:
 	if not multiplayer.is_server():
@@ -71,26 +125,15 @@ func _to_dict() -> Dictionary:
 		"level": level,
 		"kills": kills,
 		"total_kills": total_kills,
-		"current_health": current_health,
-		"max_health": max_health,
-		"shield_layers": shield_layers,
 		"game_running": game_running,
-		"shoot_level": shoot_level,
-		"shoot_speed_level": shoot_speed_level,
-		"bullet_power_level": bullet_power_level,
-		"skill_cooldown": skill_cooldown,
-		"laser_cooldown": laser_cooldown,
 		"boss_active": boss_active,
 		"elite_encounter_count": elite_encounter_count,
 		"post_elite_multiplier": post_elite_multiplier,
 		"last_elite_threshold": last_elite_threshold,
-		"laser_cd_bonus": laser_cd_bonus,
-		"extra_bullet_count": extra_bullet_count,
-		"extra_damage_bonus": extra_damage_bonus,
-		"move_speed_bonus": move_speed_bonus,
 		"kills_for_next_level": kills_for_next_level,
 		"last_boss_level": last_boss_level,
 		"boss_encounter_count": boss_encounter_count,
+		"player_states": _player_states.duplicate(true),
 	}
 
 @rpc("authority", "unreliable", "call_remote")
@@ -117,36 +160,68 @@ func _rpc_report_player_hit(damage: int, target_peer_id: int) -> void:
 	if scene and scene.has_method("_on_network_player_hit"):
 		scene._on_network_player_hit(damage, target_peer_id)
 
+@rpc("any_peer", "reliable")
+func _rpc_request_use_skill(peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var owner_peer_id := multiplayer.get_remote_sender_id()
+	if peer_id != owner_peer_id:
+		return
+	if not use_skill(peer_id):
+		return
+	_rpc_confirm_skill_used.rpc_id(owner_peer_id, peer_id)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_confirm_skill_used(peer_id: int) -> void:
+	if _local_peer_id() != peer_id:
+		return
+	var s := _state(peer_id)
+	s.skill_cooldown = SKILL_COOLDOWN_MAX
+	_player_states[_peer_key(peer_id)] = s
+	_sync_local_view()
+	skill_used.emit(peer_id)
+
+@rpc("any_peer", "reliable")
+func _rpc_request_use_laser(peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var owner_peer_id := multiplayer.get_remote_sender_id()
+	if peer_id != owner_peer_id:
+		return
+	if not use_laser(peer_id):
+		return
+	_rpc_confirm_laser_used.rpc_id(owner_peer_id, peer_id, get_laser_cooldown_max(peer_id))
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
+	if _local_peer_id() != peer_id:
+		return
+	var s := _state(peer_id)
+	s.laser_cooldown = cooldown
+	_player_states[_peer_key(peer_id)] = s
+	_sync_local_view()
+	laser_used.emit(peer_id)
+
 func _from_dict(data: Dictionary) -> void:
 	score = data.get("score", 0)
 	level = data.get("level", 1)
 	kills = data.get("kills", 0)
 	total_kills = data.get("total_kills", 0)
-	current_health = data.get("current_health", START_HEALTH)
-	max_health = data.get("max_health", START_HEALTH)
-	max_health = clamp(max_health, START_HEALTH, HEALTH_CAP)
-	current_health = clamp(current_health, 0, max_health)
-	shield_layers = data.get("shield_layers", 0)
 	game_running = data.get("game_running", false)
-	shoot_level = data.get("shoot_level", 1)
-	shoot_speed_level = data.get("shoot_speed_level", 1)
-	bullet_power_level = data.get("bullet_power_level", 1)
-	skill_cooldown = data.get("skill_cooldown", 0.0)
-	laser_cooldown = data.get("laser_cooldown", 0.0)
 	boss_active = data.get("boss_active", false)
 	elite_encounter_count = data.get("elite_encounter_count", 0)
 	post_elite_multiplier = data.get("post_elite_multiplier", 1.0)
 	last_elite_threshold = data.get("last_elite_threshold", 0)
-	laser_cd_bonus = data.get("laser_cd_bonus", 0.0)
-	extra_bullet_count = data.get("extra_bullet_count", 0)
-	extra_damage_bonus = data.get("extra_damage_bonus", 0)
-	move_speed_bonus = data.get("move_speed_bonus", 0.0)
 	kills_for_next_level = data.get("kills_for_next_level", 10)
 	last_boss_level = data.get("last_boss_level", 0)
 	boss_encounter_count = data.get("boss_encounter_count", 0)
+	_player_states = data.get("player_states", {})
+	if not multiplayer.is_server():
+		_server_player_states = _player_states.duplicate(true)
 	## 重新发射信号让 UI 更新
 	score_changed.emit(score)
 	level_changed.emit(level)
+	_sync_local_view()
 	health_changed.emit(current_health, max_health)
 	shield_changed.emit(shield_layers)
 
@@ -154,21 +229,21 @@ func _mark_dirty() -> void:
 	if multiplayer.is_server():
 		_sync_dirty = true
 
+func ensure_player_state(peer_id: int) -> void:
+	_state(peer_id)
+	if multiplayer.is_server():
+		var key := _peer_key(peer_id)
+		if not _server_player_states.has(key):
+			_server_player_states[key] = _new_player_state()
+	_mark_dirty()
+
 func reset_game() -> void:
 	score = 0
 	level = 1
 	kills = 0
 	total_kills = 0
-	current_health = START_HEALTH
-	max_health = START_HEALTH
-	shield_layers = 0
 	death_message = ""
 	game_running = true
-	shoot_level = 1
-	shoot_speed_level = 1
-	bullet_power_level = 1
-	skill_cooldown = 0.0
-	laser_cooldown = 0.0
 	kills_for_next_level = 10
 	last_elite_threshold = 0
 	elite_encounter_count = 0
@@ -176,11 +251,11 @@ func reset_game() -> void:
 	boss_active = false
 	boss_encounter_count = 0
 	last_boss_level = 0
-	laser_cd_bonus = 0.0
-	extra_bullet_count = 0
-	extra_damage_bonus = 0
-	move_speed_bonus = 0.0
+	_player_states.clear()
+	_state(_local_peer_id())
+	_sync_local_view()
 	health_changed.emit(current_health, max_health)
+	shield_changed.emit(shield_layers)
 	_mark_dirty()
 
 func add_score(amount: int) -> void:
@@ -195,7 +270,11 @@ func add_kill() -> void:
 	if kills >= kills_for_next_level:
 		level_up()
 	if total_kills % 10 == 0:
-		shield_layers = min(shield_layers + 1, 30)
+		for key: String in _player_states.keys():
+			var s: Dictionary = _player_states[key]
+			s.shield_layers = min(int(s.shield_layers) + 1, 30)
+			_player_states[key] = s
+		_sync_local_view()
 		shield_changed.emit(shield_layers)
 	if total_kills > 0 and total_kills % 20 == 0 and total_kills != last_elite_threshold:
 		last_elite_threshold = total_kills
@@ -206,8 +285,12 @@ func level_up() -> void:
 	level += 1
 	kills = 0
 	kills_for_next_level = 10 + level * 5
-	bullet_power_level = min(bullet_power_level + 1, 50)
-	current_health = min(current_health + 1, max_health)
+	for key: String in _player_states.keys():
+		var s: Dictionary = _player_states[key]
+		s.bullet_power_level = min(int(s.bullet_power_level) + 1, 50)
+		s.current_health = min(int(s.current_health) + 1, int(s.max_health))
+		_player_states[key] = s
+	_sync_local_view()
 	health_changed.emit(current_health, max_health)
 	level_changed.emit(level)
 	SFX.play_ui_confirm()
@@ -216,107 +299,261 @@ func level_up() -> void:
 		boss_spawn_requested.emit(level)
 	_mark_dirty()
 
-func take_damage(amount: int = 1) -> void:
-	if shield_layers > 0:
-		var absorbed: int = min(shield_layers, amount)
-		shield_layers -= absorbed
-		shield_changed.emit(shield_layers)
+func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	if int(s.shield_layers) > 0:
+		var absorbed: int = min(int(s.shield_layers), amount)
+		s.shield_layers = int(s.shield_layers) - absorbed
+		if _is_local_peer(pid):
+			shield_layers = s.shield_layers
+			shield_changed.emit(shield_layers)
 		amount -= absorbed
 	if amount > 0:
-		current_health = max(current_health - amount, 0)
-		health_changed.emit(current_health, max_health)
+		s.current_health = max(int(s.current_health) - amount, 0)
+		if _is_local_peer(pid):
+			current_health = s.current_health
+			max_health = s.max_health
+			health_changed.emit(current_health, max_health)
 		SFX.play_player_hurt()
-		if current_health <= 0:
+		if int(s.current_health) <= 0 and _is_local_peer(pid):
 			game_over.emit(score, level)
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
 	_mark_dirty()
+	return int(s.current_health) <= 0
 
-func heal(amount: int = 1) -> void:
+func heal(amount: int = 1, peer_id: int = -1) -> void:
 	if amount <= 0:
 		return
-	if current_health >= max_health:
-		if max_health < HEALTH_CAP:
-			max_health = min(max_health + amount, HEALTH_CAP)
-			current_health = min(current_health + amount, max_health)
-			health_changed.emit(current_health, max_health)
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	if int(s.current_health) >= int(s.max_health):
+		if int(s.max_health) < HEALTH_CAP:
+			s.max_health = min(int(s.max_health) + amount, HEALTH_CAP)
+			s.current_health = min(int(s.current_health) + amount, int(s.max_health))
+			if _is_local_peer(pid):
+				current_health = s.current_health
+				max_health = s.max_health
+				health_changed.emit(current_health, max_health)
 	else:
-		current_health = min(current_health + amount, max_health)
-		health_changed.emit(current_health, max_health)
+		s.current_health = min(int(s.current_health) + amount, int(s.max_health))
+		if _is_local_peer(pid):
+			current_health = s.current_health
+			max_health = s.max_health
+			health_changed.emit(current_health, max_health)
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
 	SFX.play_ui_select()
 	_mark_dirty()
 
-func collect_powerup(type: String) -> void:
-	powerup_collected.emit(type)
+func collect_powerup(type: String, peer_id: int = -1) -> void:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	var changed_in_place := false
+	if _is_local_peer(pid):
+		powerup_collected.emit(type)
 	SFX.play_ui_confirm()
 	match type:
 		"spread":
-			if shoot_level < 10:
-				shoot_level = min(shoot_level + 1, 10)
+			if int(s.shoot_level) < 10:
+				s.shoot_level = min(int(s.shoot_level) + 1, 10)
 		"speed":
-			if shoot_speed_level < 15:
-				shoot_speed_level = min(shoot_speed_level + 1, 15)
+			if int(s.shoot_speed_level) < 15:
+				s.shoot_speed_level = min(int(s.shoot_speed_level) + 1, 15)
 		"power":
-			if bullet_power_level >= 15:
-				heal(1)
+			if int(s.bullet_power_level) >= 15:
+				heal(1, pid)
+				changed_in_place = true
 			else:
-				bullet_power_level = min(bullet_power_level + 1, 50)
+				s.bullet_power_level = min(int(s.bullet_power_level) + 1, 50)
 		"heal":
-			heal(1)
+			heal(1, pid)
+			changed_in_place = true
 		"bomb":
 			pass
+	if not changed_in_place:
+		_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
 	_mark_dirty()
 
-func use_skill() -> bool:
-	if skill_cooldown > 0 or not game_running:
+func use_skill(peer_id: int = -1) -> bool:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if float(s.skill_cooldown) > 0.0 or not game_running:
+			return false
+		s.skill_cooldown = SKILL_COOLDOWN_MAX
+		_player_states[_peer_key(pid)] = s
+		if _is_local_peer(pid):
+			_sync_local_view()
+			skill_used.emit(pid)
+		_rpc_request_use_skill.rpc_id(1, pid)
+		return true
+	if float(s.skill_cooldown) > 0.0 or not game_running:
 		return false
-	skill_cooldown = SKILL_COOLDOWN_MAX
-	skill_used.emit()
+	s.skill_cooldown = SKILL_COOLDOWN_MAX
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
+		skill_used.emit(pid)
 	_mark_dirty()
 	return true
 
-func tick_skill_cooldown(delta: float) -> void:
-	if skill_cooldown > 0:
-		skill_cooldown = max(skill_cooldown - delta, 0.0)
+func tick_skill_cooldown(delta: float, peer_id: int = -1) -> void:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if _server_player_states.has(_peer_key(pid)):
+			var server_s: Dictionary = _server_player_states[_peer_key(pid)]
+			s.skill_cooldown = float(server_s.get("skill_cooldown", s.skill_cooldown))
+			_player_states[_peer_key(pid)] = s
+			if _is_local_peer(pid):
+				_sync_local_view()
+		return
+	if float(s.skill_cooldown) > 0.0:
+		s.skill_cooldown = max(float(s.skill_cooldown) - delta, 0.0)
+		_player_states[_peer_key(pid)] = s
+		if _is_local_peer(pid):
+			_sync_local_view()
 		_mark_dirty()
 
-func use_laser() -> bool:
-	if laser_cooldown > 0 or not game_running:
+func use_laser(peer_id: int = -1) -> bool:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if float(s.laser_cooldown) > 0.0 or not game_running:
+			return false
+		s.laser_cooldown = get_laser_cooldown_max(pid)
+		_player_states[_peer_key(pid)] = s
+		if _is_local_peer(pid):
+			_sync_local_view()
+		_rpc_request_use_laser.rpc_id(1, pid)
+		return true
+	if float(s.laser_cooldown) > 0.0 or not game_running:
 		return false
-	laser_cooldown = get_laser_cooldown_max()
+	s.laser_cooldown = get_laser_cooldown_max(pid)
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
+		laser_used.emit(pid)
 	_mark_dirty()
 	return true
 
-func tick_laser_cooldown(delta: float) -> void:
-	if laser_cooldown > 0:
-		laser_cooldown = max(laser_cooldown - delta, 0.0)
+func tick_laser_cooldown(delta: float, peer_id: int = -1) -> void:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if _server_player_states.has(_peer_key(pid)):
+			var server_s: Dictionary = _server_player_states[_peer_key(pid)]
+			s.laser_cooldown = float(server_s.get("laser_cooldown", s.laser_cooldown))
+			_player_states[_peer_key(pid)] = s
+			if _is_local_peer(pid):
+				_sync_local_view()
+		return
+	if float(s.laser_cooldown) > 0.0:
+		s.laser_cooldown = max(float(s.laser_cooldown) - delta, 0.0)
+		_player_states[_peer_key(pid)] = s
+		if _is_local_peer(pid):
+			_sync_local_view()
 		_mark_dirty()
 
-func get_laser_damage() -> int:
+func get_laser_damage(_peer_id: int = -1) -> int:
 	var base: int = 5
 	var mul: int = level / 10
 	return base * int(pow(2, mul))
 
-func get_laser_cooldown_max() -> float:
-	return max(LASER_COOLDOWN_MAX - laser_cd_bonus, 5.0)
+func get_laser_cooldown_max(peer_id: int = -1) -> float:
+	var s := _state(peer_id)
+	return max(LASER_COOLDOWN_MAX - float(s.laser_cd_bonus), 5.0)
 
-func get_skill_cooldown_ratio() -> float:
-	if skill_cooldown <= 0:
+func get_skill_cooldown_ratio(peer_id: int = -1) -> float:
+	var s := _state(peer_id)
+	var cd := float(s.skill_cooldown)
+	if cd <= 0.0:
 		return 0.0
-	return skill_cooldown / SKILL_COOLDOWN_MAX
+	return cd / SKILL_COOLDOWN_MAX
 
-func get_bullet_count() -> int:
-	return min(2 + shoot_level / 3 + extra_bullet_count, 12)
+func get_skill_cooldown(peer_id: int = -1) -> float:
+	return float(_state(peer_id).skill_cooldown)
 
-func get_shoot_cooldown() -> float:
-	return max(0.27 - shoot_speed_level * 0.018, 0.08)
+func get_laser_cooldown(peer_id: int = -1) -> float:
+	return float(_state(peer_id).laser_cooldown)
 
-func get_bullet_damage() -> int:
-	return 3 + bullet_power_level + extra_damage_bonus
+func get_bullet_count(peer_id: int = -1) -> int:
+	var s := _state(peer_id)
+	return min(2 + int(s.shoot_level) / 3 + int(s.extra_bullet_count), 12)
 
-func get_bullet_spread_angle() -> float:
-	return max(30.0 - shoot_level * 4.0, 10.0)
+func get_shoot_cooldown(peer_id: int = -1) -> float:
+	var s := _state(peer_id)
+	return max(0.27 - int(s.shoot_speed_level) * 0.018, 0.08)
 
-func get_move_speed_multiplier() -> float:
-	return 1.0 + move_speed_bonus
+func get_bullet_damage(peer_id: int = -1) -> int:
+	var s := _state(peer_id)
+	return 3 + int(s.bullet_power_level) + int(s.extra_damage_bonus)
+
+func get_bullet_spread_angle(peer_id: int = -1) -> float:
+	var s := _state(peer_id)
+	return max(30.0 - int(s.shoot_level) * 4.0, 10.0)
+
+func get_move_speed_multiplier(peer_id: int = -1) -> float:
+	var s := _state(peer_id)
+	return 1.0 + float(s.move_speed_bonus)
+
+func get_shoot_level(peer_id: int = -1) -> int:
+	return int(_state(peer_id).shoot_level)
+
+func get_shoot_speed_level(peer_id: int = -1) -> int:
+	return int(_state(peer_id).shoot_speed_level)
+
+func get_bullet_power_level(peer_id: int = -1) -> int:
+	return int(_state(peer_id).bullet_power_level)
+
+func get_current_health(peer_id: int = -1) -> int:
+	return int(_state(peer_id).current_health)
+
+func get_max_health(peer_id: int = -1) -> int:
+	return int(_state(peer_id).max_health)
+
+func get_shield_layers(peer_id: int = -1) -> int:
+	return int(_state(peer_id).shield_layers)
+
+func get_laser_cd_bonus(peer_id: int = -1) -> float:
+	return float(_state(peer_id).laser_cd_bonus)
+
+func get_extra_bullet_count(peer_id: int = -1) -> int:
+	return int(_state(peer_id).extra_bullet_count)
+
+func get_extra_damage_bonus(peer_id: int = -1) -> int:
+	return int(_state(peer_id).extra_damage_bonus)
+
+func get_move_speed_bonus(peer_id: int = -1) -> float:
+	return float(_state(peer_id).move_speed_bonus)
+
+func apply_reward(reward_type: String, peer_id: int = -1) -> void:
+	var pid := peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	match reward_type:
+		"laser_cd":
+			s.laser_cd_bonus = float(s.laser_cd_bonus) + 1.0
+		"bullet_count":
+			s.extra_bullet_count = int(s.extra_bullet_count) + 1
+		"damage":
+			s.extra_damage_bonus = int(s.extra_damage_bonus) + 2
+		"speed":
+			s.move_speed_bonus = float(s.move_speed_bonus) + 0.10
+		"shield":
+			s.shield_layers = min(int(s.shield_layers) + 3, 30)
+		_:
+			return
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
+		shield_changed.emit(shield_layers)
+	_mark_dirty()
 
 func on_boss_started() -> void:
 	boss_active = true

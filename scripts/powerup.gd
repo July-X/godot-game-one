@@ -28,6 +28,7 @@ var _glow_time: float = 0.0
 var _magnet_target: Node2D = null
 var _magnet_speed: float = 350.0
 var _magnet_requested: bool = false
+var _magnet_owner_peer_id: int = 0
 
 func _physics_process(delta: float) -> void:
 	if NetworkManager.is_online() and _is_network_ghost:
@@ -82,14 +83,30 @@ var _collected: bool = false
 
 func start_magnet(target: Node2D) -> void:
 	if NetworkManager.is_online() and multiplayer.is_server():
+		var requested_peer_id: int = 0
+		if target != null and is_instance_valid(target) and target.is_in_group("player"):
+			if target.has_method("get"):
+				var maybe_peer: Variant = target.get("peer_id")
+				if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) > 0:
+					requested_peer_id = int(maybe_peer)
+		if requested_peer_id <= 0:
+			requested_peer_id = 1
+		## 一旦有归属者，避免被其他玩家后续“抢吸”覆盖
+		if _magnet_owner_peer_id > 0 and requested_peer_id != _magnet_owner_peer_id:
+			return
+		_magnet_owner_peer_id = requested_peer_id
 		if target != null and is_instance_valid(target) and target.is_in_group("player"):
 			_magnet_target = target
 		else:
-			var nearest := _find_nearest_player()
-			if nearest != null:
-				_magnet_target = nearest
+			var owner := _find_player_by_peer(_magnet_owner_peer_id)
+			if owner != null:
+				_magnet_target = owner
 			else:
-				_magnet_target = target
+				var nearest := _find_nearest_player()
+				if nearest != null:
+					_magnet_target = nearest
+				else:
+					_magnet_target = target
 		_sprite.modulate.a = 1.0
 		if _glow:
 			_glow.modulate.a = 1.0
@@ -117,13 +134,28 @@ func collect() -> void:
 	if _collected:
 		return
 	_collected = true
+	var collector_target: Node2D = _magnet_target
 	_magnet_target = null
 	_magnet_requested = false
 
 	if NetworkManager.is_online() and multiplayer.is_server():
 		var scene := get_tree().current_scene
 		if scene and scene.has_method("_on_network_powerup_collected"):
-			scene._on_network_powerup_collected(entity_id, multiplayer.get_unique_id())
+			var collector_peer_id := _magnet_owner_peer_id
+			if collector_target != null and is_instance_valid(collector_target):
+				if collector_target.has_method("get"):
+					var maybe_peer: Variant = collector_target.get("peer_id")
+					if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) > 0:
+						collector_peer_id = int(maybe_peer)
+			if collector_peer_id <= 0:
+				var nearest := _find_nearest_player()
+				if nearest != null and nearest.has_method("get"):
+					var near_peer: Variant = nearest.get("peer_id")
+					if typeof(near_peer) == TYPE_INT and int(near_peer) > 0:
+						collector_peer_id = int(near_peer)
+			if collector_peer_id <= 0:
+				collector_peer_id = 1
+			scene._on_network_powerup_collected(entity_id, collector_peer_id)
 		return
 
 	if NetworkManager.is_online():
@@ -188,3 +220,18 @@ func _find_nearest_player() -> Node2D:
 			nearest_dist = d
 			nearest = n
 	return nearest
+
+func _find_player_by_peer(peer_id: int) -> Node2D:
+	if peer_id <= 0:
+		return null
+	var players := get_tree().get_nodes_in_group("player")
+	for p in players:
+		if not (p is Node2D):
+			continue
+		if not is_instance_valid(p):
+			continue
+		if p.has_method("get"):
+			var maybe_peer: Variant = p.get("peer_id")
+			if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) == peer_id:
+				return p as Node2D
+	return null

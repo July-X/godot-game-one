@@ -56,9 +56,10 @@ func _update_invincible_flash() -> void:
 
 func update_appearance() -> void:
 	var visual_tier: int = _get_visual_tier()
-	var shoot_level: int = GameState.shoot_level
+	var shoot_level: int = GameState.get_shoot_level(_player.peer_id)
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_player_sprite(visual_tier)
+		_apply_peer_tint()
 	if _engine_glow:
 		_engine_glow.visible = true
 		_engine_glow.position.y = 32.0
@@ -68,6 +69,19 @@ func update_appearance() -> void:
 			var tex_path: String = "res://assets/sprites/ui/engine_flame.png"
 			if ResourceLoader.exists(tex_path):
 				_engine_glow.texture = load(tex_path)
+
+func _apply_peer_tint() -> void:
+	if not _sprite:
+		return
+	if not NetworkManager.is_online():
+		_sprite.modulate = Color(1.0, 1.0, 1.0, 1.0)
+		return
+	if _player.peer_id == 1:
+		## 房主：偏青蓝
+		_sprite.modulate = Color(0.75, 0.95, 1.25, 1.0)
+	else:
+		## 加入者：偏橙红
+		_sprite.modulate = Color(1.25, 0.85, 0.65, 1.0)
 
 
 func _get_visual_tier() -> int:
@@ -86,12 +100,13 @@ func trigger_hit() -> void:
 func _play_hit_animation() -> void:
 	if not _sprite:
 		return
+	var base_color: Color = _sprite.modulate
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(_sprite, "modulate", Color(3.0, 3.0, 3.0, 1.0), 0.04)
 	tween.tween_property(_sprite, "scale", Vector2(1.2, 1.2), 0.04)
 	tween.tween_callback(func():
 		var recover := create_tween().set_parallel(true)
-		recover.tween_property(_sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
+		recover.tween_property(_sprite, "modulate", base_color, 0.12)
 		recover.tween_property(_sprite, "scale", Vector2(1.0, 1.0), 0.12)
 	)
 
@@ -116,3 +131,6 @@ func play_level_up_effect() -> void:
 	if _sprite:
 		tween.tween_property(_sprite, "modulate", Color(1.5, 1.5, 1.5, 1.0), 0.1)
 		tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1.0), 0.1)
+		tween.finished.connect(func():
+			_apply_peer_tint()
+		)

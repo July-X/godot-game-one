@@ -21,6 +21,13 @@ var _damage_flash: ColorRect
 var _skill_data: Array[Dictionary] = []
 ## 运行时生成的技能槽节点列表
 var _skill_slots: Array[Dictionary] = []
+var _cached_spread_level: int = -1
+var _cached_speed_level: int = -1
+var _cached_power_level: int = -1
+var _cached_extra_bullet_count: int = -1
+var _cached_extra_damage_bonus: int = -1
+var _cached_laser_cd_bonus: float = -1.0
+var _cached_move_speed_bonus: float = -1.0
 
 func _ready() -> void:
 	_game_over_panel.visible = false
@@ -33,16 +40,17 @@ func _ready() -> void:
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
 	GameState.health_changed.connect(_on_health_changed)
-	GameState.game_over.connect(_on_game_over)
 	GameState.powerup_collected.connect(_on_powerup_collected)
 	GameState.boss_reward_applied.connect(_on_boss_reward_applied)
 	_update_score(0)
 	_update_level(1)
-	_update_health(GameState.current_health, GameState.max_health)
+	_update_health(GameState.get_current_health(), GameState.get_max_health())
+	_update_powerup_display()
 	_refresh_leaderboard()
 
 func _process(_delta: float) -> void:
 	_update_cooldowns()
+	_refresh_powerup_display_if_needed()
 
 
 ## ── 动态技能条 ──────────────────────────────────────────────
@@ -148,10 +156,10 @@ func _update_cooldowns() -> void:
 		var cd_max: float = 0.0
 		match action:
 			"skill":
-				cd = GameState.skill_cooldown
+				cd = GameState.get_skill_cooldown()
 				cd_max = GameState.SKILL_COOLDOWN_MAX
 			"laser":
-				cd = GameState.laser_cooldown
+				cd = GameState.get_laser_cooldown()
 				cd_max = GameState.LASER_COOLDOWN_MAX
 		var progress: float = 1.0 - cd / cd_max if cd_max > 0 else 1.0
 		slot.overlay.set_ready_progress(progress)
@@ -213,6 +221,24 @@ func _on_powerup_collected(type: String) -> void:
 func _on_boss_reward_applied() -> void:
 	_update_powerup_display()
 
+func _refresh_powerup_display_if_needed() -> void:
+	var spread_level := GameState.get_shoot_level()
+	var speed_level := GameState.get_shoot_speed_level()
+	var power_level := GameState.get_bullet_power_level()
+	var extra_bullet_count := GameState.get_extra_bullet_count()
+	var extra_damage_bonus := GameState.get_extra_damage_bonus()
+	var laser_cd_bonus := GameState.get_laser_cd_bonus()
+	var move_speed_bonus := GameState.get_move_speed_bonus()
+	if spread_level == _cached_spread_level \
+	and speed_level == _cached_speed_level \
+	and power_level == _cached_power_level \
+	and extra_bullet_count == _cached_extra_bullet_count \
+	and extra_damage_bonus == _cached_extra_damage_bonus \
+	and is_equal_approx(laser_cd_bonus, _cached_laser_cd_bonus) \
+	and is_equal_approx(move_speed_bonus, _cached_move_speed_bonus):
+		return
+	_update_powerup_display()
+
 ## ── 显示更新 ────────────────────────────────────────────────
 
 func _update_score(score: int) -> void:
@@ -229,6 +255,13 @@ func _update_health(current: int, maximum: int) -> void:
 		_hp_num.text = "%d/%d" % [current, maximum]
 
 func _update_powerup_display() -> void:
+	_cached_spread_level = GameState.get_shoot_level()
+	_cached_speed_level = GameState.get_shoot_speed_level()
+	_cached_power_level = GameState.get_bullet_power_level()
+	_cached_extra_bullet_count = GameState.get_extra_bullet_count()
+	_cached_extra_damage_bonus = GameState.get_extra_damage_bonus()
+	_cached_laser_cd_bonus = GameState.get_laser_cd_bonus()
+	_cached_move_speed_bonus = GameState.get_move_speed_bonus()
 	for child in _powerup_display.get_children():
 		child.queue_free()
 	var labels := {
@@ -241,13 +274,13 @@ func _update_powerup_display() -> void:
 		var max_level: int = 15
 		match type:
 			"spread":
-				level = GameState.shoot_level
+				level = GameState.get_shoot_level()
 				max_level = 10
 			"speed":
-				level = GameState.shoot_speed_level
+				level = GameState.get_shoot_speed_level()
 				max_level = 10
 			"power":
-				level = GameState.bullet_power_level
+				level = GameState.get_bullet_power_level()
 				max_level = 50
 		if level <= 0:
 			continue
@@ -295,14 +328,18 @@ func _update_powerup_display() -> void:
 		bg.add_child(val_lbl)
 
 	var boss_bonus_lines: Array[String] = []
-	if GameState.extra_bullet_count > 0:
-		boss_bonus_lines.append("Boss奖励: 子弹数量 +%d" % GameState.extra_bullet_count)
-	if GameState.extra_damage_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 额外伤害 +%d" % GameState.extra_damage_bonus)
-	if GameState.laser_cd_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 激光冷却 -%.1fs" % GameState.laser_cd_bonus)
-	if GameState.move_speed_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 移速 +%d%%" % int(round(GameState.move_speed_bonus * 100.0)))
+	var extra_bullet_count := GameState.get_extra_bullet_count()
+	var extra_damage_bonus := GameState.get_extra_damage_bonus()
+	var laser_cd_bonus := GameState.get_laser_cd_bonus()
+	var move_speed_bonus := GameState.get_move_speed_bonus()
+	if extra_bullet_count > 0:
+		boss_bonus_lines.append("Boss奖励: 子弹数量 +%d" % extra_bullet_count)
+	if extra_damage_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 额外伤害 +%d" % extra_damage_bonus)
+	if laser_cd_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 激光冷却 -%.1fs" % laser_cd_bonus)
+	if move_speed_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 移速 +%d%%" % int(round(move_speed_bonus * 100.0)))
 
 	if boss_bonus_lines.size() > 0:
 		var spacer := Control.new()
@@ -328,15 +365,16 @@ func _setup_damage_flash() -> void:
 	if NetworkManager.is_online():
 		## 多人下 GameState.health 是全局共享；避免队友受击触发本地红屏误闪。
 		return
-	var old_health: int = GameState.current_health
+	var old_health: int = GameState.get_current_health()
 	GameState.health_changed.connect(func(_cur: int, _max: int):
-		if GameState.current_health < old_health:
+		var new_health: int = GameState.get_current_health()
+		if new_health < old_health:
 			if _damage_flash and is_instance_valid(_damage_flash):
 				var tween := create_tween()
 				tween.tween_property(_damage_flash, "color", Color(1.0, 0.0, 0.0, 0.18), 0.05)
 				tween.tween_property(_damage_flash, "color", Color(1.0, 0.0, 0.0, 0.0), 0.25)
 				tween.tween_callback(func(): _damage_flash.color = Color(1.0, 0.0, 0.0, 0.0))
-		old_health = GameState.current_health
+		old_health = new_health
 	)
 
 func _set_control_ignore_input(root: Control) -> void:
@@ -359,12 +397,23 @@ func _refresh_leaderboard() -> void:
 
 func _update_platform_hints() -> void:
 	var is_mobile: bool = OS.has_feature("android") or OS.has_feature("ios")
+	var can_restart: bool = true
+	if NetworkManager.is_online():
+		can_restart = multiplayer.is_server()
 	if is_mobile:
-		_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
-		_restart_label.text = "点击屏幕重新开始"
+		if can_restart:
+			_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n点击屏幕重新开始"
+			_restart_label.text = "点击屏幕重新开始"
+		else:
+			_controls_label.text = "左侧轮盘 - 移动/转向\n自动射击\n等待房主重新开始"
+			_restart_label.text = "等待房主重新开始"
 	else:
-		_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\nR - 重新开始"
-		_restart_label.text = "按 R 重新开始"
+		if can_restart:
+			_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\nR - 重新开始"
+			_restart_label.text = "按 R 重新开始"
+		else:
+			_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\n等待房主重新开始"
+			_restart_label.text = "等待房主重新开始"
 
 ## 新增技能：追加到 _skill_data 并重建技能条
 func add_skill(data: Dictionary) -> void:

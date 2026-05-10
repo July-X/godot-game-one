@@ -119,18 +119,7 @@ func _build_ui() -> void:
 		add_child(card)
 
 func _on_reward_clicked(reward_type: String) -> void:
-	match reward_type:
-		"laser_cd":
-			GameState.laser_cd_bonus += 1.0
-		"bullet_count":
-			GameState.extra_bullet_count += 1
-		"damage":
-			GameState.extra_damage_bonus += 2
-		"speed":
-			GameState.move_speed_bonus += 0.10
-		"shield":
-			GameState.shield_layers = min(GameState.shield_layers + 3, 30)
-			GameState.shield_changed.emit(GameState.shield_layers)
+	GameState.apply_reward(reward_type)
 	GameState.notify_boss_reward_applied()
 	reward_chosen.emit(reward_type)
 	queue_free()

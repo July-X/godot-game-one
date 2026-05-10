@@ -100,8 +100,8 @@ func _physics_process(delta: float) -> void:
 
 func _tick_runtime(delta: float) -> void:
 	_invincible_timer = max(_invincible_timer - delta, 0.0)
-	GameState.tick_skill_cooldown(delta)
-	GameState.tick_laser_cooldown(delta)
+	GameState.tick_skill_cooldown(delta, peer_id)
+	GameState.tick_laser_cooldown(delta, peer_id)
 
 
 ## ── 公开入口 ──────────────────────────────────────────
@@ -116,12 +116,13 @@ func take_damage(amount: float = 1.0) -> void:
 	var actual_damage: int = amount as int
 	if amount > 0.0 and amount < 1.0 and randf() < amount:
 		actual_damage = 1
-	var old_health: int = GameState.current_health
-	GameState.take_damage(actual_damage)
-	if GameState.current_health < old_health:
+	var old_health: int = GameState.get_current_health(peer_id)
+	var is_dead := GameState.take_damage(actual_damage, peer_id)
+	var new_health: int = GameState.get_current_health(peer_id)
+	if new_health < old_health:
 		_invincible_timer = 1.0
 		_feedback.trigger_hit()
-	if GameState.current_health <= 0:
+	if is_dead:
 		_feedback.spawn_explosion()
 		died.emit()
 		queue_free()

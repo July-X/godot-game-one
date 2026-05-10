@@ -18,6 +18,8 @@ var _missile_pods: Array[Node2D] = []
 var _missile_pod_built: int = 0
 var _pickup_radius: float = 280.0
 var _pickup_frame_skip: int = 0
+var _pending_skill_cast: bool = false
+var _pending_laser_cast: bool = false
 
 
 func update(delta: float) -> void:
@@ -31,8 +33,13 @@ func update(delta: float) -> void:
 	_consume_actions()
 
 
+func _ready() -> void:
+	GameState.skill_used.connect(_on_skill_used)
+	GameState.laser_used.connect(_on_laser_used)
+
+
 func reset_shoot_timer() -> void:
-	_shoot_timer = GameState.get_shoot_cooldown()
+	_shoot_timer = GameState.get_shoot_cooldown(_player.peer_id)
 
 
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
@@ -55,13 +62,13 @@ func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, lev
 ## ── 普攻 ────────────────────────────────────────────
 
 func _shoot() -> void:
-	_shoot_timer = GameState.get_shoot_cooldown()
+	_shoot_timer = GameState.get_shoot_cooldown(_player.peer_id)
 	SFX.play_shoot()
 
 	var base_angle: float = _player.rotation - PI * 0.5
-	var bullet_count: int = GameState.get_bullet_count()
-	var level: int = GameState.shoot_level
-	var damage: int = GameState.get_bullet_damage()
+	var bullet_count: int = GameState.get_bullet_count(_player.peer_id)
+	var level: int = GameState.get_shoot_level(_player.peer_id)
+	var damage: int = GameState.get_bullet_damage(_player.peer_id)
 	var engine_offset: Vector2 = Vector2.from_angle(base_angle) * 24
 	var perp: Vector2 = Vector2(-sin(base_angle), cos(base_angle))
 
@@ -113,7 +120,7 @@ func fire_ring_shotgun() -> void:
 		base_angle = _player.global_position.angle_to_point(mouse_pos)
 	var perp: Vector2 = Vector2(-sin(base_angle), cos(base_angle))
 	var engine_offset: Vector2 = Vector2.from_angle(base_angle) * 24
-	var damage: int = GameState.get_bullet_damage() + 2
+	var damage: int = GameState.get_bullet_damage(_player.peer_id) + 2
 	for i in range(count):
 		var a: float = base_angle + i * TAU / count
 		var offset: Vector2 = perp * 8.0 + Vector2(cos(a), sin(a)) * 4.0
@@ -122,7 +129,7 @@ func fire_ring_shotgun() -> void:
 
 func fire_laser() -> void:
 	var count: int = 3
-	var damage := GameState.get_laser_damage()
+	var damage := GameState.get_laser_damage(_player.peer_id)
 	for i in range(count):
 		var angle: float = _player.rotation - PI * 0.5 + (i - 1) * 0.15
 		var pos: Vector2 = _player.global_position + Vector2.from_angle(angle) * 28
@@ -153,22 +160,48 @@ func _consume_actions() -> void:
 	for action in actions:
 		match action:
 			"skill":
-				if GameState.use_skill():
-					fire_ring_shotgun()
+				if GameState.use_skill(_player.peer_id):
+					if NetworkManager.is_online() and not multiplayer.is_server():
+						_pending_skill_cast = true
+					else:
+						fire_ring_shotgun()
 			"laser":
-				if GameState.use_laser():
-					fire_laser()
+				if GameState.use_laser(_player.peer_id):
+					if NetworkManager.is_online() and not multiplayer.is_server():
+						_pending_laser_cast = true
+					else:
+						fire_laser()
+
+
+func _on_skill_used(peer_id: int) -> void:
+	if peer_id != _player.peer_id:
+		return
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if not _pending_skill_cast:
+			return
+		_pending_skill_cast = false
+	fire_ring_shotgun()
+
+
+func _on_laser_used(peer_id: int) -> void:
+	if peer_id != _player.peer_id:
+		return
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if not _pending_laser_cast:
+			return
+		_pending_laser_cast = false
+	fire_laser()
 
 
 ## ── 追踪导弹 ────────────────────────────────────────
 
 func _get_missile_tier() -> int:
-	var level: int = GameState.shoot_level
+	var level: int = GameState.get_shoot_level(_player.peer_id)
 	return mini(level / 5, 5)
 
 func _get_missile_damage() -> int:
 	var tier: int = _get_missile_tier()
-	var dmg: int = (GameState.get_bullet_damage() + 2) * int(pow(1.5, tier - 1))
+	var dmg: int = (GameState.get_bullet_damage(_player.peer_id) + 2) * int(pow(1.5, tier - 1))
 	return dmg
 
 func _get_missile_interval() -> float:
