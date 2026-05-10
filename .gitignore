@@ -19,3 +19,4 @@ android/build/**
 !android/build/src/main/java/com/godot/game/
 !android/build/src/main/java/com/godot/game/harmony/
 !android/build/src/main/java/com/godot/game/harmony/HarmonyNearbyGamePlugin.kt
+*.apk
