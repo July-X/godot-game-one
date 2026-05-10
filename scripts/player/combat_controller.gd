@@ -38,17 +38,18 @@ func reset_shoot_timer() -> void:
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
 
 func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, level: int, speed: float) -> void:
-	var bullet := Pool.acquire("bullet", _bullet_scene)
-	get_tree().current_scene.add_child(bullet)
-	bullet.setup(pos, angle, damage, is_player, level, speed)
-
-	## 联机时不区分 Host/Client，均上报到 Main 的子弹同步队列。
-	## - Host: 广播给 Client，实现同屏可见
-	## - Client: 上报给 Host，保证权威命中结算
 	if NetworkManager.is_online():
+		## 联机统一走服务器权威：
+		## - Host: 本地生成并广播
+		## - Client: 仅上报请求，不本地生成，避免重复碰撞结算
 		var _m = get_tree().current_scene
 		if _m and _m.has_method("register_bullet_spawn"):
 			_m.register_bullet_spawn(pos, angle, damage, is_player, level, speed)
+		if not multiplayer.is_server():
+			return
+	var bullet := Pool.acquire("bullet", _bullet_scene)
+	get_tree().current_scene.add_child(bullet)
+	bullet.setup(pos, angle, damage, is_player, level, speed)
 
 
 ## ── 普攻 ────────────────────────────────────────────
@@ -121,12 +122,17 @@ func fire_ring_shotgun() -> void:
 
 func fire_laser() -> void:
 	var count: int = 3
+	var damage := GameState.get_laser_damage()
 	for i in range(count):
 		var angle: float = _player.rotation - PI * 0.5 + (i - 1) * 0.15
 		var pos: Vector2 = _player.global_position + Vector2.from_angle(angle) * 28
 		var bolt := _laser_scene.instantiate()
 		get_tree().current_scene.add_child(bolt)
-		bolt.setup(pos, angle, GameState.get_laser_damage())
+		bolt.setup(pos, angle, damage)
+		if NetworkManager.is_online():
+			var _m = get_tree().current_scene
+			if _m and _m.has_method("register_laser_spawn"):
+				_m.register_laser_spawn(pos, angle, damage)
 	SFX.play_shoot()
 
 

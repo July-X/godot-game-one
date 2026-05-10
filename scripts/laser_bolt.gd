@@ -10,6 +10,7 @@ var LightningLine = preload("res://scripts/lightning_line.gd")
 var _line_points: PackedVector2Array = PackedVector2Array()
 var _has_bounced: bool = false
 var _target: Node2D = null
+var _is_network_ghost: bool = false
 ## 寻敌角度（两条射线宽度 × 2，即 0.15×2×2 = 0.6 弧度）
 const HOMING_ANGLE: float = 0.6
 const HOMING_SPEED: float = 4.0
@@ -25,6 +26,9 @@ func setup(pos: Vector2, angle: float, damage: float) -> void:
 	_damage = damage
 	_target = null
 	_has_bounced = false
+
+func set_network_ghost(v: bool) -> void:
+	_is_network_ghost = v
 
 var _trail_frame_skip: int = 0
 
@@ -106,13 +110,15 @@ func _draw() -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if not GameState.game_running:
 		return
+	if NetworkManager.is_online() and _is_network_ghost:
+		return
 	if body.is_in_group("enemies") and body.has_method("take_damage"):
-		body.take_damage(_damage)
+		_apply_or_report_enemy_damage(body, _damage)
 		_spawn_hit()
-		_chain_lightning(body)
+		_chain_lightning(body, _is_server_authority())
 		queue_free()
 
-func _chain_lightning(hit_body: Node2D) -> void:
+func _chain_lightning(hit_body: Node2D, can_apply_local_damage: bool) -> void:
 	var chained: Array = [hit_body]
 	var from: Node2D = hit_body
 	var remaining: int = _chain_max - 1
@@ -121,7 +127,10 @@ func _chain_lightning(hit_body: Node2D) -> void:
 		if next == null:
 			break
 		var chain_dmg: float = _damage * 0.5 * pow(0.7, i)
-		next.take_damage(chain_dmg)
+		if can_apply_local_damage:
+			next.take_damage(chain_dmg)
+		else:
+			_report_enemy_hit(next, chain_dmg)
 		_draw_lightning_bolt(from.global_position, next.global_position)
 		chained.append(next)
 		from = next
@@ -149,3 +158,20 @@ func _spawn_hit() -> void:
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
 	hit.start()
+
+func _is_server_authority() -> bool:
+	return (not NetworkManager.is_online()) or multiplayer.is_server()
+
+func _normalized_damage(damage: float) -> int:
+	return maxi(1, int(round(damage)))
+
+func _report_enemy_hit(enemy: Node2D, damage: float) -> void:
+	if not enemy.has_method("get_entity_id"):
+		return
+	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage))
+
+func _apply_or_report_enemy_damage(enemy: Node2D, damage: float) -> void:
+	if _is_server_authority():
+		enemy.take_damage(damage)
+	else:
+		_report_enemy_hit(enemy, damage)

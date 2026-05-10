@@ -1,10 +1,13 @@
 extends Area2D
 
 const MAX_HEALTH: int = 100
+const PLAYER_COLLISION_DAMAGE: int = 5
 
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
+var entity_id: int = 0
+var _is_network_ghost: bool = false
 var _speed: float = 60.0
 var _direction: Vector2 = Vector2.DOWN
 var _rotation_speed: float = 0.0
@@ -24,11 +27,17 @@ func _ready() -> void:
 	area_entered.connect(_on_area_entered)
 
 func _physics_process(delta: float) -> void:
+	if NetworkManager.is_online() and _is_network_ghost:
+		return
 	global_position += _direction * _speed * delta
 	rotation += _rotation_speed * delta
 	var screen := get_viewport_rect().size
 	var margin: float = 80.0
 	if global_position.x < -margin or global_position.x > screen.x + margin or global_position.y < -margin or global_position.y > screen.y + margin:
+		if NetworkManager.is_online() and multiplayer.is_server():
+			var scene := get_tree().current_scene
+			if scene and scene.has_method("_on_network_asteroid_destroyed"):
+				scene._on_network_asteroid_destroyed(entity_id)
 		queue_free()
 
 func take_damage(amount: float) -> void:
@@ -43,6 +52,10 @@ func take_damage(amount: float) -> void:
 		_destroy()
 
 func _destroy() -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("_on_network_asteroid_destroyed"):
+			scene._on_network_asteroid_destroyed(entity_id)
 	var exp = _explosion_scene.instantiate()
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
@@ -51,12 +64,16 @@ func _destroy() -> void:
 	queue_free()
 
 func _on_body_entered(body: Node2D) -> void:
+	if NetworkManager.is_online() and _is_network_ghost:
+		return
 	if body.is_in_group("player") and body.has_method("take_damage"):
 		GameState.death_message = "撞上小行星 遭受重创"
-		body.take_damage(max(1.0, ceil(GameState.max_health * 0.5)))
+		body.take_damage(PLAYER_COLLISION_DAMAGE)
 		_destroy()
 
 func _on_area_entered(area: Area2D) -> void:
+	if NetworkManager.is_online() and _is_network_ghost:
+		return
 	if area.is_in_group("player_bullets") and area.has_method("setup"):
 		take_damage(area._damage)
 		var hit = Pool.acquire("hit_effect", _hit_effect_scene)

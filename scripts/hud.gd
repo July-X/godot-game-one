@@ -38,7 +38,7 @@ func _ready() -> void:
 	GameState.boss_reward_applied.connect(_on_boss_reward_applied)
 	_update_score(0)
 	_update_level(1)
-	_update_health(3, 3)
+	_update_health(GameState.current_health, GameState.max_health)
 	_refresh_leaderboard()
 
 func _process(_delta: float) -> void:
@@ -325,6 +325,9 @@ func _setup_damage_flash() -> void:
 	_damage_flash.z_index = 200
 	add_child(_damage_flash)
 	_damage_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if NetworkManager.is_online():
+		## 多人下 GameState.health 是全局共享；避免队友受击触发本地红屏误闪。
+		return
 	var old_health: int = GameState.current_health
 	GameState.health_changed.connect(func(_cur: int, _max: int):
 		if GameState.current_health < old_health:

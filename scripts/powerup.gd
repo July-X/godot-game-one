@@ -5,6 +5,8 @@ var _screen_shake_scene = preload("res://scenes/effects/screen_shake.tscn")
 var _type: String = "spread"
 var _lifetime: float = 10.0
 var _bob_timer: float = 0.0
+var entity_id: int = 0
+var _is_network_ghost: bool = false
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _glow: Sprite2D = $GlowSprite
@@ -16,14 +18,22 @@ func setup(type: String) -> void:
 	_type = type
 	call_deferred("_apply_sprite")
 
+func get_powerup_type() -> String:
+	return _type
+
 func _apply_sprite() -> void:
 	_sprite.texture = SpriteFactory.create_powerup_sprite(_type)
 
 var _glow_time: float = 0.0
 var _magnet_target: Node2D = null
 var _magnet_speed: float = 350.0
+var _magnet_requested: bool = false
 
 func _physics_process(delta: float) -> void:
+	if NetworkManager.is_online() and _is_network_ghost:
+		## 客户端幽灵掉落物只展示服务器同步位置，避免“来回拉扯”。
+		return
+
 	## 磁铁吸引模式：向玩家飞行
 	if _magnet_target and is_instance_valid(_magnet_target):
 		var dir: Vector2 = global_position.direction_to(_magnet_target.global_position)
@@ -56,6 +66,13 @@ func _physics_process(delta: float) -> void:
 
 	_lifetime -= delta
 	if _lifetime <= 0:
+		if NetworkManager.is_online() and multiplayer.is_server():
+			var scene := get_tree().current_scene
+			if scene and scene.has_method("_on_network_powerup_collected"):
+				scene._on_network_powerup_collected(entity_id)
+			return
+		if NetworkManager.is_online():
+			return
 		queue_free()
 	if _lifetime < 3.0:
 		var blink: float = 0.3 + abs(sin(_lifetime * 12)) * 0.7
@@ -64,6 +81,33 @@ func _physics_process(delta: float) -> void:
 var _collected: bool = false
 
 func start_magnet(target: Node2D) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		if target != null and is_instance_valid(target) and target.is_in_group("player"):
+			_magnet_target = target
+		else:
+			var nearest := _find_nearest_player()
+			if nearest != null:
+				_magnet_target = nearest
+			else:
+				_magnet_target = target
+		_sprite.modulate.a = 1.0
+		if _glow:
+			_glow.modulate.a = 1.0
+		return
+
+	if NetworkManager.is_online():
+		## Client 端只发起“开始磁吸”请求，由 Host 驱动掉落物位置。
+		if _magnet_requested:
+			return
+		_magnet_requested = true
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("request_network_powerup_magnet"):
+			scene.request_network_powerup_magnet(entity_id)
+		_sprite.modulate.a = 1.0
+		if _glow:
+			_glow.modulate.a = 1.0
+		return
+
 	_magnet_target = target
 	_sprite.modulate.a = 1.0
 	if _glow:
@@ -74,6 +118,19 @@ func collect() -> void:
 		return
 	_collected = true
 	_magnet_target = null
+	_magnet_requested = false
+
+	if NetworkManager.is_online() and multiplayer.is_server():
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("_on_network_powerup_collected"):
+			scene._on_network_powerup_collected(entity_id, multiplayer.get_unique_id())
+		return
+
+	if NetworkManager.is_online():
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("request_network_powerup_collect"):
+			scene.request_network_powerup_collect(entity_id)
+		return
 
 	GameState.collect_powerup(_type)
 	if _type == "bomb":
@@ -115,3 +172,19 @@ func _kill_next() -> void:
 			get_tree().create_timer(0.08).timeout.connect(_kill_next)
 			return
 	_kill_queue.clear()
+
+func _find_nearest_player() -> Node2D:
+	var players := get_tree().get_nodes_in_group("player")
+	var nearest: Node2D = null
+	var nearest_dist: float = INF
+	for p in players:
+		if not (p is Node2D):
+			continue
+		var n := p as Node2D
+		if not is_instance_valid(n):
+			continue
+		var d := global_position.distance_to(n.global_position)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest = n
+	return nearest

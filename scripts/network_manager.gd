@@ -35,6 +35,8 @@ var is_host: bool = false
 var connected_peers: Array[int] = []
 ## 当前传输模式（本阶段两种模式都使用 ENet 建立战斗链路，仅发现方式不同）
 var transport_mode: String = TRANSPORT_ENET
+## 当前是否处于联机会话（create_host/join_host 后置 true，disconnect 后置 false）
+var _session_active: bool = false
 
 
 func _ready() -> void:
@@ -60,6 +62,7 @@ func create_host(port: int = DEFAULT_PORT, mode: String = TRANSPORT_ENET) -> Err
 		return err
 	multiplayer.multiplayer_peer = peer
 	is_host = true
+	_session_active = true
 	connected_peers.clear()
 	status_changed.emit("房间已创建，等待玩家加入…")
 	print("[NetworkManager] Host 启动，端口 ", port)
@@ -79,6 +82,7 @@ func join_host(address: String, port: int = DEFAULT_PORT, mode: String = TRANSPO
 		return err
 	multiplayer.multiplayer_peer = peer
 	is_host = false
+	_session_active = true
 	status_changed.emit("正在连接 %s:%d …" % [address, port])
 	print("[NetworkManager] Client 正在连接 %s:%d" % [address, port])
 	return OK
@@ -90,6 +94,7 @@ func disconnect_network() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
 	is_host = false
+	_session_active = false
 	transport_mode = TRANSPORT_ENET
 	connected_peers.clear()
 	status_changed.emit("已断开")
@@ -98,6 +103,8 @@ func disconnect_network() -> void:
 
 ## 判断当前是否处于联机状态（已建立 peer 连接）
 func is_online() -> bool:
+	if not _session_active:
+		return false
 	if not multiplayer.has_multiplayer_peer():
 		return false
 	var peer := multiplayer.multiplayer_peer
@@ -151,6 +158,7 @@ func _on_connection_failed() -> void:
 	push_warning("[NetworkManager] 连接服务器失败")
 	status_changed.emit("连接失败，请检查 IP 地址")
 	multiplayer.multiplayer_peer = null
+	_session_active = false
 	connection_failed.emit()
 
 
@@ -159,5 +167,6 @@ func _on_server_disconnected() -> void:
 	status_changed.emit("连接已断开")
 	multiplayer.multiplayer_peer = null
 	is_host = false
+	_session_active = false
 	connected_peers.clear()
 	server_disconnected.emit()

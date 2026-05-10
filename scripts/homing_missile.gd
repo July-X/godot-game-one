@@ -72,7 +72,7 @@ func _on_body_entered(body: Node2D) -> void:
 	if not GameState.game_running:
 		return
 	if body.is_in_group("enemies") and body.has_method("take_damage"):
-		body.take_damage(_damage)
+		_apply_or_report_enemy_damage(body, _damage)
 		_spawn_hit()
 		queue_free()
 
@@ -80,7 +80,7 @@ func _on_area_entered(area: Area2D) -> void:
 	if not GameState.game_running:
 		return
 	if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
-		area.get_parent().take_damage(_damage)
+		_apply_or_report_enemy_damage(area.get_parent(), _damage)
 		_spawn_hit()
 		queue_free()
 
@@ -89,3 +89,20 @@ func _spawn_hit() -> void:
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position
 	hit.start()
+
+func _is_server_authority() -> bool:
+	return (not NetworkManager.is_online()) or multiplayer.is_server()
+
+func _normalized_damage(damage: float) -> int:
+	return maxi(1, int(round(damage)))
+
+func _report_enemy_hit(enemy: Node2D, damage: float) -> void:
+	if not enemy.has_method("get_entity_id"):
+		return
+	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage))
+
+func _apply_or_report_enemy_damage(enemy: Node2D, damage: float) -> void:
+	if _is_server_authority():
+		enemy.take_damage(damage)
+	else:
+		_report_enemy_hit(enemy, damage)

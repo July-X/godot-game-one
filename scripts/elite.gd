@@ -335,6 +335,10 @@ func _spawn_rewards() -> void:
 		get_tree().current_scene.add_child(pu)
 		pu.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
 		pu.setup(type)
+		if NetworkManager.is_online() and multiplayer.is_server():
+			var scene := get_tree().current_scene
+			if scene and scene.has_method("register_powerup_entity"):
+				scene.register_powerup_entity(pu, type)
 
 func _screen_clamp() -> void:
 	var screen := get_viewport_rect().size

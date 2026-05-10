@@ -8,11 +8,13 @@ extends Node2D
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
+var _laser_scene = preload("res://scenes/entities/laser_bolt.tscn")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
 var _boss_scene = preload("res://scenes/entities/boss.tscn")
 var _asteroid_scene = preload("res://scenes/entities/asteroid.tscn")
+var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 var _hud_scene = preload("res://scenes/ui/hud.tscn")
 var _mobile_controls_scene = preload("res://scenes/ui/mobile_controls.tscn")
 
@@ -38,13 +40,17 @@ var _players: Dictionary = {}
 ## 多人模式：实体追踪（entity_id → Node）
 var _next_entity_id: int = 1000
 var _entities: Dictionary = {}
+var _despawned_entity_ids: Dictionary = {}
 var _entity_sync_timer: float = 0.0
+const ENTITY_SYNC_INTERVAL: float = 0.05
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
+var _pending_laser_spawns: Array = []
 
 @onready var _bg_color: ColorRect = $BgColor
 
 func _ready() -> void:
+	set_process(true)
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	else:
@@ -59,6 +65,7 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_up)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
+	GameState.game_over.connect(_on_game_over_triggered)
 	_debug_log_variant_assets()
 	var online := NetworkManager.is_online()
 	print("[Main] online=", online, " server=", multiplayer.is_server(), " peer_id=", multiplayer.get_unique_id())
@@ -320,7 +327,7 @@ func _on_multiplayer_server_disconnected() -> void:
 ## 多人模式：某玩家死亡回调
 func _on_networked_player_died(p_peer_id: int) -> void:
 	_players.erase(p_peer_id)
-	## 合作模式：所有玩家死亡才算游戏结束
+	## 合作模式：仅当全员死亡（或全部离场）才结束。
 	if _players.is_empty():
 		_on_player_died()
 
@@ -330,7 +337,10 @@ func _spawn_hud() -> void:
 
 func _spawn_mobile_controls() -> void:
 	if OS.has_feature("android") or OS.has_feature("ios"):
+		if get_node_or_null("MobileControls") != null:
+			return
 		var mc = _mobile_controls_scene.instantiate()
+		mc.name = "MobileControls"
 		add_child(mc)
 
 func _process(delta: float) -> void:
@@ -342,9 +352,10 @@ func _process(delta: float) -> void:
 		if multiplayer.is_server():
 			_entity_sync_timer -= delta
 			if _entity_sync_timer <= 0.0:
-				_entity_sync_timer = 0.2  # 5Hz
+				_entity_sync_timer = ENTITY_SYNC_INTERVAL
 				_batch_sync_entity_positions()
 		_flush_bullet_spawns()
+		_flush_laser_spawns()
 
 	_scroll_background(delta)
 
@@ -430,6 +441,7 @@ func _on_enemy_died() -> void:
 	pass
 
 func _on_network_enemy_died(entity_id: int) -> void:
+	_despawned_entity_ids[entity_id] = true
 	if _entities.has(entity_id):
 		_entities.erase(entity_id)
 	if multiplayer.is_server():
@@ -448,6 +460,76 @@ func _on_network_player_hit(damage: int, target_peer_id: int) -> void:
 	if player_node and is_instance_valid(player_node) and player_node.has_method("take_damage"):
 		player_node.take_damage(damage)
 
+## Client → Host：请求拾取掉落物
+func request_network_powerup_collect(entity_id: int) -> void:
+	if not NetworkManager.is_online():
+		return
+	_rpc_request_powerup_collect.rpc_id(1, entity_id)
+
+## Client → Host：请求开始磁吸某个掉落物
+func request_network_powerup_magnet(entity_id: int) -> void:
+	if not NetworkManager.is_online():
+		return
+	_rpc_request_powerup_magnet.rpc_id(1, entity_id)
+
+## Host：注册掉落物实体并广播给客户端
+func register_powerup_entity(powerup: Node2D, powerup_type: String) -> void:
+	if not NetworkManager.is_online() or not multiplayer.is_server():
+		return
+	if powerup == null or not is_instance_valid(powerup):
+		return
+	if powerup.get("entity_id") != 0:
+		return
+	var eid := _next_entity_id
+	_next_entity_id += 1
+	powerup.entity_id = eid
+	_entities[eid] = powerup
+	_rpc_spawn_powerup.rpc(eid, powerup_type, powerup.global_position.x, powerup.global_position.y)
+
+## Host：掉落物被拾取后广播销毁
+func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 1) -> void:
+	if not multiplayer.is_server():
+		return
+	_despawned_entity_ids[entity_id] = true
+	if _entities.has(entity_id):
+		var node = _entities[entity_id]
+		if is_instance_valid(node) and node.has_method("get_powerup_type"):
+			GameState.collect_powerup(node.get_powerup_type())
+		if is_instance_valid(node):
+			node.queue_free()
+		_entities.erase(entity_id)
+	_rpc_despawn_entity.rpc(entity_id)
+
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_request_powerup_collect(entity_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if _despawned_entity_ids.has(entity_id):
+		return
+	var collector_peer_id := multiplayer.get_remote_sender_id()
+	if collector_peer_id <= 0:
+		collector_peer_id = 1
+	_on_network_powerup_collected(entity_id, collector_peer_id)
+
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_request_powerup_magnet(entity_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if _despawned_entity_ids.has(entity_id):
+		return
+	if not _entities.has(entity_id):
+		return
+	var node: Node = _entities[entity_id]
+	if not is_instance_valid(node) or not node.has_method("start_magnet"):
+		return
+	var requester_peer := multiplayer.get_remote_sender_id()
+	var player_node: Node2D = _players.get(requester_peer)
+	if player_node and is_instance_valid(player_node):
+		node.start_magnet(player_node)
+		return
+	if _player and is_instance_valid(_player):
+		node.start_magnet(_player)
+
 func _spawn_asteroid() -> void:
 	var asteroid = _asteroid_scene.instantiate()
 	var side := randi() % 4
@@ -457,9 +539,26 @@ func _spawn_asteroid() -> void:
 		1: asteroid.position = Vector2(randf_range(60, screen.x - 60), screen.y + 40)
 		2: asteroid.position = Vector2(-40, randf_range(60, screen.y - 60))
 		3: asteroid.position = Vector2(screen.x + 40, randf_range(60, screen.y - 60))
+	if NetworkManager.is_online() and multiplayer.is_server():
+		var eid := _next_entity_id
+		_next_entity_id += 1
+		asteroid.name = str(eid)
+		asteroid.entity_id = eid
+		_entities[eid] = asteroid
+		_rpc_spawn_asteroid.rpc(eid, asteroid.position.x, asteroid.position.y)
 	add_child(asteroid)
 
+func _on_network_asteroid_destroyed(entity_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	_despawned_entity_ids[entity_id] = true
+	if _entities.has(entity_id):
+		_entities.erase(entity_id)
+	_rpc_despawn_entity.rpc(entity_id)
+
 func _on_elite_spawn_requested() -> void:
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
 	if _elite != null and is_instance_valid(_elite):
 		return
 	call_deferred("_spawn_elite")
@@ -520,6 +619,8 @@ func _show_elite_warning() -> void:
 ## ── Boss 系统 ──────────────────────────────────────────────
 
 func _on_boss_spawn_requested(level: int) -> void:
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
 	if _boss != null and is_instance_valid(_boss):
 		return
 	if not GameState.game_running:
@@ -532,6 +633,8 @@ func _on_boss_spawn_requested(level: int) -> void:
 	_show_boss_warning()
 	var timer := get_tree().create_timer(2.0)
 	timer.timeout.connect(func():
+		if not GameState.game_running:
+			return
 		call_deferred("_spawn_boss", level)
 	)
 
@@ -675,9 +778,39 @@ func _on_reward_chosen(reward_type: String) -> void:
 		_player._update_appearance()
 
 func _on_player_died() -> void:
-	GameState.game_running = false
+	GameState.stop_game()
 	_pending_boss_level = 0
+	_clear_runtime_entities_on_game_over()
 	_show_death_marquee()
+
+func _on_game_over_triggered(final_score: int, final_level: int) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_force_game_over.rpc(final_score, final_level)
+	_on_player_died()
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_force_game_over(final_score: int, final_level: int) -> void:
+	GameState.game_running = false
+	_clear_runtime_entities_on_game_over()
+	if _hud and is_instance_valid(_hud) and _hud.has_method("_on_game_over"):
+		_hud._on_game_over(final_score, final_level)
+
+func _clear_runtime_entities_on_game_over() -> void:
+	for n in get_tree().get_nodes_in_group("enemies"):
+		if n and is_instance_valid(n):
+			n.queue_free()
+	for n in get_tree().get_nodes_in_group("asteroids"):
+		if n and is_instance_valid(n):
+			n.queue_free()
+	for n in get_tree().get_nodes_in_group("powerups"):
+		if n and is_instance_valid(n):
+			n.queue_free()
+	for n in get_tree().get_nodes_in_group("player_bullets"):
+		if n and is_instance_valid(n):
+			n.queue_free()
+	for n in get_tree().get_nodes_in_group("enemy_bullets"):
+		if n and is_instance_valid(n):
+			n.queue_free()
 
 func _show_death_marquee() -> void:
 	var msg: String = GameState.death_message
@@ -734,6 +867,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 
 func _restart() -> void:
+	if NetworkManager.is_online():
+		if multiplayer.is_server():
+			_rpc_restart_game.rpc()
+		return
+	get_tree().reload_current_scene()
+
+@rpc("authority", "reliable", "call_local")
+func _rpc_restart_game() -> void:
 	get_tree().reload_current_scene()
 
 ## ── 多人模式 RPC ──────────────────────────────────────────────
@@ -772,6 +913,12 @@ func _rpc_spawn_networked_player(p_peer_id: int, pos_x: float, pos_y: float) -> 
 func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int, spd: float, cd: float, drop: float, mult: float) -> void:
 	if not NetworkManager.is_online():
 		return
+	if _despawned_entity_ids.has(eid):
+		return
+	if _entities.has(eid):
+		var old_node: Node = _entities[eid]
+		if is_instance_valid(old_node):
+			old_node.queue_free()
 	var enemy = _enemy_scene.instantiate()
 	enemy.name = str(eid)
 	enemy.entity_id = eid
@@ -792,6 +939,12 @@ func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int,
 func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
 	if not NetworkManager.is_online():
 		return
+	if _despawned_entity_ids.has(eid):
+		return
+	if _entities.has(eid):
+		var old_node: Node = _entities[eid]
+		if is_instance_valid(old_node):
+			old_node.queue_free()
 	_elite = _elite_scene.instantiate()
 	_elite.name = str(eid)
 	_elite.entity_id = eid
@@ -808,6 +961,12 @@ func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
 func _rpc_spawn_boss(eid: int, level: int, variant_id: int) -> void:
 	if not NetworkManager.is_online():
 		return
+	if _despawned_entity_ids.has(eid):
+		return
+	if _entities.has(eid):
+		var old_node: Node = _entities[eid]
+		if is_instance_valid(old_node):
+			old_node.queue_free()
 	_boss = _boss_scene.instantiate()
 	_boss.name = str(eid)
 	_boss.entity_id = eid
@@ -821,14 +980,69 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int) -> void:
 	_entities[eid] = _boss
 	add_child(_boss)
 
+## Host → Client：生成掉落物幽灵副本
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_powerup(eid: int, powerup_type: String, pos_x: float, pos_y: float) -> void:
+	if not NetworkManager.is_online():
+		return
+	if _despawned_entity_ids.has(eid):
+		return
+	if _entities.has(eid):
+		var old_node: Node = _entities[eid]
+		if is_instance_valid(old_node):
+			old_node.queue_free()
+	var pu = _powerup_scene.instantiate()
+	pu.name = str(eid)
+	pu.entity_id = eid
+	pu._is_network_ghost = true
+	pu.position = Vector2(pos_x, pos_y)
+	pu.setup(powerup_type)
+	_entities[eid] = pu
+	add_child(pu)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_asteroid(eid: int, pos_x: float, pos_y: float) -> void:
+	if not NetworkManager.is_online():
+		return
+	if _despawned_entity_ids.has(eid):
+		return
+	if _entities.has(eid):
+		var old_node: Node = _entities[eid]
+		if is_instance_valid(old_node):
+			old_node.queue_free()
+	var asteroid = _asteroid_scene.instantiate()
+	asteroid.name = str(eid)
+	asteroid.entity_id = eid
+	asteroid._is_network_ghost = true
+	asteroid.position = Vector2(pos_x, pos_y)
+	_entities[eid] = asteroid
+	add_child(asteroid)
+
 ## Host → Client：销毁实体
 @rpc("authority", "reliable", "call_remote")
 func _rpc_despawn_entity(eid: int) -> void:
+	_despawned_entity_ids[eid] = true
 	if _entities.has(eid):
 		var node = _entities[eid]
 		if is_instance_valid(node):
 			node.queue_free()
 		_entities.erase(eid)
+	## 兜底：若字典丢失或出现重复实例，按 name/entity_id 全量清理残留节点。
+	for n in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(n):
+			continue
+		if n.name == str(eid) or (n.has_method("get_entity_id") and int(n.get_entity_id()) == eid):
+			n.queue_free()
+	for n in get_tree().get_nodes_in_group("powerups"):
+		if not is_instance_valid(n):
+			continue
+		if n.name == str(eid):
+			n.queue_free()
+	for n in get_tree().get_nodes_in_group("asteroids"):
+		if not is_instance_valid(n):
+			continue
+		if n.name == str(eid):
+			n.queue_free()
 
 ## Host → Client：实体位置批量同步（5Hz）
 @rpc("authority", "unreliable", "call_remote")
@@ -875,11 +1089,33 @@ func _flush_bullet_spawns() -> void:
 	else:
 		_rpc_spawn_bullets.rpc_id(1, data)
 
+## 注册激光生成（Host 广播；Client 上报 Host）
+func register_laser_spawn(pos: Vector2, angle: float, damage: float) -> void:
+	if not NetworkManager.is_online():
+		return
+	_pending_laser_spawns.append([pos.x, pos.y, angle, damage])
+
+## 每帧 flush 待发送激光
+func _flush_laser_spawns() -> void:
+	if _pending_laser_spawns.is_empty():
+		return
+	var data := _pending_laser_spawns.duplicate()
+	_pending_laser_spawns.clear()
+	if multiplayer.is_server():
+		_rpc_spawn_lasers.rpc(data)
+	else:
+		_rpc_spawn_lasers.rpc_id(1, data)
+
 ## Host → Client（或 Client → Host）：刷出子弹视觉副本
-@rpc("any_peer", "unreliable", "call_remote")
+@rpc("any_peer", "reliable", "call_remote")
 func _rpc_spawn_bullets(data: Array) -> void:
 	if not NetworkManager.is_online():
 		return
+	## Client → Host：Host 接收后需要再广播一次，确保加入端能看到自己的子弹。
+	if multiplayer.is_server():
+		var sender_id := multiplayer.get_remote_sender_id()
+		if sender_id > 1:
+			_rpc_spawn_bullets.rpc(data)
 	for entry in data:
 		var bullet := Pool.acquire("bullet", _bullet_scene)
 		if bullet == null:
@@ -895,3 +1131,26 @@ func _rpc_spawn_bullets(data: Array) -> void:
 		)
 		if entry.size() > 7:
 			bullet.modulate = Color(entry[7], entry[8], entry[9], 1.0)
+		if not multiplayer.is_server() and bullet.has_method("set_network_ghost"):
+			bullet.set_network_ghost(true)
+
+## 激光同步：
+## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
+## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_spawn_lasers(data: Array) -> void:
+	if not NetworkManager.is_online():
+		return
+	if multiplayer.is_server():
+		for entry in data:
+			var bolt = _laser_scene.instantiate()
+			add_child(bolt)
+			bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3])
+		_rpc_spawn_lasers.rpc(data)
+		return
+	for entry in data:
+		var bolt = _laser_scene.instantiate()
+		add_child(bolt)
+		bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3])
+		if bolt.has_method("set_network_ghost"):
+			bolt.set_network_ghost(true)

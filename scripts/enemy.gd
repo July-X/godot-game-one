@@ -136,7 +136,7 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
 
 func _shoot_single(angle: float) -> void:
-	var dmg: float = max(0.25, ceil(GameState.max_health * 0.0625))
+	var dmg: float = 1.0
 	_spawn_enemy_bullet(global_position + Vector2.from_angle(angle) * 20, angle, dmg, 780.0, Color(1.0, 0.4, 0.3, 1.0))
 
 func _shoot_spread(angle: float) -> void:
@@ -176,5 +176,10 @@ func _try_spawn_powerup() -> void:
 		var pu = _powerup_scene.instantiate()
 		get_tree().current_scene.add_child(pu)
 		pu.global_position = global_position
-		var types := ["spread", "speed", "power", "heal", "bomb"]
-		pu.setup(types[randi() % types.size()])
+		var types: Array[String] = ["spread", "speed", "power", "heal", "bomb"]
+		var picked_type: String = types[randi() % types.size()]
+		pu.setup(picked_type)
+		if NetworkManager.is_online() and multiplayer.is_server():
+			var scene := get_tree().current_scene
+			if scene and scene.has_method("register_powerup_entity"):
+				scene.register_powerup_entity(pu, picked_type)

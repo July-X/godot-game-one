@@ -11,6 +11,7 @@ var _lifetime: float = 4.0
 var _has_bounced: bool = false
 var _level: int = 1
 var _pooled: bool = false
+var _is_network_ghost: bool = false
 
 @onready var _sprite: Sprite2D = $Sprite2D
 
@@ -28,6 +29,7 @@ func reset() -> void:
 	_has_bounced = false
 	_level = 1
 	_lifetime = 4.0
+	_is_network_ghost = false
 	remove_from_group("player_bullets")
 	remove_from_group("enemy_bullets")
 	_sprite.modulate = Color(1, 1, 1, 1)
@@ -48,6 +50,9 @@ func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: in
 	else:
 		add_to_group("enemy_bullets")
 	_apply_bullet_appearance()
+
+func set_network_ghost(v: bool) -> void:
+	_is_network_ghost = v
 
 func _exit_tree() -> void:
 	remove_from_group("player_bullets")
@@ -102,12 +107,14 @@ func _recycle() -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if not GameState.game_running:
 		return
+	if NetworkManager.is_online() and _is_network_ghost:
+		return
 	if _is_player_bullet:
 		## 多人：Client 子弹击中本地幽灵敌人 → 报告 Host
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if body.has_method("get_entity_id"):
-					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), int(_damage))
+					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))))
 				_spawn_hit()
 				_recycle()
 			else:
@@ -119,7 +126,7 @@ func _on_body_entered(body: Node2D) -> void:
 			## 多人：Client 端玩家中弹 → 报告 Host
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				var pid: int = body.peer_id
-				GameState._rpc_report_player_hit.rpc_id(1, int(_damage), pid)
+				GameState._rpc_report_player_hit.rpc_id(1, maxi(1, int(round(_damage))), pid)
 				_spawn_hit()
 				_recycle()
 			else:
@@ -136,12 +143,14 @@ func _on_body_entered(body: Node2D) -> void:
 func _on_area_entered(area: Area2D) -> void:
 	if not GameState.game_running:
 		return
+	if NetworkManager.is_online() and _is_network_ghost:
+		return
 	if _is_player_bullet:
 		if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				var enemy = area.get_parent()
 				if enemy.has_method("get_entity_id"):
-					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), int(_damage))
+					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))))
 				_spawn_hit()
 				_recycle()
 			else:

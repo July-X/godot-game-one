@@ -12,6 +12,9 @@ signal boss_spawn_requested(boss_level)
 signal boss_defeated
 signal boss_reward_applied
 
+const START_HEALTH: int = 10
+const HEALTH_CAP: int = 2000
+
 var score: int = 0
 var level: int = 1
 var kills: int = 0
@@ -19,8 +22,8 @@ var total_kills: int = 0
 var last_elite_threshold: int = 0
 var elite_encounter_count: int = 0
 var post_elite_multiplier: float = 1.0
-var current_health: int = 2000
-var max_health: int = 2000
+var current_health: int = START_HEALTH
+var max_health: int = START_HEALTH
 var shield_layers: int = 0
 var game_running: bool = false
 var death_message: String = ""
@@ -119,8 +122,10 @@ func _from_dict(data: Dictionary) -> void:
 	level = data.get("level", 1)
 	kills = data.get("kills", 0)
 	total_kills = data.get("total_kills", 0)
-	current_health = data.get("current_health", 2000)
-	max_health = data.get("max_health", 2000)
+	current_health = data.get("current_health", START_HEALTH)
+	max_health = data.get("max_health", START_HEALTH)
+	max_health = clamp(max_health, START_HEALTH, HEALTH_CAP)
+	current_health = clamp(current_health, 0, max_health)
 	shield_layers = data.get("shield_layers", 0)
 	game_running = data.get("game_running", false)
 	shoot_level = data.get("shoot_level", 1)
@@ -154,8 +159,8 @@ func reset_game() -> void:
 	level = 1
 	kills = 0
 	total_kills = 0
-	current_health = 2000
-	max_health = 2000
+	current_health = START_HEALTH
+	max_health = START_HEALTH
 	shield_layers = 0
 	death_message = ""
 	game_running = true
@@ -175,6 +180,7 @@ func reset_game() -> void:
 	extra_bullet_count = 0
 	extra_damage_bonus = 0
 	move_speed_bonus = 0.0
+	health_changed.emit(current_health, max_health)
 	_mark_dirty()
 
 func add_score(amount: int) -> void:
@@ -225,7 +231,14 @@ func take_damage(amount: int = 1) -> void:
 	_mark_dirty()
 
 func heal(amount: int = 1) -> void:
-	if current_health < max_health:
+	if amount <= 0:
+		return
+	if current_health >= max_health:
+		if max_health < HEALTH_CAP:
+			max_health = min(max_health + amount, HEALTH_CAP)
+			current_health = min(current_health + amount, max_health)
+			health_changed.emit(current_health, max_health)
+	else:
 		current_health = min(current_health + amount, max_health)
 		health_changed.emit(current_health, max_health)
 	SFX.play_ui_select()
@@ -247,7 +260,7 @@ func collect_powerup(type: String) -> void:
 			else:
 				bullet_power_level = min(bullet_power_level + 1, 50)
 		"heal":
-			heal(max(ceil(max_health * 0.1), 1))
+			heal(1)
 		"bomb":
 			pass
 	_mark_dirty()
@@ -320,3 +333,9 @@ func force_set_boss_active(v: bool) -> void:
 
 func notify_boss_reward_applied() -> void:
 	boss_reward_applied.emit()
+
+func stop_game() -> void:
+	if not game_running:
+		return
+	game_running = false
+	_mark_dirty()
