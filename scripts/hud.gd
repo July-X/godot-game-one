@@ -165,22 +165,29 @@ func _update_cooldowns() -> void:
 ## ── 技能触发 ────────────────────────────────────────────────
 
 func _trigger_skill() -> void:
-	if not GameState.use_skill():
-		return
-	var player := get_tree().current_scene.find_child("Player", true, false)
-	if player and player.has_method("_fire_ring_shotgun"):
-		player._fire_ring_shotgun()
+	var player := _resolve_local_player()
+	if player and player.has_method("request_action"):
+		player.request_action("skill")
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _trigger_laser() -> void:
-	if not GameState.use_laser():
-		return
-	var player := get_tree().current_scene.find_child("Player", true, false)
-	if player and player.has_method("_fire_laser"):
-		player._fire_laser()
+	var player := _resolve_local_player()
+	if player and player.has_method("request_action"):
+		player.request_action("laser")
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _resolve_local_player() -> Node:
+	var players := get_tree().get_nodes_in_group("player")
+	for p in players:
+		if not is_instance_valid(p):
+			continue
+		if not NetworkManager.is_online():
+			return p
+		if p.has_method("is_multiplayer_authority") and p.is_multiplayer_authority():
+			return p
+	return null
 
 ## ── 信号响应 ────────────────────────────────────────────────
 

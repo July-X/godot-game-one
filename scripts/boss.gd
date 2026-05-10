@@ -238,6 +238,16 @@ func _tick_retreat(delta: float) -> void:
 func _get_boss_attack_damage() -> int:
 	return max(1, 8 + _level * 2 + GameState.boss_encounter_count * 4)
 
+func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float, color: Color) -> void:
+	var bullet := Pool.acquire("bullet", _bullet_scene)
+	get_tree().current_scene.add_child(bullet)
+	bullet.setup(pos, angle, damage, false, 1, speed)
+	bullet.modulate = color
+	if NetworkManager.is_online():
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("register_bullet_spawn"):
+			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
+
 ## 1. 瞄准射击 — 3/5发追踪弹
 func _do_aimed_shot(delta: float, spd: float) -> void:
 	var count: int = 4 + (1 if _level >= 10 else 0) + (1 if _level >= 15 else 0)
@@ -245,10 +255,7 @@ func _do_aimed_shot(delta: float, spd: float) -> void:
 		var angle: float = global_position.angle_to_point(_target.global_position)
 		for i in range(count):
 			var a: float = angle + (i - count / 2.0) * 0.06
-			var b := Pool.acquire("bullet", _bullet_scene)
-			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), false, 1, 760.0)
-			b.modulate = Color(1.0, 0.3, 0.3, 1.0)
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 760.0, Color(1.0, 0.3, 0.3, 1.0))
 			_shoot_timer = 0.18 / spd
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
 
@@ -260,10 +267,7 @@ func _do_fan_spread(delta: float, spd: float) -> void:
 		var spread: float = PI * 0.5
 		for i in range(count):
 			var a: float = base - spread * 0.5 + spread * i / (count - 1)
-			var b := Pool.acquire("bullet", _bullet_scene)
-			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), false, 1, 820.0)
-			b.modulate = Color(0.4, 0.5, 1.0, 1.0)
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 820.0, Color(0.4, 0.5, 1.0, 1.0))
 			_shoot_timer = 0.34 / spd
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
 
@@ -275,10 +279,7 @@ func _do_rotation_ring(delta: float, spd: float) -> void:
 		var total: int = count + (count if _state == State.ENRAGED else 0)
 		for i in range(total):
 			var a: float = _shoot_angle_offset + float(i) * TAU / total
-			var b := Pool.acquire("bullet", _bullet_scene)
-			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 20, a, ceil(_get_boss_attack_damage() * 0.6), false, 1, 620.0)
-			b.modulate = Color(0.8, 0.2, 0.9, 1.0)
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, ceil(_get_boss_attack_damage() * 0.6), 620.0, Color(0.8, 0.2, 0.9, 1.0))
 			_shoot_timer = 0.50 / spd
 	_shoot_angle_offset += delta * ring_speed
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
@@ -310,10 +311,7 @@ func _do_standoff_burst(delta: float, spd: float) -> void:
 		var base: float = global_position.angle_to_point(_target.global_position)
 		for i in range(3):
 			var a: float = base + (i - 1) * 0.09
-			var b := Pool.acquire("bullet", _bullet_scene)
-			get_tree().current_scene.add_child(b)
-			b.setup(global_position + Vector2.from_angle(a) * 22, a, _get_boss_attack_damage(), false, 1, 840.0)
-			b.modulate = Color(1.0, 0.62, 0.25, 1.0)
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 22, a, _get_boss_attack_damage(), 840.0, Color(1.0, 0.62, 0.25, 1.0))
 		_shoot_timer = 0.24 / spd
 	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 5.0 * delta)
 

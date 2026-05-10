@@ -52,6 +52,7 @@ func start_broadcasting(game_port: int = 7777) -> void:
 	if result != OK:
 		push_error("[NetworkDiscovery] 绑定广播端口失败: %s" % error_string(result))
 		return
+	_udp_socket.set_broadcast_enabled(true)
 
 	_heartbeat_timer = Timer.new()
 	_heartbeat_timer.wait_time = 1.5
@@ -93,6 +94,7 @@ func start_listening() -> void:
 		push_error("[NetworkDiscovery] 绑定监听端口失败: %s" % error_string(result))
 		_is_listening = false
 		return
+	_udp_socket.set_broadcast_enabled(true)
 
 	# 每 2 秒发送一次探测请求
 	_listen_timer = Timer.new()

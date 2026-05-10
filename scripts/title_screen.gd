@@ -30,11 +30,18 @@ func _input(event: InputEvent) -> void:
 
 
 func _start_game() -> void:
-	## 单机模式入口：直接进入 main.tscn
-	## NetworkManager.is_online() 在 main.gd 中会返回 false，走原有单人逻辑
+	## 单机模式入口前先清理可能残留的联机状态，
+	## 避免上次联机会话影响单机 authority / 输入链路。
+	NetworkDiscovery.stop_all()
+	HarmonyBridge.stop_all()
+	NetworkManager.disconnect_network()
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 
 func _on_multiplayer_pressed() -> void:
+	## 进入多人大厅前也做一次清理，确保每次都是新会话。
+	NetworkDiscovery.stop_all()
+	HarmonyBridge.stop_all()
+	NetworkManager.disconnect_network()
 	## 多人模式入口：进入 lobby 选择角色
 	get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")

@@ -5,8 +5,8 @@
 ## WifiManager.startLocalOnlyHotspot()（需要 ACCESS_FINE_LOCATION 权限）。
 extends Node
 
-## 热点的默认 SSID 前缀（游戏名 + 随机后缀）
-const HOTSPOT_SSID_PREFIX := "SpaceBattle_"
+## 推荐热点名（固定值，便于玩家口述与复用）
+const HOTSPOT_SSID := "SpaceBattle_Game"
 ## 热点密码长度
 const PASSWORD_LENGTH := 6
 
@@ -37,6 +37,6 @@ func get_password() -> String:
 	return _current_password
 
 
-## 返回热点 SSID 建议（实际由系统设置控制，这里返回默认值）
+## 返回热点 SSID 建议（实际由系统设置控制，这里返回固定推荐值）
 func get_default_ssid() -> String:
-	return HOTSPOT_SSID_PREFIX + "Game"
+	return HOTSPOT_SSID

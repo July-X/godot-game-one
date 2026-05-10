@@ -1,5 +1,34 @@
 # 更新日志
 
+## [1.3.0] - 2026-05-09
+
+### 修复
+- **加入端闪退防护（Harmony 发现链路）**：`HarmonyNearbyGamePlugin.kt` 解析房间地址时增加 IPv4 过滤与异常保护，避免将不兼容地址直接传给 ENet 触发加入端崩溃
+- **大厅加入前参数校验**：`lobby.gd` 在点击“加入”时增加 IP/端口二次校验，并使用 `call_deferred` 发起连接，避免 UI 回调链路中的异常导致闪退
+- **房间名 null 清理**：发布房间名时对 `null/(null)` 做清洗，避免出现 `Space(null)` 这类脏名称
+
+### 优化
+- **房间名硬件短后缀**：Host 发布名改为 `基础名-设备标识`（截短），减少多人场景下同名房间冲突
+- **联机大厅调试状态面板**：新增常驻调试信息，实时显示插件可用性、发布/扫描状态、发现房间数、ENet 连接状态与 peer 信息，便于定位“未发布/未扫描/未连上”具体卡点
+
+### 新增
+- **Harmony 迁移桥接层**：新增 `scripts/harmony_bridge.gd`（Autoload `HarmonyBridge`），统一承接插件检测、发布房间、扫描房间与发现回调上报
+- **鸿蒙插件契约文档**：新增 `docs/Harmony_Plugin_Contract.md`，固定 Godot 与原生插件的方法名/回调契约与验收清单
+- **Android 原生插件骨架**：新增 `HarmonyNearbyGamePlugin.kt`（`NsdManager` discovery 后端）并完成 `AndroidManifest` 插件元数据注册
+
+### 修改
+- **联机大厅主流程迁移**：`lobby.gd` 与 `lobby.tscn` 切换为“鸿蒙附近发现直连”主流程，不再把手动热点设置作为默认入口
+- **会话模式标记**：`network_manager.gd` 增加 `transport_mode`（`enet`/`harmony`）与按模式建连接口，方便后续统计与排障
+- **发现链路收口**：大厅不再直接依赖 `NetworkDiscovery`，统一通过 `HarmonyBridge` 驱动（插件不可用时桥内部回退调试后端）
+- **入口清理强化**：`title_screen.gd` 在进入单机/联机前统一清理 `HarmonyBridge` 与 `NetworkDiscovery` 状态，避免残留会话污染
+- **文档同步**：`README.md`、`docs/Design_Decisions.md`、`docs/Development_Plan.md` 补齐迁移边界、完成定义与后续 M2 计划
+- **构建目录跟踪修正**：`.gitignore` 放行 `android/build/src/main/AndroidManifest.xml` 与 `HarmonyNearbyGamePlugin.kt`，确保插件骨架可纳入版本管理
+
+### 兼容性说明
+- 真机鸿蒙发布链路：要求原生插件实现契约方法后可完整走“附近发现 -> 加入房间”
+- 桌面编辑器调试链路：保留 ENet 回退路径用于本地开发验证（非正式发布路径）
+- Android 工程编译验证：`assembleStandardDebug` 已通过
+
 ## [1.2.4] - 2026-05-08
 
 ### 优化

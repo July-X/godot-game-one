@@ -9,4 +9,13 @@ backup_3d/
 .workbuddy/
 android/__pycache__/
 *.pyc
-android/build/
+android/build/**
+!android/build/src/
+!android/build/src/main/
+!android/build/src/main/AndroidManifest.xml
+!android/build/src/main/java/
+!android/build/src/main/java/com/
+!android/build/src/main/java/com/godot/
+!android/build/src/main/java/com/godot/game/
+!android/build/src/main/java/com/godot/game/harmony/
+!android/build/src/main/java/com/godot/game/harmony/HarmonyNearbyGamePlugin.kt

@@ -41,6 +41,11 @@ func set_target(target: Node2D) -> void:
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
 		return
+	## 多人模式：客户端幽灵敌人只接受位置同步，不执行本地 AI/开火。
+	if _is_network_ghost:
+		if _health_bar:
+			_health_bar.value = health
+		return
 
 	_wobble_timer += delta * 2.0
 
@@ -120,28 +125,29 @@ func _shoot() -> void:
 		1: _shoot_spread(angle)
 		2: _shoot_circle()
 
-func _shoot_single(angle: float) -> void:
+func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float, color: Color) -> void:
 	var bullet := Pool.acquire("bullet", _bullet_scene)
 	get_tree().current_scene.add_child(bullet)
+	bullet.setup(pos, angle, damage, false, 1, speed)
+	bullet.modulate = color
+	if NetworkManager.is_online():
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("register_bullet_spawn"):
+			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
+
+func _shoot_single(angle: float) -> void:
 	var dmg: float = max(0.25, ceil(GameState.max_health * 0.0625))
-	bullet.setup(global_position + Vector2.from_angle(angle) * 20, angle, dmg, false, 1, 780.0)
-	bullet.modulate = Color(1.0, 0.4, 0.3, 1.0)
+	_spawn_enemy_bullet(global_position + Vector2.from_angle(angle) * 20, angle, dmg, 780.0, Color(1.0, 0.4, 0.3, 1.0))
 
 func _shoot_spread(angle: float) -> void:
 	for i in range(-1, 2):
 		var a: float = angle + i * 0.2
-		var bullet := Pool.acquire("bullet", _bullet_scene)
-		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.5, false, 1, 780.0)
-		bullet.modulate = Color(0.3, 1.0, 0.4, 1.0)
+		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.5, 780.0, Color(0.3, 1.0, 0.4, 1.0))
 
 func _shoot_circle() -> void:
 	for i in range(6):
 		var a: float = float(i) * TAU / 6.0
-		var bullet := Pool.acquire("bullet", _bullet_scene)
-		get_tree().current_scene.add_child(bullet)
-		bullet.setup(global_position + Vector2.from_angle(a) * 20, a, 0.3, false, 1, 780.0)
-		bullet.modulate = Color(0.6, 0.3, 1.0, 1.0)
+		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.3, 780.0, Color(0.6, 0.3, 1.0, 1.0))
 
 func take_damage(amount: int = 1) -> void:
 	health -= amount

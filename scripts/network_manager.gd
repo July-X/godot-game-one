@@ -11,6 +11,8 @@ extends Node
 const DEFAULT_PORT: int = 7777
 ## 最大同时连接客户端数量（合作模式最多 1 个 Client）
 const MAX_CLIENTS: int = 1
+const TRANSPORT_ENET := "enet"
+const TRANSPORT_HARMONY := "harmony"
 
 ## ── 信号 ──────────────────────────────────────────────────
 ## 有新 peer 连接时触发（服务器端接收到客户端连接，或客户端收到服务器确认）
@@ -31,6 +33,8 @@ signal status_changed(message: String)
 var is_host: bool = false
 ## 已连接的 peer_id 列表（服务器端维护）
 var connected_peers: Array[int] = []
+## 当前传输模式（本阶段两种模式都使用 ENet 建立战斗链路，仅发现方式不同）
+var transport_mode: String = TRANSPORT_ENET
 
 
 func _ready() -> void:
@@ -46,7 +50,8 @@ func _ready() -> void:
 
 ## 作为 Host（服务器）启动，绑定本机所有网卡的 port 端口
 ## 返回 OK 表示成功，否则返回错误码
-func create_host(port: int = DEFAULT_PORT) -> Error:
+func create_host(port: int = DEFAULT_PORT, mode: String = TRANSPORT_ENET) -> Error:
+	transport_mode = mode
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, MAX_CLIENTS)
 	if err != OK:
@@ -64,7 +69,8 @@ func create_host(port: int = DEFAULT_PORT) -> Error:
 ## 作为 Client 连接到指定 IP 的 Host
 ## address 为对方局域网 IP（如 192.168.43.1）
 ## 返回 OK 表示 ENet 握手已发起（结果通过信号返回）
-func join_host(address: String, port: int = DEFAULT_PORT) -> Error:
+func join_host(address: String, port: int = DEFAULT_PORT, mode: String = TRANSPORT_ENET) -> Error:
+	transport_mode = mode
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(address, port)
 	if err != OK:
@@ -84,6 +90,7 @@ func disconnect_network() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
 	is_host = false
+	transport_mode = TRANSPORT_ENET
 	connected_peers.clear()
 	status_changed.emit("已断开")
 	print("[NetworkManager] 网络已断开")
@@ -91,7 +98,13 @@ func disconnect_network() -> void:
 
 ## 判断当前是否处于联机状态（已建立 peer 连接）
 func is_online() -> bool:
-	return multiplayer.multiplayer_peer != null
+	if not multiplayer.has_multiplayer_peer():
+		return false
+	var peer := multiplayer.multiplayer_peer
+	if peer == null:
+		return false
+	## 仅在连接中/已连接时视为在线，避免默认离线 peer 误判为在线。
+	return peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED
 
 
 ## 获取本机 peer_id（未联机时返回 1）
@@ -99,6 +112,14 @@ func get_my_peer_id() -> int:
 	if multiplayer.multiplayer_peer == null:
 		return 1
 	return multiplayer.get_unique_id()
+
+
+func create_host_with_mode(mode: String, port: int = DEFAULT_PORT) -> Error:
+	return create_host(port, mode)
+
+
+func join_host_with_mode(mode: String, address: String, port: int = DEFAULT_PORT) -> Error:
+	return join_host(address, port, mode)
 
 
 ## ── 私有信号处理 ──────────────────────────────────────────

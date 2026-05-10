@@ -26,6 +26,7 @@ Pool="*res://scripts/pool.gd"
 NetworkManager="*res://scripts/network_manager.gd"
 HotspotManager="*res://scripts/hotspot_manager.gd"
 NetworkDiscovery="*res://scripts/network_discovery.gd"
+HarmonyBridge="*res://scripts/harmony_bridge.gd"
 
 [display]
 

@@ -90,12 +90,47 @@
 - **大厅流程**：标题画面 → 选择 Host/Join → 大厅等待 → Host 按"开始" → 游戏场景。
 - **断线处理**：任意一方断线，游戏暂停并提示，10 秒内未重连则返回大厅。
 - **平台**：纯 Android 双端，iOS 暂不考虑。
+- **配置降本策略**：Host 面板提供固定推荐热点名 `SpaceBattle_Game`、固定推荐密码 `BATTLE66` 与“一键复制”按钮，减少用户在系统设置中的输入成本，提升联机发起意愿。
 
 ### 技术架构
 - `NetworkManager`（Autoload）：管理 ENet 连接，发出 `player_connected` / `player_disconnected` / `server_disconnected` 信号。
-- `MultiplayerSpawner`：挂在 main 场景根节点，统一管理玩家节点的跨端生成。
+- `主机 RPC 复位`：进入 `main.tscn` 后由 Host 显式向所有 Client 广播玩家生成状态，客户端先请求一次完整同步，避免错过早期生成消息。
 - `MultiplayerSynchronizer`：每个 Player 节点子节点，同步 `position`、`rotation`（ON_CHANGE 模式）。
-- 敌人生成、伤害判定、Boss 逻辑均在服务器端执行，通过 MultiplayerSpawner + Synchronizer 同步到 Client。
+- 敌人生成、伤害判定、Boss 逻辑均在服务器端执行，通过 RPC 广播与 Synchronizer 同步到 Client。
+- 敌人、Boss 与子弹的视觉副本仍走 RPC 广播，不依赖自动场景复制。
+
+### 鸿蒙万物互联迁移决策（2026-05-09）
+
+- **迁移目标**：降低“手动开热点 + 手动进设置”的用户操作成本，在华为鸿蒙设备优先提供“附近发现直连”体验。
+- **迁移边界（M1）**：
+  - 仅替换“大厅发现/配对入口”，战斗期实时同步仍沿用 Godot ENet。
+  - 即：Harmony 用于发现与传递连接参数，ENet 用于实时对战数据。
+- **架构策略**：
+  - 新增 `HarmonyBridge`（Autoload）作为插件适配层，不让大厅脚本直接依赖原生 API。
+  - `NetworkManager` 新增 `transport_mode`（`enet` / `harmony`）标记，用于记录当前会话来源。
+  - `Lobby` 入口策略：大厅发现与配对统一走 `HarmonyBridge`；插件不可用时由桥接层内部回退调试后端。
+- **回退保证**：
+  - 任何 Harmony 插件缺失/方法缺失/调用失败，都通过 `HarmonyBridge` 回退到调试后端，保证开发可验证。
+- **后续里程碑（M2/M3）**：
+  - M2：完成原生插件（ArkTS/Java）与 `HarmonyBridge` 契约对齐，打通真机发现回调。
+  - M3：评估是否将战斗期传输也迁移到 Harmony 会话通道（仅在延迟/稳定性达到 ENet 基线时推进）。
+
+### 迁移完成定义（Godot 侧）
+
+- 已完成项（本仓库）：
+  - 联机大厅默认流程已切换为 Harmony 附近发现。
+  - 热点/手动 Wi-Fi 按钮不再作为主流程，仅保留调试回退。
+  - `HarmonyBridge` 统一承接插件检测、发布、扫描、回调上报。
+  - 已提供插件契约文档：`docs/Harmony_Plugin_Contract.md`。
+- 待外部实现项（仓库外原生插件）：
+  - HarmonyOS 实机互联后端能力替换/增强（当前仓库骨架后端为 Android NSD）。
+  - 双端鸿蒙真机联调与稳定性压测。
+
+### 迁移实施细节补充（2026-05-09 晚）
+
+- **房间命名规则**：发布名采用 `基础名-设备短标识`（均截短）以降低同名冲突；并对 `null/(null)` 做发布前清洗。
+- **加入防崩规则**：大厅仅允许 IPv4 地址进入 ENet 连接流程；解析到非 IPv4 地址时直接在大厅提示，不发起连接。
+- **调用时序规则**：点击“加入”后通过 deferred 调用发起连接，避免 UI 输入回调栈直接承载网络调用导致崩溃扩散。
 
 ## 10. Boss 战手感规则（2026-05-08）
 

@@ -1,6 +1,6 @@
 # Godot Game One
 
-适用于 Godot 4 的单机 3D 微剧情游戏。
+适用于 Godot 4 的 3D 微剧情动作游戏，支持鸿蒙双端近场联机合作。
 
 ## 参考文档
 
@@ -8,6 +8,7 @@
 - [开发计划](./docs/Development_Plan.md)
 - [设计决策](./docs/Design_Decisions.md)
 - [美术与音频管线](./docs/art_audio_pipeline.md)
+- [Harmony 插件契约](./docs/Harmony_Plugin_Contract.md)
 
 ## 目标
 
@@ -34,6 +35,12 @@
 - **射击/确认**：`ui_accept`
 - **调试面板**：`F3` 切换显示
 - **重载场景**：`F5`
+
+## 联机模式（鸿蒙）
+
+- 默认流程：`多人联机 -> 我来开房/我来加入 -> 附近发现 -> 一键加入 -> 房主开始`
+- 当前迁移边界：大厅发现流程已迁移到 Harmony 优先；战斗期实时同步仍为 ENet。
+- 桌面调试：未接入鸿蒙插件时会自动启用 ENet 调试回退链路。
 
 ## 项目布局
 

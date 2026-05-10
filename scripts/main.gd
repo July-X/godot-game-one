@@ -1,5 +1,5 @@
 ## Main — 主游戏场景控制器
-## 多人模式：通过 MultiplayerSpawner 管理玩家节点的跨端生成和销毁。
+## 多人模式：Host 通过显式 RPC 广播玩家/敌人生成与同步，避免依赖自动场景复制。
 ## 服务器（Host peer_id=1）控制所有敌人生成和 GameState 广播；
 ## 客户端（Client peer_id=2）只渲染和响应输入。
 ##
@@ -60,39 +60,37 @@ func _ready() -> void:
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
 	_debug_log_variant_assets()
+	var online := NetworkManager.is_online()
+	print("[Main] online=", online, " server=", multiplayer.is_server(), " peer_id=", multiplayer.get_unique_id())
 
-	## 多人：Host 注册网络实体同步
-	if NetworkManager.is_online() and multiplayer.is_server():
+	## 多人：Host 负责权威生成，Client 通过 RPC 复位玩家列表
+	if online and multiplayer.is_server():
 		## 注册子弹批量刷出处理（每帧 flush）
 		set_process(true)
 
 	## 多人模式：订阅连接/断线信号，服务器端负责生成所有玩家
-	if NetworkManager.is_online():
+	if online:
 		NetworkManager.player_connected.connect(_on_multiplayer_player_connected)
 		NetworkManager.player_disconnected.connect(_on_multiplayer_player_disconnected)
 		NetworkManager.server_disconnected.connect(_on_multiplayer_server_disconnected)
 		## 服务器端：为自己和已连接的所有 peer 生成玩家
 		if multiplayer.is_server():
-			_spawn_networked_player(1)  # Host 自己
+			_spawn_networked_player(1, true)  # Host 自己
 			for pid in NetworkManager.connected_peers:
-				_spawn_networked_player(pid)
-		## 客户端：自己的玩家由服务器通过 MultiplayerSpawner 同步过来
-		## 但 _player 引用需要在本地找到（节点名 = str(my_peer_id)）
+				_spawn_networked_player(pid, true)
+		## 客户端：向服务器请求一次完整玩家同步，避免错过早期生成 RPC
 		else:
-			## 最多等 0.5s（30 帧）让 MultiplayerSpawner 完成同步
+			await get_tree().process_frame
+			_request_player_sync.rpc_id(1)
 			var my_id := multiplayer.get_unique_id()
 			var node: Node = null
-			for _attempt in 30:
+			for _attempt in 60:
 				node = get_node_or_null(str(my_id))
 				if node:
 					break
 				await get_tree().process_frame
-			if node:
-				_player = node
-				_player.died.connect(_on_player_died)
-				_players[my_id] = node
-			else:
-				push_warning("[Main] 未能在超时前找到本地玩家节点（peer_id=%d）" % my_id)
+			if node == null:
+				push_warning("[Main] 未能在同步后找到本地玩家节点（peer_id=%d）" % my_id)
 	else:
 		## 单机模式：原有逻辑
 		_spawn_player()
@@ -266,32 +264,38 @@ func _spawn_player() -> void:
 	_player.died.connect(_on_player_died)
 
 
-## 多人模式：服务器端生成指定 peer_id 的玩家节点
-## MultiplayerSpawner 会自动将此节点同步给所有 Client
-func _spawn_networked_player(p_peer_id: int) -> void:
+func _get_networked_player_spawn_position(p_peer_id: int) -> Vector2:
+	var slot := p_peer_id - 1
+	if slot < 0:
+		slot = 0
+	var offset := float(slot % 2) * 180.0
+	var row := float(slot / 2) * 90.0
+	return Vector2(540.0 + offset, 500.0 - row)
+
+
+func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
 	if not multiplayer.is_server():
-		return  # 只有服务器可以生成权威节点
+		return
 	if _players.has(p_peer_id):
-		return  # 防止重复生成
+		return
 	var player := _player_scene.instantiate()
-	## 节点名 = str(peer_id)，player.gd 的 _ready() 会据此设置 multiplayer_authority
 	player.name = str(p_peer_id)
-	## 两个玩家错开初始位置，避免重叠
-	var x_offset: float = 0.0 if p_peer_id == 1 else 200.0
-	player.position = Vector2(540 + x_offset, 500)
-	add_child(player)  # MultiplayerSpawner 监听此节点，自动复制到 Client
+	player.position = _get_networked_player_spawn_position(p_peer_id)
+	add_child(player)
 	player.died.connect(_on_networked_player_died.bind(p_peer_id))
 	_players[p_peer_id] = player
 	## 兼容 _player 引用（指向本机玩家）
 	var my_id := multiplayer.get_unique_id()
 	if p_peer_id == my_id:
 		_player = player
+	if announce:
+		_rpc_spawn_networked_player.rpc(p_peer_id, player.position.x, player.position.y)
 
 
 ## 多人模式：新 peer 连接时（只在服务器端触发）
 func _on_multiplayer_player_connected(p_peer_id: int) -> void:
 	if multiplayer.is_server():
-		_spawn_networked_player(p_peer_id)
+		_spawn_networked_player(p_peer_id, true)
 
 
 ## 多人模式：peer 断线时清理其玩家节点
@@ -343,6 +347,11 @@ func _process(delta: float) -> void:
 		_flush_bullet_spawns()
 
 	_scroll_background(delta)
+
+	## 关键：联机时仅 Host 运行刷怪与敌方战斗逻辑。
+	## Client 只渲染已同步实体，避免本地生成“假怪”导致命中无效/不同步。
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
 
 	if _elite != null and is_instance_valid(_elite):
 		return
@@ -728,6 +737,35 @@ func _restart() -> void:
 	get_tree().reload_current_scene()
 
 ## ── 多人模式 RPC ──────────────────────────────────────────────
+
+## Client → Host：请求一次完整玩家同步
+@rpc("any_peer", "reliable", "call_remote")
+func _request_player_sync() -> void:
+	if not multiplayer.is_server():
+		return
+	var requester := multiplayer.get_remote_sender_id()
+	for peer_id: int in _players:
+		var player_node: Node2D = _players[peer_id]
+		if is_instance_valid(player_node):
+			_rpc_spawn_networked_player.rpc_id(requester, peer_id, player_node.position.x, player_node.position.y)
+
+
+## Host → Client：生成玩家节点
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_networked_player(p_peer_id: int, pos_x: float, pos_y: float) -> void:
+	if not NetworkManager.is_online():
+		return
+	if _players.has(p_peer_id):
+		return
+	var player := _player_scene.instantiate()
+	player.name = str(p_peer_id)
+	player.position = Vector2(pos_x, pos_y)
+	add_child(player)
+	player.died.connect(_on_networked_player_died.bind(p_peer_id))
+	_players[p_peer_id] = player
+	if p_peer_id == multiplayer.get_unique_id():
+		_player = player
+
 
 ## Host → Client：生成敌人幽灵副本
 @rpc("authority", "reliable", "call_remote")

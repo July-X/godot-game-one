@@ -39,7 +39,7 @@ horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="VBox"]
 layout_mode = 2
-text = "Wi-Fi 热点近场 · 免 IP · 自动发现"
+text = "鸿蒙万物互联 · 附近发现直连"
 theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(0.6, 0.7, 0.9, 1)
 horizontal_alignment = 1
@@ -62,13 +62,13 @@ theme_override_constants/separation = 14
 [node name="BtnBeHost" type="Button" parent="VBox/PanelModeSelect"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 72)
-text = "📶  我来开热点（房主）\n对方连我的 Wi-Fi 加入"
+text = "🤝  我来开房（房主）\n鸿蒙附近发现，免热点配置"
 theme_override_font_sizes/font_size = 20
 
 [node name="BtnBeClient" type="Button" parent="VBox/PanelModeSelect"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 72)
-text = "🔗  我来加入（玩家）\n我连对方热点后搜索房间"
+text = "🔗  我来加入（玩家）\n扫描附近房间，一键加入"
 theme_override_font_sizes/font_size = 20
 
 [node name="PanelHost" type="VBoxContainer" parent="VBox"]
@@ -78,17 +78,29 @@ theme_override_constants/separation = 10
 
 [node name="LblSsidHint" type="Label" parent="VBox/PanelHost"]
 layout_mode = 2
-text = "📶 热点名：SpaceBattle_Game"
+text = "🤝 鸿蒙互联准备中…"
 theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(0.4, 0.9, 1.0, 1)
 horizontal_alignment = 1
 
 [node name="LblPassword" type="Label" parent="VBox/PanelHost"]
 layout_mode = 2
-text = "🔑 密码：------"
+text = "无需手动设置热点"
 theme_override_font_sizes/font_size = 28
 theme_override_colors/font_color = Color(1.0, 0.9, 0.2, 1)
 horizontal_alignment = 1
+
+[node name="BtnCopySsid" type="Button" parent="VBox/PanelHost"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 42)
+text = "📋 复制热点名"
+theme_override_font_sizes/font_size = 16
+
+[node name="BtnCopyPassword" type="Button" parent="VBox/PanelHost"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 42)
+text = "📋 复制密码"
+theme_override_font_sizes/font_size = 16
 
 [node name="BtnOpenHotspot" type="Button" parent="VBox/PanelHost"]
 layout_mode = 2
@@ -98,7 +110,7 @@ theme_override_font_sizes/font_size = 19
 
 [node name="LblHostStatus" type="Label" parent="VBox/PanelHost"]
 layout_mode = 2
-text = "开热点后，对方搜索 Wi-Fi 连接即可"
+text = "正在发布房间，请等待对方加入"
 theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(0.7, 0.8, 0.7, 1)
 horizontal_alignment = 1
@@ -126,14 +138,35 @@ horizontal_alignment = 1
 
 [node name="LblJoinStatus" type="Label" parent="VBox/PanelJoin"]
 layout_mode = 2
-text = "请先在手机 Wi-Fi 设置中连接对方热点"
+text = "正在扫描附近设备，请稍候"
 theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="HostList" type="VBoxContainer" parent="VBox/PanelJoin"]
+[node name="BtnQuickJoin" type="Button" parent="VBox/PanelJoin"]
 layout_mode = 2
+visible = false
+custom_minimum_size = Vector2(0, 62)
+text = "⚡ 快速加入第一个房间"
+theme_override_font_sizes/font_size = 19
+theme_override_colors/font_color = Color(0.15, 1, 0.45, 1)
+
+[node name="BtnOpenWifi" type="Button" parent="VBox/PanelJoin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 52)
+text = "🧪 调试：打开 Wi-Fi 设置（仅回退模式）"
+theme_override_font_sizes/font_size = 17
+
+[node name="HostListScroll" type="ScrollContainer" parent="VBox/PanelJoin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 180)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HostList" type="VBoxContainer" parent="VBox/PanelJoin/HostListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
 [node name="BtnBack" type="Button" parent="VBox"]
@@ -141,3 +174,17 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 48)
 text = "← 返回"
 theme_override_font_sizes/font_size = 18
+
+[node name="DebugTitle" type="Label" parent="VBox"]
+layout_mode = 2
+text = "调试状态"
+theme_override_font_sizes/font_size = 17
+theme_override_colors/font_color = Color(1, 0.84, 0.45, 1)
+horizontal_alignment = 1
+
+[node name="DebugInfo" type="Label" parent="VBox"]
+layout_mode = 2
+text = "等待状态更新…"
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.82, 0.9, 1, 1)
+autowrap_mode = 2
