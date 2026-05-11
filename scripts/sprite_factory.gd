@@ -686,6 +686,7 @@ func create_powerup_sprite(type: String) -> ImageTexture:
 		"power": col = Color(1.0, 0.3, 0.2)
 		"heal": col = Color(1.0, 0.25, 0.2)
 		"bomb": col = Color(1.0, 0.8, 0.2)
+		"core": col = Color(1.0, 0.86, 0.2)
 		_: col = Color(0.5, 0.5, 0.5)
 
 	match type:

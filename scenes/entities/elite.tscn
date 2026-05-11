@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://scripts/elite.gd" id="1"]
 
@@ -53,6 +53,22 @@ border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.3, 0.3, 0.4, 1.0)
 
+[sub_resource type="StyleBoxFlat" id="11"]
+bg_color = Color(0.08, 0.06, 0.02, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1.0, 0.6, 0.15, 1.0)
+
+[sub_resource type="StyleBoxFlat" id="12"]
+bg_color = Color(1.0, 0.62, 0.12, 1.0)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1.0, 0.9, 0.35, 1.0)
+
 [node name="Elite" type="CharacterBody2D"]
 collision_layer = 4
 collision_mask = 3
@@ -72,6 +88,7 @@ collision_mask = 2
 shape = SubResource("6")
 
 [node name="ShieldSprite" type="Sprite2D" parent="."]
+visible = false
 texture = SubResource("5")
 centered = true
 modulate = Color(0.3, 0.6, 1.0, 0.45)
@@ -92,3 +109,14 @@ max_value = 50.0
 value = 50.0
 theme_override_styles/background = SubResource("9")
 theme_override_styles/fill = SubResource("10")
+
+[node name="ShieldBar" type="ProgressBar" parent="."]
+offset_left = -40.0
+offset_top = -80.0
+offset_right = 40.0
+offset_bottom = -70.0
+show_percentage = false
+max_value = 80.0
+value = 80.0
+theme_override_styles/background = SubResource("11")
+theme_override_styles/fill = SubResource("12")

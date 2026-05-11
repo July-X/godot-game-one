@@ -7,16 +7,19 @@ var _lifetime: float = 10.0
 var _bob_timer: float = 0.0
 var entity_id: int = 0
 var _is_network_ghost: bool = false
+var assigned_peer_id: int = 0
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _glow: Sprite2D = $GlowSprite
 
 func _ready() -> void:
 	add_to_group("powerups")
+	_setup_visual_style()
 
 func setup(type: String) -> void:
 	_type = type
 	call_deferred("_apply_sprite")
+	_setup_visual_style()
 
 func get_powerup_type() -> String:
 	return _type
@@ -26,9 +29,11 @@ func _apply_sprite() -> void:
 
 var _glow_time: float = 0.0
 var _magnet_target: Node2D = null
-var _magnet_speed: float = 350.0
+var _magnet_speed: float = 320.0
+var _magnet_elapsed: float = 0.0
 var _magnet_requested: bool = false
 var _magnet_owner_peer_id: int = 0
+var _magnet_radius: float = 80.0
 
 func _physics_process(delta: float) -> void:
 	if NetworkManager.is_online() and _is_network_ghost:
@@ -37,6 +42,9 @@ func _physics_process(delta: float) -> void:
 
 	## 磁铁吸引模式：向玩家飞行
 	if _magnet_target and is_instance_valid(_magnet_target):
+		_magnet_elapsed += delta
+		var accel_t: float = clampf(_magnet_elapsed / 0.35, 0.0, 1.0)
+		_magnet_speed = lerpf(320.0, 720.0, accel_t)
 		var dir: Vector2 = global_position.direction_to(_magnet_target.global_position)
 		global_position += dir * _magnet_speed * delta
 		# 接近玩家时逐渐透明
@@ -114,6 +122,8 @@ func start_magnet(target: Node2D) -> void:
 		_sprite.modulate.a = 1.0
 		if _glow:
 			_glow.modulate.a = 1.0
+		_magnet_elapsed = 0.0
+		_magnet_speed = 320.0
 		return
 
 	if NetworkManager.is_online():
@@ -127,12 +137,16 @@ func start_magnet(target: Node2D) -> void:
 		_sprite.modulate.a = 1.0
 		if _glow:
 			_glow.modulate.a = 1.0
+		_magnet_elapsed = 0.0
+		_magnet_speed = 320.0
 		return
 
 	_magnet_target = target
 	_sprite.modulate.a = 1.0
 	if _glow:
 		_glow.modulate.a = 1.0
+	_magnet_elapsed = 0.0
+	_magnet_speed = 320.0
 
 func collect() -> void:
 	if _collected:
@@ -169,6 +183,9 @@ func collect() -> void:
 		return
 
 	GameState.collect_powerup(_type)
+	var scene := get_tree().current_scene
+	if scene and scene.has_method("on_local_powerup_feedback"):
+		scene.on_local_powerup_feedback(_type, global_position)
 	if _type == "bomb":
 		_bomb_effect()
 
@@ -240,3 +257,33 @@ func _find_player_by_peer(peer_id: int) -> Node2D:
 			if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) == peer_id:
 				return p as Node2D
 	return null
+
+func _setup_visual_style() -> void:
+	match _type:
+		"heal":
+			_sprite.modulate = Color(0.7, 1.0, 0.75, 1.0)
+			if _glow:
+				_glow.modulate = Color(0.8, 1.0, 0.85, 0.45)
+		"spread":
+			_sprite.modulate = Color(0.45, 1.0, 0.85, 1.0)
+			if _glow:
+				_glow.modulate = Color(0.55, 1.0, 0.9, 0.45)
+		"speed":
+			_sprite.modulate = Color(0.55, 0.8, 1.0, 1.0)
+			if _glow:
+				_glow.modulate = Color(0.5, 0.85, 1.0, 0.45)
+		"power":
+			_sprite.modulate = Color(1.0, 0.55, 0.3, 1.0)
+			if _glow:
+				_glow.modulate = Color(1.0, 0.5, 0.2, 0.5)
+		"bomb":
+			_sprite.modulate = Color(1.0, 0.9, 0.35, 1.0)
+			if _glow:
+				_glow.modulate = Color(1.0, 0.85, 0.2, 0.55)
+		"core":
+			_sprite.modulate = Color(1.0, 0.9, 0.35, 1.0)
+			if _glow:
+				_glow.modulate = Color(1.0, 0.82, 0.18, 0.62)
+	if has_meta("assigned_peer_id"):
+		assigned_peer_id = int(get_meta("assigned_peer_id"))
+		_magnet_radius = 120.0

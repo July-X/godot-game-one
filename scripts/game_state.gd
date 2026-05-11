@@ -449,8 +449,6 @@ func collect_powerup(type: String, peer_id: int = -1) -> void:
 	if not bool(s.get("is_alive", true)):
 		return
 	var changed_in_place := false
-	if _is_local_peer(pid):
-		powerup_collected.emit(type)
 	SFX.play_ui_confirm()
 	match type:
 		"spread":
@@ -470,10 +468,14 @@ func collect_powerup(type: String, peer_id: int = -1) -> void:
 			changed_in_place = true
 		"bomb":
 			pass
+		"core":
+			s.skill_cooldown = max(float(s.skill_cooldown) * 0.7, 0.0)
+			s.laser_cooldown = max(float(s.laser_cooldown) * 0.7, 0.0)
 	if not changed_in_place:
 		_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
 		_sync_local_view()
+		powerup_collected.emit(type)
 	_mark_dirty()
 
 func use_skill(peer_id: int = -1) -> bool:

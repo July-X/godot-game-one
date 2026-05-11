@@ -131,8 +131,12 @@ func fire_ring_shotgun() -> void:
 func fire_laser() -> void:
 	var count: int = 3
 	var damage := GameState.get_laser_damage(_player.peer_id)
+	var priority_target := _find_priority_enemy()
+	var base_angle: float = _player.rotation - PI * 0.5
+	if priority_target != null:
+		base_angle = _player.global_position.angle_to_point(priority_target.global_position)
 	for i in range(count):
-		var angle: float = _player.rotation - PI * 0.5 + (i - 1) * 0.15
+		var angle: float = base_angle + (i - 1) * 0.15
 		var pos: Vector2 = _player.global_position + Vector2.from_angle(angle) * 28
 		var bolt := _laser_scene.instantiate()
 		get_tree().current_scene.add_child(bolt)
@@ -265,13 +269,39 @@ func _spawn_homing_missiles(delta: float) -> void:
 	if _missile_timer < _get_missile_interval():
 		return
 	_missile_timer = 0.0
+	var priority_target := _find_priority_enemy()
 	for i in range(tier):
 		if i < _missile_pods.size():
 			var pos: Vector2 = _missile_pods[i].global_position
 			var angle: float = _player.rotation + PI + (i - (tier - 1) * 0.5) * 0.15
+			if priority_target != null:
+				angle = pos.angle_to_point(priority_target.global_position) + (i - (tier - 1) * 0.5) * 0.08
 			var missile := _missile_scene.instantiate()
 			get_tree().current_scene.add_child(missile)
 			missile.setup(pos, angle, _get_missile_damage(), _player.peer_id)
+
+func _find_priority_enemy() -> Node2D:
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	var best_priority: Node2D = null
+	var best_priority_dist: float = INF
+	var best_any: Node2D = null
+	var best_any_dist: float = INF
+	for e in enemies:
+		if not (e is Node2D) or not is_instance_valid(e):
+			continue
+		var node := e as Node2D
+		var d: float = _player.global_position.distance_squared_to(node.global_position)
+		if _is_priority_enemy(node):
+			if d < best_priority_dist:
+				best_priority_dist = d
+				best_priority = node
+		elif d < best_any_dist:
+			best_any_dist = d
+			best_any = node
+	return best_priority if best_priority != null else best_any
+
+func _is_priority_enemy(node: Node) -> bool:
+	return node.is_in_group("boss") or node.has_method("get_network_shield")
 
 
 ## ── 自动拾取 ────────────────────────────────────────

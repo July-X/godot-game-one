@@ -82,20 +82,31 @@ func _physics_process(delta: float) -> void:
 func _find_target_in_cone() -> void:
 	if _target != null and is_instance_valid(_target):
 		return
+	var best_priority: Node2D = null
+	var best_priority_dist: float = INF
 	var best: Node2D = null
-	var best_dist: float = 99999.0
+	var best_dist: float = INF
 	var enemies := get_tree().get_nodes_in_group("enemies")
 	for e in enemies:
-		if not is_instance_valid(e):
+		if not (e is Node2D) or not is_instance_valid(e):
 			continue
-		var to_e: Vector2 = global_position.direction_to(e.global_position)
+		var node := e as Node2D
+		var to_e: Vector2 = global_position.direction_to(node.global_position)
 		var diff: float = abs(_direction.angle_to(to_e))
-		if diff < HOMING_ANGLE:
-			var d: float = global_position.distance_squared_to(e.global_position)
-			if d < best_dist:
-				best_dist = d
-				best = e
-	_target = best
+		if diff >= HOMING_ANGLE and not _is_priority_enemy(node):
+			continue
+		var d: float = global_position.distance_squared_to(node.global_position)
+		if _is_priority_enemy(node):
+			if d < best_priority_dist:
+				best_priority_dist = d
+				best_priority = node
+		elif d < best_dist:
+			best_dist = d
+			best = node
+	_target = best_priority if best_priority != null else best
+
+func _is_priority_enemy(node: Node) -> bool:
+	return node.is_in_group("boss") or node.has_method("get_network_shield")
 
 func _draw() -> void:
 	if _line_points.size() > 1:

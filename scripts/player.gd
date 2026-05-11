@@ -70,6 +70,7 @@ func _connect_signals() -> void:
 	add_to_group("player")
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
+		_pickup_area.area_entered.connect(_on_pickup_area_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
 	_on_shield_changed(peer_id, GameState.get_shield_layers(peer_id))
 	if _motion.mobile_mode:
@@ -139,19 +140,30 @@ func request_action(action: String) -> void:
 func take_damage(amount: float = 1.0) -> void:
 	if _invincible_timer > 0:
 		return
-	var actual_damage: int = amount as int
-	if amount > 0.0 and amount < 1.0 and randf() < amount:
-		actual_damage = 1
+	var actual_damage: int = _normalize_incoming_damage(amount)
+	if actual_damage <= 0:
+		return
 	var old_health: int = GameState.get_current_health(peer_id)
+	var old_shields: int = GameState.get_shield_layers(peer_id)
 	var is_dead := GameState.take_damage(actual_damage, peer_id)
 	var new_health: int = GameState.get_current_health(peer_id)
-	if new_health < old_health:
+	var new_shields: int = GameState.get_shield_layers(peer_id)
+	if new_health < old_health or new_shields < old_shields:
 		_invincible_timer = 1.0
 		_feedback.trigger_hit()
 	if is_dead:
 		_feedback.spawn_explosion()
 		died.emit()
 		queue_free()
+
+func _normalize_incoming_damage(amount: float) -> int:
+	if amount <= 0.0:
+		return 0
+	if GameState.get_shield_layers(peer_id) > 0:
+		return maxi(1, int(ceil(amount)))
+	if amount < 1.0:
+		return 1 if randf() < amount else 0
+	return maxi(1, int(round(amount)))
 
 
 func on_level_up() -> void:
@@ -187,3 +199,7 @@ func _rebuild_shields() -> void:
 func _on_pickup_body_entered(body: Node2D) -> void:
 	if body.is_in_group("powerups") and body.has_method("start_magnet"):
 		body.start_magnet(self)
+
+func _on_pickup_area_entered(area: Area2D) -> void:
+	if area.is_in_group("powerups") and area.has_method("start_magnet"):
+		area.start_magnet(self)

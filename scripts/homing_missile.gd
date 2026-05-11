@@ -60,15 +60,26 @@ func _find_target() -> void:
 	if is_instance_valid(_target):
 		return
 	var enemies := get_tree().get_nodes_in_group("enemies")
+	var best_priority: Node2D = null
+	var best_priority_dist: float = INF
 	var best: Node2D = null
-	var best_dist: float = 99999.0
+	var best_dist: float = INF
 	for e in enemies:
-		if "enemy_type" in e and e.enemy_type == 0 and is_instance_valid(e):
-			var d: float = global_position.distance_squared_to(e.global_position)
-			if d < best_dist:
-				best_dist = d
-				best = e
-	_target = best
+		if not (e is Node2D) or not is_instance_valid(e):
+			continue
+		var node := e as Node2D
+		var d: float = global_position.distance_squared_to(node.global_position)
+		if _is_priority_enemy(node):
+			if d < best_priority_dist:
+				best_priority_dist = d
+				best_priority = node
+		elif d < best_dist:
+			best_dist = d
+			best = node
+	_target = best_priority if best_priority != null else best
+
+func _is_priority_enemy(node: Node) -> bool:
+	return node.is_in_group("boss") or node.has_method("get_network_shield")
 
 func _on_body_entered(body: Node2D) -> void:
 	if not GameState.game_running:

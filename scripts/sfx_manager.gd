@@ -1,7 +1,10 @@
 extends Node
 
 var _players: Array[AudioStreamPlayer] = []
-var _pool_size: int = 12
+var _shoot_players: Array[AudioStreamPlayer] = []
+var _pool_size: int = 16
+var _shoot_pool_size: int = 8
+var _shoot_index: int = 0
 
 var _stream_shoot: AudioStreamWAV
 var _stream_enemy_death: AudioStreamWAV
@@ -21,12 +24,24 @@ func _ready() -> void:
 		var player := AudioStreamPlayer.new()
 		add_child(player)
 		_players.append(player)
+	for i in _shoot_pool_size:
+		var player := AudioStreamPlayer.new()
+		player.volume_db = 1.5
+		add_child(player)
+		_shoot_players.append(player)
 
-func _get_available_player() -> AudioStreamPlayer:
-	for player in _players:
+func _get_available_player(pool: Array[AudioStreamPlayer]) -> AudioStreamPlayer:
+	for player in pool:
 		if not player.playing:
 			return player
-	return _players[0]
+	return pool[0]
+
+func _play_stream(stream: AudioStreamWAV, pool: Array[AudioStreamPlayer]) -> void:
+	if pool.is_empty():
+		return
+	var p := _get_available_player(pool)
+	p.stream = stream
+	p.play()
 
 func _generate_tone(freq: float, duration: float, volume: float = 0.3, sample_rate: int = 44100) -> AudioStreamWAV:
 	var num_samples := int(duration * sample_rate)
@@ -90,31 +105,26 @@ func _generate_noise(duration: float, volume: float = 0.3) -> AudioStreamWAV:
 	return stream
 
 func play_shoot() -> void:
-	var p := _get_available_player()
+	if _shoot_players.is_empty():
+		_play_stream(_stream_shoot, _players)
+		return
+	var p := _shoot_players[_shoot_index % _shoot_players.size()]
+	_shoot_index += 1
+	p.stop()
 	p.stream = _stream_shoot
 	p.play()
 
 func play_enemy_death() -> void:
-	var p := _get_available_player()
-	p.stream = _stream_enemy_death
-	p.play()
+	_play_stream(_stream_enemy_death, _players)
 
 func play_player_hurt() -> void:
-	var p := _get_available_player()
-	p.stream = _stream_player_hurt
-	p.play()
+	_play_stream(_stream_player_hurt, _players)
 
 func play_ui_confirm() -> void:
-	var p := _get_available_player()
-	p.stream = _stream_ui_confirm
-	p.play()
+	_play_stream(_stream_ui_confirm, _players)
 
 func play_ui_select() -> void:
-	var p := _get_available_player()
-	p.stream = _stream_ui_select
-	p.play()
+	_play_stream(_stream_ui_select, _players)
 
 func play_explosion() -> void:
-	var p := _get_available_player()
-	p.stream = _stream_explosion
-	p.play()
+	_play_stream(_stream_explosion, _players)

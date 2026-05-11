@@ -30,15 +30,44 @@ var _cached_extra_bullet_count: int = -1
 var _cached_extra_damage_bonus: int = -1
 var _cached_laser_cd_bonus: float = -1.0
 var _cached_move_speed_bonus: float = -1.0
+var _cached_score: int = -1
+var _cached_player_scores_signature: String = ""
 var _fps_accum: float = 0.0
+var _active_pickup_toasts: Array = []
+var _boss_status_root: Control = null
+var _boss_status_fill: ColorRect = null
+var _boss_status_label: Label = null
+var _boss_status_phase: Label = null
+var _boss_buff_banner: Control = null
+const POWERUP_BAR_WIDTH: int = 120
+const POWERUP_BAR_HEIGHT: int = 14
+const SKILL_SLOT_DESKTOP: Vector2 = Vector2(144, 144)
+const SKILL_SLOT_MOBILE: Vector2 = Vector2(116, 116)
+const SKILL_BAR_MOBILE_MARGIN: Vector2 = Vector2(30, 38)
+const SKILL_BAR_DESKTOP_MARGIN: Vector2 = Vector2(20, 18)
 
 func _ready() -> void:
+	set_process(true)
+	layer = 20
 	_game_over_panel.visible = false
 	_set_control_ignore_input(_game_over_panel)
 	_set_control_ignore_input($LeaderboardPanel)
+	_score_label.z_index = 30
+	_level_label.z_index = 30
+	_player_scores_label.z_index = 30
+	_health_bar.z_index = 30
+	_powerup_display.z_index = 30
+	_controls_label.z_index = 30
+	_fps_label.z_index = 30
+	_skill_bar.z_index = 30
+	_skill_bar.visible = true
+	_skill_bar.mouse_filter = Control.MOUSE_FILTER_PASS
 	_setup_damage_flash()
 	_update_platform_hints()
 	_setup_skill_bar()
+	_layout_skill_bar()
+	if get_viewport() and not get_viewport().size_changed.is_connected(_layout_skill_bar):
+		get_viewport().size_changed.connect(_layout_skill_bar)
 
 	GameState.score_changed.connect(_on_score_changed)
 	GameState.level_changed.connect(_on_level_changed)
@@ -54,6 +83,7 @@ func _ready() -> void:
 	_refresh_leaderboard()
 
 func _process(_delta: float) -> void:
+	_refresh_score_if_needed()
 	_update_cooldowns()
 	_refresh_powerup_display_if_needed()
 	_update_fps(_delta)
@@ -80,28 +110,58 @@ func _setup_skill_bar() -> void:
 
 ## 动态创建单个技能按钮
 func _create_skill_slot(data: Dictionary) -> void:
-	var slot_size := Vector2(144, 144)
+	var slot_size := _get_skill_slot_size()
 
 	# Button 容器
 	var btn := Button.new()
 	btn.custom_minimum_size = slot_size
 	btn.size = slot_size
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	var empty_sb := StyleBoxFlat.new()
-	empty_sb.bg_color = Color(0, 0, 0, 0)
-	btn.add_theme_stylebox_override("normal", empty_sb)
-	btn.add_theme_stylebox_override("pressed", empty_sb)
-	btn.add_theme_stylebox_override("hover", empty_sb)
-	btn.add_theme_stylebox_override("disabled", empty_sb)
+	var normal_sb := StyleBoxFlat.new()
+	normal_sb.bg_color = Color(0.08, 0.10, 0.18, 0.82)
+	normal_sb.border_color = Color(0.35, 0.55, 0.85, 0.95)
+	normal_sb.border_width_left = 2
+	normal_sb.border_width_top = 2
+	normal_sb.border_width_right = 2
+	normal_sb.border_width_bottom = 2
+	var hover_sb := StyleBoxFlat.new()
+	hover_sb.bg_color = Color(0.12, 0.15, 0.25, 0.92)
+	hover_sb.border_color = Color(0.55, 0.75, 1.0, 1.0)
+	hover_sb.border_width_left = 2
+	hover_sb.border_width_top = 2
+	hover_sb.border_width_right = 2
+	hover_sb.border_width_bottom = 2
+	var pressed_sb := StyleBoxFlat.new()
+	pressed_sb.bg_color = Color(0.20, 0.22, 0.34, 0.96)
+	pressed_sb.border_color = Color(0.92, 0.82, 0.35, 1.0)
+	pressed_sb.border_width_left = 2
+	pressed_sb.border_width_top = 2
+	pressed_sb.border_width_right = 2
+	pressed_sb.border_width_bottom = 2
+	var disabled_sb := StyleBoxFlat.new()
+	disabled_sb.bg_color = Color(0.05, 0.05, 0.08, 0.55)
+	disabled_sb.border_color = Color(0.18, 0.18, 0.26, 0.75)
+	disabled_sb.border_width_left = 2
+	disabled_sb.border_width_top = 2
+	disabled_sb.border_width_right = 2
+	disabled_sb.border_width_bottom = 2
+	btn.add_theme_stylebox_override("normal", normal_sb)
+	btn.add_theme_stylebox_override("pressed", pressed_sb)
+	btn.add_theme_stylebox_override("hover", hover_sb)
+	btn.add_theme_stylebox_override("disabled", disabled_sb)
+	btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.95))
+	btn.add_theme_font_size_override("font_size", 16)
 	btn.focus_mode = Control.FOCUS_NONE
+	btn.z_index = 30
 	btn.pressed.connect(_on_skill_slot_pressed.bind(data))
 	btn.gui_input.connect(_on_skill_slot_gui_input.bind(data))
 
 	# 半透明背景框
 	var bg := ColorRect.new()
 	bg.size = slot_size
-	bg.color = Color(0.1, 0.12, 0.2, 0.45)
+	bg.color = Color(0.1, 0.12, 0.2, 0.30)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.z_index = 1
 	btn.add_child(bg)
 
 	# 冷却覆盖层
@@ -111,6 +171,7 @@ func _create_skill_slot(data: Dictionary) -> void:
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.color = Color(1, 1, 1, 0)
 	overlay.set_script(preload("res://scripts/cooldown_overlay.gd"))
+	overlay.z_index = 2
 	btn.add_child(overlay)
 
 	# 技能图标（AI 生成像素图）
@@ -119,6 +180,7 @@ func _create_skill_slot(data: Dictionary) -> void:
 	icon_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon_tex.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	icon_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_tex.z_index = 3
 	var tex_path: String = "res://assets/sprites/ui/skill_%s.png" % data.action
 	if ResourceLoader.exists(tex_path):
 		icon_tex.texture = load(tex_path)
@@ -133,14 +195,117 @@ func _create_skill_slot(data: Dictionary) -> void:
 	cd_label.horizontal_alignment = 1
 	cd_label.vertical_alignment = 1
 	cd_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cd_label.z_index = 4
 	btn.add_child(cd_label)
+
+	var name_lbl := Label.new()
+	name_lbl.position = Vector2(0, slot_size.y - 36.0)
+	name_lbl.size = Vector2(slot_size.x, 22)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0, 0.95))
+	name_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+	name_lbl.add_theme_constant_override("shadow_outline_size", 1)
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.z_index = 5
+	name_lbl.text = data.name
+	btn.add_child(name_lbl)
 
 	_skill_slots.append({
 		"data": data,
 		"button": btn,
+		"bg": bg,
+		"icon": icon_tex,
+		"name": name_lbl,
 		"overlay": overlay,
 		"cd_label": cd_label,
 	})
+	_layout_skill_slot(_skill_slots[_skill_slots.size() - 1], slot_size)
+
+func _get_skill_slot_size() -> Vector2:
+	if OS.has_feature("android") or OS.has_feature("ios"):
+		return SKILL_SLOT_MOBILE
+	return SKILL_SLOT_DESKTOP
+
+func _layout_skill_bar() -> void:
+	if _skill_bar == null:
+		return
+	var slot_size := _get_skill_slot_size()
+	var gap: float = 8.0
+	var count: int = max(_skill_slots.size(), 2)
+	var bar_size := Vector2(slot_size.x * float(count) + gap * float(count - 1), slot_size.y)
+	_skill_bar.size = bar_size
+	_skill_bar.custom_minimum_size = bar_size
+	_skill_bar.add_theme_constant_override("separation", int(gap))
+	_skill_bar.anchor_left = 1.0
+	_skill_bar.anchor_top = 1.0
+	_skill_bar.anchor_right = 1.0
+	_skill_bar.anchor_bottom = 1.0
+	if OS.has_feature("android") or OS.has_feature("ios"):
+		_skill_bar.offset_left = -bar_size.x - SKILL_BAR_MOBILE_MARGIN.x
+		_skill_bar.offset_top = -bar_size.y - SKILL_BAR_MOBILE_MARGIN.y
+		_skill_bar.offset_right = -SKILL_BAR_MOBILE_MARGIN.x
+		_skill_bar.offset_bottom = -SKILL_BAR_MOBILE_MARGIN.y
+	else:
+		_skill_bar.offset_left = -bar_size.x - SKILL_BAR_DESKTOP_MARGIN.x
+		_skill_bar.offset_top = -bar_size.y - SKILL_BAR_DESKTOP_MARGIN.y
+		_skill_bar.offset_right = -SKILL_BAR_DESKTOP_MARGIN.x
+		_skill_bar.offset_bottom = -SKILL_BAR_DESKTOP_MARGIN.y
+	for slot in _skill_slots:
+		_layout_skill_slot(slot, slot_size)
+	if _boss_status_root:
+		var canvas_size := _get_design_canvas_size()
+		_boss_status_root.position = Vector2(maxf((canvas_size.x - 560.0) * 0.5, 16.0), 16.0)
+	call_deferred("_verify_skill_bar_layout")
+
+func _layout_skill_slot(slot: Dictionary, slot_size: Vector2) -> void:
+	if slot.is_empty():
+		return
+	var btn: Button = slot.button
+	btn.custom_minimum_size = slot_size
+	btn.size = slot_size
+	var bg: ColorRect = slot.bg
+	bg.size = slot_size
+	var overlay: Control = slot.overlay
+	overlay.size = slot_size - Vector2(4, 4)
+	var icon_tex: TextureRect = slot.icon
+	icon_tex.size = slot_size
+	var cd_label: Label = slot.cd_label
+	cd_label.size = slot_size
+	cd_label.add_theme_font_size_override("font_size", 34 if slot_size.x < 130.0 else 44)
+	var name_lbl: Label = slot.name
+	name_lbl.position = Vector2(0, slot_size.y - 34.0)
+	name_lbl.size = Vector2(slot_size.x, 22.0)
+
+func _get_design_canvas_size() -> Vector2:
+	var width := float(ProjectSettings.get_setting("display/window/size/viewport_width", 1280))
+	var height := float(ProjectSettings.get_setting("display/window/size/viewport_height", 720))
+	return Vector2(width, height)
+
+func _verify_skill_bar_layout() -> void:
+	if _skill_bar == null:
+		return
+	var rect := _skill_bar.get_global_rect()
+	var canvas_size := _get_design_canvas_size()
+	var outside := rect.position.x > canvas_size.x \
+		or rect.position.y > canvas_size.y \
+		or rect.end.x < 0.0 \
+		or rect.end.y < 0.0
+	if outside:
+		push_error("[HUD] SkillBar outside design canvas: rect=%s canvas=%s. Resetting to bottom-right anchors." % [str(rect), str(canvas_size)])
+		var slot_size := _get_skill_slot_size()
+		var bar_size := Vector2(slot_size.x * 2.0 + 8.0, slot_size.y)
+		_skill_bar.anchor_left = 1.0
+		_skill_bar.anchor_top = 1.0
+		_skill_bar.anchor_right = 1.0
+		_skill_bar.anchor_bottom = 1.0
+		_skill_bar.offset_left = -bar_size.x - 20.0
+		_skill_bar.offset_top = -bar_size.y - 18.0
+		_skill_bar.offset_right = -20.0
+		_skill_bar.offset_bottom = -18.0
+	if _skill_slots.size() < 2:
+		push_error("[HUD] SkillBar expected 2 skill slots, got %d." % _skill_slots.size())
 
 ## 技能按钮被点击 / 触屏触发
 func _on_skill_slot_pressed(data: Dictionary) -> void:
@@ -265,6 +430,16 @@ func _refresh_powerup_display_if_needed() -> void:
 
 func _update_score(score: int) -> void:
 	_score_label.text = "总分: %d" % score
+	_cached_score = score
+
+func _refresh_score_if_needed() -> void:
+	var current_score: int = GameState.score
+	var current_scores_signature: String = str(GameState.get_all_player_scores())
+	if current_score != _cached_score:
+		_update_score(current_score)
+	if current_scores_signature != _cached_player_scores_signature:
+		_cached_player_scores_signature = current_scores_signature
+		_update_player_scores(GameState.get_all_player_scores(), current_score)
 
 func _update_level(level: int) -> void:
 	_level_label.text = "等级 %d" % level
@@ -285,6 +460,8 @@ func _update_player_scores(scores: Dictionary, total_score: int) -> void:
 	else:
 		_player_scores_label.text = "  |  ".join(rows)
 	_score_label.text = "总分: %d" % total_score
+	_cached_score = total_score
+	_cached_player_scores_signature = str(scores)
 
 func _peer_label(peer_id: int) -> String:
 	if peer_id == 1:
@@ -301,6 +478,14 @@ func _update_health(current: int, maximum: int) -> void:
 		_hp_num.text = "%d/%d" % [current, maximum]
 
 func _update_powerup_display() -> void:
+	var prev_spread_level := _cached_spread_level
+	var prev_speed_level := _cached_speed_level
+	var prev_power_level := _cached_power_level
+	var prev_extra_bullet_count := _cached_extra_bullet_count
+	var prev_extra_damage_bonus := _cached_extra_damage_bonus
+	var prev_laser_cd_bonus := _cached_laser_cd_bonus
+	var prev_move_speed_bonus := _cached_move_speed_bonus
+
 	_cached_spread_level = GameState.get_shoot_level()
 	_cached_speed_level = GameState.get_shoot_speed_level()
 	_cached_power_level = GameState.get_bullet_power_level()
@@ -310,12 +495,14 @@ func _update_powerup_display() -> void:
 	_cached_move_speed_bonus = GameState.get_move_speed_bonus()
 	for child in _powerup_display.get_children():
 		child.queue_free()
+
 	var labels := {
 		"spread": {"name": "扩散", "color": Color(0.3, 1.0, 0.4), "bar": Color(0.2, 0.8, 0.3)},
 		"speed": {"name": "速射", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
 		"power": {"name": "威力", "color": Color(1.0, 0.4, 0.3), "bar": Color(0.9, 0.3, 0.2)},
 	}
-	for type in labels:
+	var ordered_types: Array[String] = ["spread", "speed", "power"]
+	for type in ordered_types:
 		var level: int = 0
 		var max_level: int = 15
 		match type:
@@ -331,12 +518,24 @@ func _update_powerup_display() -> void:
 		if level <= 0:
 			continue
 
-		var bar_w: int = 120
-		var bar_h: int = 14
+		var prev_level: int = -1
+		match type:
+			"spread":
+				prev_level = prev_spread_level
+			"speed":
+				prev_level = prev_speed_level
+			"power":
+				prev_level = prev_power_level
+		var bar_w: int = POWERUP_BAR_WIDTH
+		var bar_h: int = POWERUP_BAR_HEIGHT
 		var fill_w: int = int(bar_w * float(level) / float(max_level))
+		var prev_fill_w: int = 0
+		if prev_level > 0:
+			prev_fill_w = int(bar_w * float(prev_level) / float(max_level))
 
 		# 行容器: SPR ████░░  8/15
 		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
 		_powerup_display.add_child(row)
 
 		# 名称标签
@@ -373,19 +572,18 @@ func _update_powerup_display() -> void:
 		val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bg.add_child(val_lbl)
 
+		if prev_level >= 0 and prev_level != level:
+			_animate_powerup_row(row, bg, fill, val_lbl, prev_fill_w, fill_w, bar_h, labels[type].bar)
+
 	var boss_bonus_lines: Array[String] = []
-	var extra_bullet_count := GameState.get_extra_bullet_count()
-	var extra_damage_bonus := GameState.get_extra_damage_bonus()
-	var laser_cd_bonus := GameState.get_laser_cd_bonus()
-	var move_speed_bonus := GameState.get_move_speed_bonus()
-	if extra_bullet_count > 0:
-		boss_bonus_lines.append("Boss奖励: 子弹数量 +%d" % extra_bullet_count)
-	if extra_damage_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 额外伤害 +%d" % extra_damage_bonus)
-	if laser_cd_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 激光冷却 -%.1fs" % laser_cd_bonus)
-	if move_speed_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 移速 +%d%%" % int(round(move_speed_bonus * 100.0)))
+	if _cached_extra_bullet_count > 0:
+		boss_bonus_lines.append("Boss奖励: 子弹数量 +%d" % _cached_extra_bullet_count)
+	if _cached_extra_damage_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 额外伤害 +%d" % _cached_extra_damage_bonus)
+	if _cached_laser_cd_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 激光冷却 -%.1fs" % _cached_laser_cd_bonus)
+	if _cached_move_speed_bonus > 0:
+		boss_bonus_lines.append("Boss奖励: 移速 +%d%%" % int(round(_cached_move_speed_bonus * 100.0)))
 
 	if boss_bonus_lines.size() > 0:
 		var spacer := Control.new()
@@ -400,6 +598,57 @@ func _update_powerup_display() -> void:
 			bonus_lbl.add_theme_constant_override("shadow_outline_size", 1)
 			bonus_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			_powerup_display.add_child(bonus_lbl)
+
+	if prev_extra_bullet_count != _cached_extra_bullet_count \
+	or prev_extra_damage_bonus != _cached_extra_damage_bonus \
+	or not is_equal_approx(prev_laser_cd_bonus, _cached_laser_cd_bonus) \
+	or not is_equal_approx(prev_move_speed_bonus, _cached_move_speed_bonus):
+		_pulse_powerup_bonus_lines()
+
+func _animate_powerup_row(row: Control, bg: ColorRect, fill: ColorRect, val_lbl: Label, prev_fill_w: int, fill_w: int, bar_h: int, bar_color: Color) -> void:
+	row.scale = Vector2(0.98, 0.98)
+	row.modulate = Color(1, 1, 1, 0.85)
+	fill.modulate = Color(1.35, 1.35, 1.35, 1.0)
+	val_lbl.modulate = Color(1, 1, 1, 0.75)
+	var row_tween := create_tween().set_parallel(true)
+	row_tween.tween_property(row, "scale", Vector2(1, 1), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	row_tween.tween_property(row, "modulate", Color(1, 1, 1, 1), 0.18)
+	var fill_tween := create_tween().set_parallel(true)
+	fill_tween.tween_property(fill, "modulate", Color(1, 1, 1, 1), 0.20)
+	fill_tween.tween_property(val_lbl, "modulate", Color(1, 1, 1, 1), 0.20)
+	if fill_w > prev_fill_w:
+		var trail := ColorRect.new()
+		trail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		trail.z_index = 3
+		trail.color = Color(1.0, 1.0, 1.0, 0.9)
+		trail.position = Vector2(max(prev_fill_w - 4, 0), 0)
+		trail.size = Vector2(14.0, float(bar_h))
+		bg.add_child(trail)
+		var trail_tween := create_tween().set_parallel(true)
+		trail_tween.tween_property(trail, "position:x", max(fill_w - 10, 0), 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		trail_tween.tween_property(trail, "modulate:a", 0.0, 0.22)
+		trail_tween.tween_callback(trail.queue_free)
+	else:
+		var edge_flash := ColorRect.new()
+		edge_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		edge_flash.z_index = 3
+		edge_flash.color = Color(bar_color.r, bar_color.g, bar_color.b, 0.55)
+		edge_flash.position = Vector2(max(fill_w - 12, 0), 0)
+		edge_flash.size = Vector2(12.0, float(bar_h))
+		bg.add_child(edge_flash)
+		var flash_tween := create_tween()
+		flash_tween.tween_property(edge_flash, "modulate:a", 0.0, 0.16)
+		flash_tween.tween_callback(edge_flash.queue_free)
+
+func _pulse_powerup_bonus_lines() -> void:
+	for child in _powerup_display.get_children():
+		if child is Label and String(child.text).begins_with("Boss奖励:"):
+			var lbl := child as Label
+			lbl.scale = Vector2(0.98, 0.98)
+			lbl.modulate = Color(1.0, 0.95, 0.65, 0.75)
+			var tween := create_tween().set_parallel(true)
+			tween.tween_property(lbl, "scale", Vector2(1, 1), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			tween.tween_property(lbl, "modulate", Color(0.98, 0.82, 0.35, 0.98), 0.18)
 
 func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()
@@ -513,9 +762,187 @@ func _update_fps(delta: float) -> void:
 		return
 	_fps_accum = 0.0
 	var fps: int = int(Engine.get_frames_per_second())
+	if fps <= 0 and delta > 0.0:
+		fps = int(round(1.0 / max(delta, 0.0001)))
 	_fps_label.text = "FPS: %d" % fps
 
 ## 新增技能：追加到 _skill_data 并重建技能条
 func add_skill(data: Dictionary) -> void:
 	_skill_data.append(data)
 	_create_skill_slot(data)
+
+func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.0, 0.3, 0.2, 1.0)) -> void:
+	var banner := Label.new()
+	banner.text = text
+	banner.add_theme_font_size_override("font_size", 40)
+	banner.add_theme_color_override("font_color", color)
+	banner.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+	banner.add_theme_constant_override("shadow_outline_size", 2)
+	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var canvas_size := _get_design_canvas_size()
+	banner.position = Vector2(0, canvas_size.y * 0.28)
+	banner.size = Vector2(canvas_size.x, 56)
+	banner.modulate.a = 0.0
+	add_child(banner)
+	var tween := create_tween()
+	tween.tween_property(banner, "modulate:a", 1.0, 0.18)
+	tween.tween_interval(maxf(hold, 0.2))
+	tween.tween_property(banner, "modulate:a", 0.0, 0.28)
+	tween.tween_callback(banner.queue_free)
+
+func show_boss_buff_banner(title: String, desc: String, accent: Color = Color(1.0, 0.78, 0.24, 1.0)) -> void:
+	if _boss_buff_banner and is_instance_valid(_boss_buff_banner):
+		_boss_buff_banner.queue_free()
+	var canvas_size := _get_design_canvas_size()
+	var panel := Panel.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.size = Vector2(560.0, 92.0)
+	panel.position = Vector2(maxf((canvas_size.x - panel.size.x) * 0.5, 16.0), 76.0)
+	panel.z_index = 88
+	panel.modulate.a = 0.0
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.045, 0.08, 0.92)
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 2
+	sb.border_width_bottom = 2
+	sb.border_color = accent
+	panel.add_theme_stylebox_override("panel", sb)
+	add_child(panel)
+	_boss_buff_banner = panel
+
+	var stripe := ColorRect.new()
+	stripe.position = Vector2(0.0, 0.0)
+	stripe.size = Vector2(8.0, panel.size.y)
+	stripe.color = accent
+	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(stripe)
+
+	var title_lbl := Label.new()
+	title_lbl.position = Vector2(24.0, 12.0)
+	title_lbl.size = Vector2(panel.size.x - 48.0, 30.0)
+	title_lbl.text = title
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title_lbl.add_theme_font_size_override("font_size", 22)
+	title_lbl.add_theme_color_override("font_color", accent)
+	title_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+	title_lbl.add_theme_constant_override("shadow_outline_size", 2)
+	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(title_lbl)
+
+	var desc_lbl := Label.new()
+	desc_lbl.position = Vector2(24.0, 48.0)
+	desc_lbl.size = Vector2(panel.size.x - 48.0, 26.0)
+	desc_lbl.text = desc
+	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	desc_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	desc_lbl.add_theme_font_size_override("font_size", 16)
+	desc_lbl.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0, 0.98))
+	desc_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.85))
+	desc_lbl.add_theme_constant_override("shadow_outline_size", 1)
+	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(desc_lbl)
+
+	var tween := create_tween()
+	tween.tween_property(panel, "modulate:a", 1.0, 0.16)
+	tween.tween_interval(2.4)
+	tween.tween_property(panel, "modulate:a", 0.0, 0.25)
+	tween.tween_callback(func():
+		if _boss_buff_banner == panel:
+			_boss_buff_banner = null
+		panel.queue_free()
+	)
+
+func show_boss_status(current: float, maximum: float, phase_name: String) -> void:
+	_ensure_boss_status_ui()
+	if _boss_status_root == null:
+		return
+	_boss_status_root.visible = true
+	var ratio: float = clampf(current / maxf(maximum, 1.0), 0.0, 1.0)
+	_boss_status_fill.size.x = 520.0 * ratio
+	_boss_status_label.text = "裂隙母舰  %d%%" % int(round(ratio * 100.0))
+	_boss_status_phase.text = phase_name
+
+func hide_boss_status() -> void:
+	if _boss_status_root:
+		_boss_status_root.visible = false
+
+func _ensure_boss_status_ui() -> void:
+	if _boss_status_root != null:
+		return
+	var viewport_size := _get_design_canvas_size()
+	_boss_status_root = Control.new()
+	_boss_status_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_status_root.position = Vector2(maxf((viewport_size.x - 560.0) * 0.5, 16.0), 16.0)
+	_boss_status_root.size = Vector2(560.0, 48.0)
+	_boss_status_root.z_index = 45
+	add_child(_boss_status_root)
+	var bg := ColorRect.new()
+	bg.position = Vector2(20.0, 22.0)
+	bg.size = Vector2(520.0, 14.0)
+	bg.color = Color(0.06, 0.04, 0.08, 0.82)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_status_root.add_child(bg)
+	_boss_status_fill = ColorRect.new()
+	_boss_status_fill.size = Vector2(520.0, 14.0)
+	_boss_status_fill.color = Color(0.92, 0.12, 0.20, 0.96)
+	_boss_status_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.add_child(_boss_status_fill)
+	_boss_status_label = Label.new()
+	_boss_status_label.position = Vector2(0.0, 0.0)
+	_boss_status_label.size = Vector2(560.0, 22.0)
+	_boss_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_status_label.add_theme_font_size_override("font_size", 16)
+	_boss_status_label.add_theme_color_override("font_color", Color(1.0, 0.88, 0.78, 1.0))
+	_boss_status_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	_boss_status_label.add_theme_constant_override("shadow_outline_size", 1)
+	_boss_status_root.add_child(_boss_status_label)
+	_boss_status_phase = Label.new()
+	_boss_status_phase.position = Vector2(0.0, 36.0)
+	_boss_status_phase.size = Vector2(560.0, 20.0)
+	_boss_status_phase.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_boss_status_phase.add_theme_font_size_override("font_size", 12)
+	_boss_status_phase.add_theme_color_override("font_color", Color(0.95, 0.72, 1.0, 0.95))
+	_boss_status_root.add_child(_boss_status_phase)
+
+func show_pickup_toast(powerup_type: String, world_pos: Vector2) -> void:
+	var text := _pickup_text(powerup_type)
+	if text.is_empty():
+		return
+	var toast := Label.new()
+	toast.text = text
+	toast.add_theme_font_size_override("font_size", 14)
+	toast.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85, 1.0))
+	toast.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.88))
+	toast.add_theme_constant_override("shadow_outline_size", 2)
+	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	toast.position = world_pos + Vector2(-60.0, -36.0)
+	toast.size = Vector2(120.0, 24.0)
+	add_child(toast)
+	_active_pickup_toasts.append(toast)
+	var tween := create_tween()
+	tween.tween_property(toast, "position:y", toast.position.y - 20.0, 0.8)
+	tween.parallel().tween_property(toast, "modulate:a", 0.0, 0.8)
+	tween.tween_callback(func():
+		_active_pickup_toasts.erase(toast)
+		toast.queue_free()
+	)
+
+func _pickup_text(powerup_type: String) -> String:
+	match powerup_type:
+		"heal":
+			return "治疗 +5"
+		"power":
+			return "威力 +1"
+		"speed":
+			return "速射 +1"
+		"spread":
+			return "扩散 +1"
+		"bomb":
+			return "炸弹清场"
+		"core":
+			return "核心奖励"
+	return ""

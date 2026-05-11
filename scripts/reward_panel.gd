@@ -119,7 +119,5 @@ func _build_ui() -> void:
 		add_child(card)
 
 func _on_reward_clicked(reward_type: String) -> void:
-	GameState.apply_reward(reward_type)
-	GameState.notify_boss_reward_applied()
 	reward_chosen.emit(reward_type)
 	queue_free()
