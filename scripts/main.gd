@@ -51,6 +51,10 @@ var _alive_players: Dictionary = {}
 var _client_bg_frame_skip: int = 0
 var _fallback_in_progress: bool = false
 
+const MODE_SWITCH_PROMPT_HOLD_SECONDS: float = 5.0
+const DEATH_MARQUEE_HOLD_SECONDS: float = 0.5
+const DEATH_MARQUEE_FADE_SECONDS: float = 3.0
+
 @onready var _bg_color: ColorRect = $BgColor
 
 func _ready() -> void:
@@ -363,11 +367,13 @@ func _fallback_to_single_player(message: String = "") -> void:
 	if _fallback_in_progress:
 		return
 	_fallback_in_progress = true
+	var reload_delay := 0.0
 	if not message.is_empty():
-		_show_death_marquee_text(message)
+		reload_delay = MODE_SWITCH_PROMPT_HOLD_SECONDS
+		_show_death_marquee_text(message, MODE_SWITCH_PROMPT_HOLD_SECONDS)
 	_clear_network_runtime_state()
 	NetworkManager.disconnect_network()
-	call_deferred("_reload_as_single_player_clean")
+	call_deferred("_reload_as_single_player_clean", reload_delay)
 
 func _clear_network_runtime_state() -> void:
 	_pending_bullet_spawns.clear()
@@ -381,7 +387,9 @@ func _clear_network_runtime_state() -> void:
 	if Pool and Pool.has_method("reset_all"):
 		Pool.reset_all()
 
-func _reload_as_single_player_clean() -> void:
+func _reload_as_single_player_clean(delay_seconds: float = 0.0) -> void:
+	if delay_seconds > 0.0:
+		await get_tree().create_timer(delay_seconds).timeout
 	await get_tree().process_frame
 	await get_tree().process_frame
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -964,7 +972,7 @@ func _show_death_marquee() -> void:
 	_show_death_marquee_text(msg)
 
 
-func _show_death_marquee_text(msg: String) -> void:
+func _show_death_marquee_text(msg: String, hold_seconds: float = DEATH_MARQUEE_HOLD_SECONDS) -> void:
 	var banner := Label.new()
 	var screen := get_viewport_rect().size
 	banner.text = "☠  " + msg + "  ☠"
@@ -979,8 +987,8 @@ func _show_death_marquee_text(msg: String) -> void:
 	add_child(banner)
 
 	var tween := create_tween()
-	tween.tween_interval(0.5)
-	tween.tween_property(banner, "modulate:a", 0.0, 3.0)
+	tween.tween_interval(hold_seconds)
+	tween.tween_property(banner, "modulate:a", 0.0, DEATH_MARQUEE_FADE_SECONDS)
 	tween.tween_callback(banner.queue_free)
 
 func _restart_on_touch() -> void:
