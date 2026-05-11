@@ -23,6 +23,21 @@ var entity_id: int = 0
 
 func get_entity_id() -> int:
 	return entity_id
+
+func get_network_health() -> float:
+	return _health
+
+func get_network_max_health() -> float:
+	return _max_health
+
+func apply_network_health(hp: float, max_hp: float) -> void:
+	if max_hp > 0.0:
+		_max_health = max_hp
+	_health = clampf(hp, 0.0, _max_health)
+	if _health_bar:
+		_health_bar.max_value = _max_health
+		_health_bar.value = _health
+
 var _is_network_ghost: bool = false
 var _recent_hit_window: float = 0.0
 var _recent_hit_count: int = 0

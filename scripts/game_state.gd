@@ -14,7 +14,7 @@ signal boss_spawn_requested(boss_level)
 signal boss_defeated
 signal boss_reward_applied
 
-const START_HEALTH: int = 100
+const START_HEALTH: int = 50
 const HEALTH_CAP: int = 2000
 
 var score: int = 0
