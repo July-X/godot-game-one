@@ -91,6 +91,10 @@ func start_magnet(target: Node2D) -> void:
 					requested_peer_id = int(maybe_peer)
 		if requested_peer_id <= 0:
 			requested_peer_id = 1
+		if has_meta("assigned_peer_id"):
+			var assigned := int(get_meta("assigned_peer_id"))
+			if assigned > 0 and requested_peer_id != assigned:
+				return
 		## 一旦有归属者，避免被其他玩家后续“抢吸”覆盖
 		if _magnet_owner_peer_id > 0 and requested_peer_id != _magnet_owner_peer_id:
 			return
@@ -177,6 +181,7 @@ func collect() -> void:
 	tween.tween_property(_glow, "scale", Vector2(0.1, 0.1), 0.4)
 	tween.tween_property(_glow, "modulate:a", 0.0, 0.4)
 	tween.tween_callback(queue_free)
+
 
 func _bomb_effect() -> void:
 	SFX.play_explosion()

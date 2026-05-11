@@ -5,8 +5,10 @@ extends CanvasLayer
 @onready var _level_label: Label = $LevelLabel
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _hp_num: Label = $HealthBar/HPNum
+@onready var _player_scores_label: Label = $PlayerScoresLabel
 @onready var _powerup_display: VBoxContainer = $PowerupDisplay
 @onready var _controls_label: Label = $ControlsLabel
+@onready var _fps_label: Label = $FpsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
@@ -28,6 +30,7 @@ var _cached_extra_bullet_count: int = -1
 var _cached_extra_damage_bonus: int = -1
 var _cached_laser_cd_bonus: float = -1.0
 var _cached_move_speed_bonus: float = -1.0
+var _fps_accum: float = 0.0
 
 func _ready() -> void:
 	_game_over_panel.visible = false
@@ -42,15 +45,18 @@ func _ready() -> void:
 	GameState.health_changed.connect(_on_health_changed)
 	GameState.powerup_collected.connect(_on_powerup_collected)
 	GameState.boss_reward_applied.connect(_on_boss_reward_applied)
+	GameState.player_scores_changed.connect(_on_player_scores_changed)
 	_update_score(0)
 	_update_level(1)
 	_update_health(GameState.get_current_health(), GameState.get_max_health())
+	_update_player_scores(GameState.get_all_player_scores(), GameState.score)
 	_update_powerup_display()
 	_refresh_leaderboard()
 
 func _process(_delta: float) -> void:
 	_update_cooldowns()
 	_refresh_powerup_display_if_needed()
+	_update_fps(_delta)
 
 
 ## ── 动态技能条 ──────────────────────────────────────────────
@@ -176,6 +182,10 @@ func _trigger_skill() -> void:
 	var player := _resolve_local_player()
 	if player and player.has_method("request_action"):
 		player.request_action("skill")
+	elif player and player.has_node("ActionRouter"):
+		var router := player.get_node("ActionRouter")
+		if router and router.has_method("request_action"):
+			router.request_action("skill")
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -183,6 +193,10 @@ func _trigger_laser() -> void:
 	var player := _resolve_local_player()
 	if player and player.has_method("request_action"):
 		player.request_action("laser")
+	elif player and player.has_node("ActionRouter"):
+		var router := player.get_node("ActionRouter")
+		if router and router.has_method("request_action"):
+			router.request_action("laser")
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -193,6 +207,10 @@ func _resolve_local_player() -> Node:
 			continue
 		if not NetworkManager.is_online():
 			return p
+		if p.has_method("get") and multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
+			var maybe_peer: Variant = p.get("peer_id")
+			if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) == multiplayer.get_unique_id():
+				return p
 		if p.has_method("is_multiplayer_authority") and p.is_multiplayer_authority():
 			return p
 	return null
@@ -205,6 +223,10 @@ func _on_score_changed(new_score: int) -> void:
 func _on_level_changed(new_level: int) -> void:
 	_update_level(new_level)
 
+func _on_player_scores_changed(scores: Dictionary, total_score: int) -> void:
+	_update_player_scores(scores, total_score)
+	_refresh_leaderboard()
+
 func _on_health_changed(current: int, maximum: int) -> void:
 	_update_health(current, maximum)
 
@@ -212,7 +234,7 @@ func _on_game_over(final_score: int, final_level: int) -> void:
 	_game_over_panel.visible = true
 	_final_score_label.text = "得分: %d" % final_score
 	_final_level_label.text = "等级: %d" % final_level
-	Leaderboard.add_entry(final_score, final_level)
+	Leaderboard.add_entry(final_score, final_level, GameState.get_all_player_scores())
 	_refresh_leaderboard()
 
 func _on_powerup_collected(type: String) -> void:
@@ -242,10 +264,34 @@ func _refresh_powerup_display_if_needed() -> void:
 ## ── 显示更新 ────────────────────────────────────────────────
 
 func _update_score(score: int) -> void:
-	_score_label.text = "得分: %d" % score
+	_score_label.text = "总分: %d" % score
 
 func _update_level(level: int) -> void:
 	_level_label.text = "等级 %d" % level
+
+func _update_player_scores(scores: Dictionary, total_score: int) -> void:
+	if _player_scores_label == null:
+		return
+	var rows: Array[String] = []
+	var keys: Array = scores.keys()
+	keys.sort()
+	for key in keys:
+		if not String(key).is_valid_int():
+			continue
+		var pid: int = int(String(key))
+		rows.append("%s: %d" % [_peer_label(pid), int(scores[key])])
+	if rows.is_empty():
+		_player_scores_label.text = "A: 0  |  B: 0"
+	else:
+		_player_scores_label.text = "  |  ".join(rows)
+	_score_label.text = "总分: %d" % total_score
+
+func _peer_label(peer_id: int) -> String:
+	if peer_id == 1:
+		return "A"
+	if peer_id == 2:
+		return "B"
+	return "P%d" % peer_id
 
 func _update_health(current: int, maximum: int) -> void:
 	if _health_bar:
@@ -385,15 +431,59 @@ func _set_control_ignore_input(root: Control) -> void:
 func _refresh_leaderboard() -> void:
 	for child in _perm_leaderboard_entries.get_children():
 		child.queue_free()
+	var score_rows: Array[Dictionary] = []
+	var live_scores: Dictionary = GameState.get_all_player_scores()
+	var live_keys: Array = live_scores.keys()
+	live_keys.sort()
+	for key in live_keys:
+		var key_str := str(key)
+		if not key_str.is_valid_int():
+			continue
+		var pid: int = int(key_str)
+		score_rows.append({
+			"peer_id": pid,
+			"score": int(live_scores[key]),
+		})
+	score_rows.sort_custom(func(a, b): return int(a.score) > int(b.score))
+	if score_rows.is_empty():
+		score_rows.append({"peer_id": 1, "score": 0})
+		score_rows.append({"peer_id": 2, "score": 0})
+	for i in range(score_rows.size()):
+		var row: Dictionary = score_rows[i]
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 12)
+		label.add_theme_color_override("font_color", Color(0.72, 0.84, 1.0, 0.9))
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.text = "#%d  %s : %d" % [i + 1, _peer_label(int(row.peer_id)), int(row.score)]
+		_perm_leaderboard_entries.add_child(label)
+
 	var entries := Leaderboard.get_entries()
 	for entry in entries:
-		var label := Label.new()
-		label.add_theme_font_size_override("font_size", 11)
-		label.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0, 0.8))
-		label.horizontal_alignment = 1
-		label.vertical_alignment = 1
-		label.text = "#%d  %s\n%s  (Lv.%d)" % [entries.find(entry) + 1, entry.time, entry.score, entry.level]
-		_perm_leaderboard_entries.add_child(label)
+		var history := Label.new()
+		history.add_theme_font_size_override("font_size", 10)
+		history.add_theme_color_override("font_color", Color(0.52, 0.66, 0.9, 0.72))
+		history.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		history.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var players_text := _format_leaderboard_players(entry)
+		history.text = "历史 %s  总分:%d  %s  Lv.%d" % [str(entry.time), int(entry.score), players_text, int(entry.level)]
+		_perm_leaderboard_entries.add_child(history)
+
+func _format_leaderboard_players(entry: Dictionary) -> String:
+	var players: Dictionary = entry.get("players", {})
+	if players.is_empty():
+		return "A:0 B:0"
+	var keys: Array = players.keys()
+	keys.sort()
+	var parts: Array[String] = []
+	for key in keys:
+		var key_str := str(key)
+		if not key_str.is_valid_int():
+			continue
+		parts.append("%s:%d" % [_peer_label(int(key_str)), int(players[key])])
+	if parts.is_empty():
+		return "A:0 B:0"
+	return " ".join(parts)
 
 func _update_platform_hints() -> void:
 	var is_mobile: bool = OS.has_feature("android") or OS.has_feature("ios")
@@ -414,6 +504,16 @@ func _update_platform_hints() -> void:
 		else:
 			_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\n等待房主重新开始"
 			_restart_label.text = "等待房主重新开始"
+
+func _update_fps(delta: float) -> void:
+	if _fps_label == null:
+		return
+	_fps_accum += delta
+	if _fps_accum < 0.2:
+		return
+	_fps_accum = 0.0
+	var fps: int = int(Engine.get_frames_per_second())
+	_fps_label.text = "FPS: %d" % fps
 
 ## 新增技能：追加到 _skill_data 并重建技能条
 func add_skill(data: Dictionary) -> void:

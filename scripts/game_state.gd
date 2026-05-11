@@ -5,15 +5,16 @@ signal level_changed(new_level)
 signal health_changed(current_health, max_health)
 signal game_over(final_score, final_level)
 signal powerup_collected(powerup_type)
-signal shield_changed(layers)
+signal shield_changed(peer_id, layers)
 signal skill_used(peer_id)
 signal laser_used(peer_id)
+signal player_scores_changed(scores, total_score)
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
 signal boss_defeated
 signal boss_reward_applied
 
-const START_HEALTH: int = 10
+const START_HEALTH: int = 100
 const HEALTH_CAP: int = 2000
 
 var score: int = 0
@@ -52,6 +53,7 @@ var move_speed_bonus: float = 0.0      # 移速加成百分比
 
 ## 多人：按玩家独立属性（key=peer_id 字符串）
 var _player_states: Dictionary = {}
+var _player_scores: Dictionary = {}
 
 ## ── 网络同步 ──────────────────────────────────────────────────
 var _sync_dirty: bool = false
@@ -86,6 +88,30 @@ func _new_player_state() -> Dictionary:
 		"extra_damage_bonus": 0,
 		"move_speed_bonus": 0.0,
 	}
+
+func _alive_peer_ids() -> Array[int]:
+	var ids: Array[int] = []
+	for key: String in _player_states.keys():
+		if not key.is_valid_int():
+			continue
+		var s: Dictionary = _player_states[key]
+		if bool(s.get("is_alive", true)):
+			ids.append(int(key))
+	ids.sort()
+	return ids
+
+func _emit_shield_changed_for_peer(peer_id: int) -> void:
+	shield_changed.emit(peer_id, get_shield_layers(peer_id))
+
+func _emit_scores_changed() -> void:
+	player_scores_changed.emit(_player_scores.duplicate(true), score)
+
+func _add_score_to_peer(peer_id: int, amount: int) -> void:
+	if amount <= 0:
+		return
+	var key := _peer_key(peer_id)
+	_player_scores[key] = int(_player_scores.get(key, 0)) + amount
+	score += amount
 
 func _state(peer_id: int = -1) -> Dictionary:
 	var key := _peer_key(peer_id)
@@ -137,6 +163,7 @@ func _to_dict() -> Dictionary:
 		"last_boss_level": last_boss_level,
 		"boss_encounter_count": boss_encounter_count,
 		"player_states": _player_states.duplicate(true),
+		"player_scores": _player_scores.duplicate(true),
 	}
 
 @rpc("authority", "unreliable", "call_remote")
@@ -147,12 +174,12 @@ func _rpc_sync_game_state(data: Dictionary) -> void:
 
 ## Client → Host：报告敌人受击
 @rpc("any_peer", "reliable")
-func _rpc_report_enemy_hit(entity_id: int, damage: int) -> void:
+func _rpc_report_enemy_hit(entity_id: int, damage: int, attacker_peer_id: int = -1) -> void:
 	if not multiplayer.is_server():
 		return
 	var scene = get_tree().current_scene
 	if scene and scene.has_method("_on_network_enemy_hit"):
-		scene._on_network_enemy_hit(entity_id, damage)
+		scene._on_network_enemy_hit(entity_id, damage, attacker_peer_id)
 
 ## Client → Host：报告玩家受击
 @rpc("any_peer", "reliable")
@@ -221,14 +248,21 @@ func _from_dict(data: Dictionary) -> void:
 	last_boss_level = data.get("last_boss_level", 0)
 	boss_encounter_count = data.get("boss_encounter_count", 0)
 	_player_states = data.get("player_states", {})
+	_player_scores = data.get("player_scores", {})
+	for key: String in _player_states.keys():
+		if not _player_scores.has(key):
+			_player_scores[key] = 0
 	if not multiplayer.is_server():
 		_server_player_states = _player_states.duplicate(true)
 	## 重新发射信号让 UI 更新
 	score_changed.emit(score)
+	_emit_scores_changed()
 	level_changed.emit(level)
 	_sync_local_view()
 	health_changed.emit(current_health, max_health)
-	shield_changed.emit(shield_layers)
+	for key: String in _player_states.keys():
+		if key.is_valid_int():
+			_emit_shield_changed_for_peer(int(key))
 
 func _mark_dirty() -> void:
 	if multiplayer.is_server():
@@ -236,8 +270,11 @@ func _mark_dirty() -> void:
 
 func ensure_player_state(peer_id: int) -> void:
 	_state(peer_id)
+	var key := _peer_key(peer_id)
+	if not _player_scores.has(key):
+		_player_scores[key] = 0
+		_emit_scores_changed()
 	if multiplayer.is_server():
-		var key := _peer_key(peer_id)
 		if not _server_player_states.has(key):
 			_server_player_states[key] = _new_player_state()
 	_mark_dirty()
@@ -257,32 +294,69 @@ func reset_game() -> void:
 	boss_encounter_count = 0
 	last_boss_level = 0
 	_player_states.clear()
+	_player_scores.clear()
 	_pending_skill_ack.clear()
 	_pending_laser_ack.clear()
-	_state(_local_peer_id())
+	var local_peer := _local_peer_id()
+	_state(local_peer)
+	_player_scores[_peer_key(local_peer)] = 0
+	## 双人联机场景下初始化 A/B 行，确保 0 分也能立即出现在排行榜。
+	if NetworkManager.is_online():
+		if multiplayer.is_server():
+			_player_scores["1"] = 0
+			for pid in NetworkManager.connected_peers:
+				if pid > 0:
+					_player_scores[str(pid)] = 0
+		else:
+			_player_scores["1"] = int(_player_scores.get("1", 0))
+			_player_scores[_peer_key(local_peer)] = int(_player_scores.get(_peer_key(local_peer), 0))
 	_sync_local_view()
+	_emit_scores_changed()
 	health_changed.emit(current_health, max_health)
-	shield_changed.emit(shield_layers)
+	_emit_shield_changed_for_peer(local_peer)
 	_mark_dirty()
 
-func add_score(amount: int) -> void:
-	score += amount
+func add_score(amount: int, peer_id: int = -1) -> void:
+	if amount <= 0:
+		return
+	if NetworkManager.is_online() and multiplayer.is_server():
+		if peer_id > 0:
+			_add_score_to_peer(peer_id, amount)
+		else:
+			var alive_ids := _alive_peer_ids()
+			if alive_ids.is_empty():
+				alive_ids.append(_local_peer_id())
+			var count: int = alive_ids.size()
+			var div: int = max(count, 1)
+			var base: int = amount / div
+			var rem: int = amount % div
+			for pid in alive_ids:
+				var grant: int = base
+				if rem > 0:
+					grant += 1
+					rem -= 1
+				_add_score_to_peer(pid, grant)
+	else:
+		var pid := peer_id if peer_id > 0 else _local_peer_id()
+		_add_score_to_peer(pid, amount)
 	score_changed.emit(score)
+	_emit_scores_changed()
 	_mark_dirty()
 
-func add_kill() -> void:
+func add_kill(killer_peer_id: int = -1) -> void:
 	kills += 1
 	total_kills += 1
-	add_score(10 * level)
+	add_score(10 * level, killer_peer_id)
 	if kills >= kills_for_next_level:
 		level_up()
-	if total_kills % 10 == 0:
-		for key: String in _player_states.keys():
-			var s: Dictionary = _player_states[key]
-			s.shield_layers = min(int(s.shield_layers) + 1, 30)
-			_player_states[key] = s
+	## 单机保留“击杀里程碑 +1 护盾”奖励；联机改为按玩家独立掉落/奖励，不再全员同步加层。
+	if not NetworkManager.is_online() and total_kills % 10 == 0:
+		var local_key := _peer_key(_local_peer_id())
+		var local_state: Dictionary = _state(_local_peer_id())
+		local_state.shield_layers = min(int(local_state.shield_layers) + 1, 30)
+		_player_states[local_key] = local_state
 		_sync_local_view()
-		shield_changed.emit(shield_layers)
+		_emit_shield_changed_for_peer(_local_peer_id())
 	if total_kills > 0 and total_kills % 20 == 0 and total_kills != last_elite_threshold:
 		last_elite_threshold = total_kills
 		elite_spawn_requested.emit()
@@ -317,9 +391,8 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 	if int(s.shield_layers) > 0:
 		var absorbed: int = min(int(s.shield_layers), amount)
 		s.shield_layers = int(s.shield_layers) - absorbed
-		if _is_local_peer(pid):
-			shield_layers = s.shield_layers
-			shield_changed.emit(shield_layers)
+		_player_states[_peer_key(pid)] = s
+		_emit_shield_changed_for_peer(pid)
 		amount -= absorbed
 	if amount > 0:
 		s.current_health = max(int(s.current_health) - amount, 0)
@@ -334,7 +407,10 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 		s.current_health = 0
 		s.is_alive = false
 		s.shield_layers = 0
-	_player_states[_peer_key(pid)] = s
+		_player_states[_peer_key(pid)] = s
+		_emit_shield_changed_for_peer(pid)
+	else:
+		_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
 		_sync_local_view()
 	_mark_dirty()
@@ -570,6 +646,18 @@ func get_extra_damage_bonus(peer_id: int = -1) -> int:
 func get_move_speed_bonus(peer_id: int = -1) -> float:
 	return float(_state(peer_id).move_speed_bonus)
 
+func get_peer_score(peer_id: int = -1) -> int:
+	return int(_player_scores.get(_peer_key(peer_id), 0))
+
+func get_all_player_scores() -> Dictionary:
+	return _player_scores.duplicate(true)
+
+func is_player_alive(peer_id: int = -1) -> bool:
+	return bool(_state(peer_id).get("is_alive", true))
+
+func get_alive_player_ids() -> Array[int]:
+	return _alive_peer_ids()
+
 func apply_reward(reward_type: String, peer_id: int = -1) -> void:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
@@ -591,7 +679,8 @@ func apply_reward(reward_type: String, peer_id: int = -1) -> void:
 	_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
 		_sync_local_view()
-		shield_changed.emit(shield_layers)
+	if reward_type == "shield":
+		_emit_shield_changed_for_peer(pid)
 	_mark_dirty()
 
 func on_boss_started() -> void:

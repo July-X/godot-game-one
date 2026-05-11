@@ -110,8 +110,8 @@ func is_online() -> bool:
 	var peer := multiplayer.multiplayer_peer
 	if peer == null:
 		return false
-	## 仅在连接中/已连接时视为在线，避免默认离线 peer 误判为在线。
-	return peer.get_connection_status() != MultiplayerPeer.CONNECTION_DISCONNECTED
+	## 仅在“已连接”时视为在线，避免把 CONNECTING 误判为在线导致单机/输入链路错走联机分支。
+	return peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
 
 
 ## 获取本机 peer_id（未联机时返回 1）

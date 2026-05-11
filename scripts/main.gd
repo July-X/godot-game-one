@@ -40,13 +40,15 @@ var _players: Dictionary = {}
 ## 多人模式：实体追踪（entity_id → Node）
 var _next_entity_id: int = 1000
 var _entities: Dictionary = {}
+var _entity_target_positions: Dictionary = {}
 var _despawned_entity_ids: Dictionary = {}
 var _entity_sync_timer: float = 0.0
-const ENTITY_SYNC_INTERVAL: float = 0.05
+const ENTITY_SYNC_INTERVAL: float = 0.066
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
 var _pending_laser_spawns: Array = []
 var _alive_players: Dictionary = {}
+var _client_bg_frame_skip: int = 0
 
 @onready var _bg_color: ColorRect = $BgColor
 
@@ -70,6 +72,8 @@ func _ready() -> void:
 	_debug_log_variant_assets()
 	var online := NetworkManager.is_online()
 	print("[Main] online=", online, " server=", multiplayer.is_server(), " peer_id=", multiplayer.get_unique_id())
+	if online and not multiplayer.is_server():
+		_apply_client_perf_profile()
 
 	## 多人：Host 负责权威生成，Client 通过 RPC 复位玩家列表
 	if online and multiplayer.is_server():
@@ -98,7 +102,15 @@ func _ready() -> void:
 					break
 				await get_tree().process_frame
 			if node == null:
-				push_warning("[Main] 未能在同步后找到本地玩家节点（peer_id=%d）" % my_id)
+				push_warning("[Main] 同步后未找到本地玩家节点，向 Host 请求补生成（peer_id=%d）" % my_id)
+				_request_spawn_self.rpc_id(1, my_id)
+				for _retry in 60:
+					node = get_node_or_null(str(my_id))
+					if node:
+						break
+					await get_tree().process_frame
+				if node == null:
+					push_error("[Main] 仍未找到本地玩家节点（peer_id=%d），本机将无法输入/开火" % my_id)
 	else:
 		## 单机模式：原有逻辑
 		_spawn_player()
@@ -320,18 +332,17 @@ func _on_multiplayer_player_disconnected(p_peer_id: int) -> void:
 			node.queue_free()
 		_players.erase(p_peer_id)
 	_alive_players.erase(p_peer_id)
-	## 若所有玩家都断开，服务器自己也结束
-	if _alive_players.is_empty() and multiplayer.is_server():
-		_on_player_died()
+	if multiplayer.is_server() and not _alive_players.is_empty():
+		_fallback_to_single_player("队友已退出，切换为单人模式")
+	elif _alive_players.is_empty() and multiplayer.is_server():
+		_fallback_to_single_player("联机已断开，切换为单人模式")
 	else:
 		_refresh_primary_player_target()
 
 
 ## 多人模式：服务器断开（Client 端触发）
 func _on_multiplayer_server_disconnected() -> void:
-	_show_death_marquee_text("服务器断开连接")
-	await get_tree().create_timer(2.0).timeout
-	get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")
+	_fallback_to_single_player("房主已退出，切换为单人模式")
 
 
 ## 多人模式：某玩家死亡回调
@@ -346,6 +357,15 @@ func _on_networked_player_died(p_peer_id: int) -> void:
 		_on_player_died()
 	else:
 		_refresh_primary_player_target()
+
+func _fallback_to_single_player(message: String = "") -> void:
+	if not message.is_empty():
+		_show_death_marquee_text(message)
+	NetworkManager.disconnect_network()
+	call_deferred("_reload_as_single_player")
+
+func _reload_as_single_player() -> void:
+	get_tree().reload_current_scene()
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_despawn_player(p_peer_id: int) -> void:
@@ -385,12 +405,13 @@ func _process(delta: float) -> void:
 		_flush_bullet_spawns()
 		_flush_laser_spawns()
 
-	_scroll_background(delta)
-
-	## 关键：联机时仅 Host 运行刷怪与敌方战斗逻辑。
-	## Client 只渲染已同步实体，避免本地生成“假怪”导致命中无效/不同步。
 	if NetworkManager.is_online() and not multiplayer.is_server():
+		_client_bg_frame_skip += 1
+		if _client_bg_frame_skip % 2 == 0:
+			_scroll_background(delta * 2.0)
+		_apply_entity_interpolation(delta)
 		return
+	_scroll_background(delta)
 
 	if _elite != null and is_instance_valid(_elite):
 		return
@@ -435,6 +456,44 @@ func _scroll_background(delta: float) -> void:
 			pl.position.y = -100
 			pl.position.x = randf_range(100, 1180)
 
+func _apply_client_perf_profile() -> void:
+	## 加入端降低背景层渲染负担，优先保障同屏战斗帧率。
+	for layer in _bg_layers:
+		var nodes: Array = layer.nodes
+		for i in range(nodes.size() - 1, -1, -1):
+			if i % 2 == 0:
+				continue
+			var n: Node = nodes[i]
+			if is_instance_valid(n):
+				n.queue_free()
+			nodes.remove_at(i)
+		layer.nodes = nodes
+	for i in range(_nebulas.size() - 1, -1, -1):
+		if i % 2 == 0:
+			continue
+		var neb: Node = _nebulas[i]
+		if is_instance_valid(neb):
+			neb.queue_free()
+		_nebulas.remove_at(i)
+	for i in range(_planets.size() - 1, -1, -1):
+		if i % 2 == 0:
+			continue
+		var pl: Node = _planets[i]
+		if is_instance_valid(pl):
+			pl.queue_free()
+		_planets.remove_at(i)
+
+func _apply_entity_interpolation(delta: float) -> void:
+	var alpha: float = clampf(delta * 12.0, 0.0, 1.0)
+	for eid in _entity_target_positions.keys():
+		if not _entities.has(eid):
+			continue
+		var node: Node2D = _entities[eid] as Node2D
+		if node == null or not is_instance_valid(node):
+			continue
+		var target: Vector2 = _entity_target_positions[eid]
+		node.global_position = node.global_position.lerp(target, alpha)
+
 func _spawn_enemy() -> void:
 	var enemy = _enemy_scene.instantiate()
 	var side := randi() % 4
@@ -470,17 +529,18 @@ func _on_enemy_died() -> void:
 
 func _on_network_enemy_died(entity_id: int) -> void:
 	_despawned_entity_ids[entity_id] = true
+	_entity_target_positions.erase(entity_id)
 	if _entities.has(entity_id):
 		_entities.erase(entity_id)
 	if multiplayer.is_server():
 		_rpc_despawn_entity.rpc(entity_id)
 
 ## Client → Host（经 GameState 转发）：敌人受击
-func _on_network_enemy_hit(entity_id: int, damage: int) -> void:
+func _on_network_enemy_hit(entity_id: int, damage: int, attacker_peer_id: int = -1) -> void:
 	if _entities.has(entity_id):
 		var enemy = _entities[entity_id]
 		if is_instance_valid(enemy) and enemy.has_method("take_damage"):
-			enemy.take_damage(damage)
+			enemy.take_damage(damage, attacker_peer_id)
 
 ## Client → Host（经 GameState 转发）：玩家受击
 func _on_network_player_hit(damage: int, target_peer_id: int) -> void:
@@ -518,13 +578,18 @@ func register_powerup_entity(powerup: Node2D, powerup_type: String) -> void:
 func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 1) -> void:
 	if not multiplayer.is_server():
 		return
-	_despawned_entity_ids[entity_id] = true
 	if _entities.has(entity_id):
 		var node = _entities[entity_id]
 		if is_instance_valid(node) and node.has_method("get_powerup_type"):
 			GameState.collect_powerup(node.get_powerup_type(), collector_peer_id)
-		if is_instance_valid(node):
-			node.queue_free()
+	if _despawned_entity_ids.has(entity_id):
+		return
+	_despawned_entity_ids[entity_id] = true
+	_entity_target_positions.erase(entity_id)
+	if _entities.has(entity_id):
+		var node2 = _entities[entity_id]
+		if is_instance_valid(node2):
+			node2.queue_free()
 		_entities.erase(entity_id)
 	_rpc_despawn_entity.rpc(entity_id)
 
@@ -580,6 +645,7 @@ func _on_network_asteroid_destroyed(entity_id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	_despawned_entity_ids[entity_id] = true
+	_entity_target_positions.erase(entity_id)
 	if _entities.has(entity_id):
 		_entities.erase(entity_id)
 	_rpc_despawn_entity.rpc(entity_id)
@@ -770,6 +836,14 @@ func _clear_non_boss_entities() -> void:
 			b.queue_free()
 	for p in get_tree().get_nodes_in_group("powerups"):
 		if p and is_instance_valid(p):
+			if NetworkManager.is_online() and multiplayer.is_server() and p.has_method("get"):
+				var despawn_pid: int = int(p.get("entity_id"))
+				if despawn_pid > 0:
+					_despawned_entity_ids[despawn_pid] = true
+					_entity_target_positions.erase(despawn_pid)
+					if _entities.has(despawn_pid):
+						_entities.erase(despawn_pid)
+					_rpc_despawn_entity.rpc(despawn_pid)
 			p.queue_free()
 
 func _show_boss_warning() -> void:
@@ -942,6 +1016,16 @@ func _request_player_sync() -> void:
 		if is_instance_valid(player_node):
 			_rpc_spawn_networked_player.rpc_id(requester, peer_id, player_node.position.x, player_node.position.y)
 
+## Client -> Host：请求确保本机玩家节点存在（修复偶发漏生成）
+@rpc("any_peer", "reliable", "call_remote")
+func _request_spawn_self(expected_peer_id: int = -1) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if expected_peer_id > 0 and expected_peer_id != sender:
+		return
+	_spawn_networked_player(sender, true)
+
 
 ## Host → Client：生成玩家节点
 @rpc("authority", "reliable", "call_remote")
@@ -968,10 +1052,13 @@ func _refresh_primary_player_target() -> void:
 	var new_target: Node2D = null
 	if _players.is_empty():
 		return
-	var preferred_id := 1
+	var preferred_id := multiplayer.get_unique_id() if NetworkManager.is_online() else 1
 	if _alive_players.has(preferred_id):
 		if _players.has(preferred_id) and is_instance_valid(_players[preferred_id]):
 			new_target = _players[preferred_id]
+	if new_target == null and NetworkManager.is_online() and _alive_players.has(1):
+		if _players.has(1) and is_instance_valid(_players[1]):
+			new_target = _players[1]
 	if new_target == null:
 		for pid in _alive_players.keys():
 			if _players.has(pid) and is_instance_valid(_players[pid]):
@@ -1115,6 +1202,7 @@ func _rpc_despawn_entity(eid: int) -> void:
 		if is_instance_valid(node):
 			node.queue_free()
 		_entities.erase(eid)
+	_entity_target_positions.erase(eid)
 	## 兜底：若字典丢失或出现重复实例，按 name/entity_id 全量清理残留节点。
 	for n in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(n):
@@ -1132,7 +1220,7 @@ func _rpc_despawn_entity(eid: int) -> void:
 		if n.name == str(eid):
 			n.queue_free()
 
-## Host → Client：实体位置批量同步（5Hz）
+## Host → Client：实体位置批量同步
 @rpc("authority", "unreliable", "call_remote")
 func _rpc_sync_entity_positions(data: PackedFloat64Array) -> void:
 	var i := 0
@@ -1147,7 +1235,11 @@ func _rpc_sync_entity_positions(data: PackedFloat64Array) -> void:
 			var node: Node2D = _entities[eid] as Node2D
 			if node == null:
 				continue
-			node.global_position = Vector2(x, y)
+			var target_pos := Vector2(x, y)
+			if node.get_meta("net_sync_inited", false) == false:
+				node.global_position = target_pos
+				node.set_meta("net_sync_inited", true)
+			_entity_target_positions[eid] = target_pos
 			if node.has_method("apply_network_health"):
 				node.apply_network_health(hp, max_hp)
 
@@ -1176,10 +1268,10 @@ func _batch_sync_entity_positions() -> void:
 ## 子弹同步 ──────────────────────────────────────────────────
 
 ## 注册一颗子弹生成（由 enemy/boss/player 调用）
-func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float, color: Color = Color(1,1,1,1)) -> void:
+func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float, color: Color = Color(1,1,1,1), owner_peer_id: int = -1) -> void:
 	if not NetworkManager.is_online():
 		return
-	_pending_bullet_spawns.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b])
+	_pending_bullet_spawns.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b, owner_peer_id])
 
 ## 每帧 flush 待发送子弹
 func _flush_bullet_spawns() -> void:
@@ -1193,10 +1285,10 @@ func _flush_bullet_spawns() -> void:
 		_rpc_spawn_bullets.rpc_id(1, data)
 
 ## 注册激光生成（Host 广播；Client 上报 Host）
-func register_laser_spawn(pos: Vector2, angle: float, damage: float) -> void:
+func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_id: int = -1) -> void:
 	if not NetworkManager.is_online():
 		return
-	_pending_laser_spawns.append([pos.x, pos.y, angle, damage])
+	_pending_laser_spawns.append([pos.x, pos.y, angle, damage, owner_peer_id])
 
 ## 每帧 flush 待发送激光
 func _flush_laser_spawns() -> void:
@@ -1210,7 +1302,7 @@ func _flush_laser_spawns() -> void:
 		_rpc_spawn_lasers.rpc_id(1, data)
 
 ## Host → Client（或 Client → Host）：刷出子弹视觉副本
-@rpc("any_peer", "reliable", "call_remote")
+@rpc("any_peer", "unreliable_ordered", "call_remote")
 func _rpc_spawn_bullets(data: Array) -> void:
 	if not NetworkManager.is_online():
 		return
@@ -1230,7 +1322,8 @@ func _rpc_spawn_bullets(data: Array) -> void:
 			entry[3] as int,               # damage
 			bool(entry[4]),                # is_player
 			entry[5],                      # level
-			entry[6]                       # speed
+			entry[6],                      # speed
+			int(entry[10]) if entry.size() > 10 else -1
 		)
 		if entry.size() > 7:
 			bullet.modulate = Color(entry[7], entry[8], entry[9], 1.0)
@@ -1240,7 +1333,7 @@ func _rpc_spawn_bullets(data: Array) -> void:
 ## 激光同步：
 ## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
 ## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）
-@rpc("any_peer", "reliable", "call_remote")
+@rpc("any_peer", "unreliable_ordered", "call_remote")
 func _rpc_spawn_lasers(data: Array) -> void:
 	if not NetworkManager.is_online():
 		return
@@ -1248,12 +1341,14 @@ func _rpc_spawn_lasers(data: Array) -> void:
 		for entry in data:
 			var bolt = _laser_scene.instantiate()
 			add_child(bolt)
-			bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3])
+			var owner_peer := int(entry[4]) if entry.size() > 4 else -1
+			bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3], owner_peer)
 		_rpc_spawn_lasers.rpc(data)
 		return
 	for entry in data:
 		var bolt = _laser_scene.instantiate()
 		add_child(bolt)
-		bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3])
+		var owner_peer := int(entry[4]) if entry.size() > 4 else -1
+		bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3], owner_peer)
 		if bolt.has_method("set_network_ghost"):
 			bolt.set_network_ghost(true)

@@ -33,6 +33,10 @@ var _corner_stuck_time: float = 0.0
 var _fire_pressure_window: float = 0.0
 var _fire_pressure_hits: int = 0
 var _dodge_cooldown: float = 0.0
+var _strafe_bias: Vector2 = Vector2.ZERO
+var _velocity_blend: Vector2 = Vector2.ZERO
+var _feint_timer: float = 0.0
+var _burst_step: int = 0
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
@@ -51,6 +55,11 @@ const BOSS_DODGE_COOLDOWN: float = 0.62
 const BOSS_DODGE_SHIFT: float = 140.0
 const BOSS_STANDOFF_MIN_DIST: float = 300.0
 const BOSS_STANDOFF_MAX_DIST: float = 560.0
+const BOSS_LEAD_SECONDS: float = 0.34
+const BOSS_MAX_TURN_RATE: float = 8.0
+const BOSS_CRUISE_ACCEL: float = 7.5
+const BOSS_FEINT_INTERVAL_MIN: float = 0.55
+const BOSS_FEINT_INTERVAL_MAX: float = 1.25
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
@@ -82,6 +91,7 @@ func setup(level: int) -> void:
 	_shoot_angle_offset = randf() * TAU
 	_circle_dir = 1.0 if randf() < 0.5 else -1.0
 	_circle_radius = 340.0
+	_pick_new_strafe_bias()
 
 	_apply_visual_state()
 	add_to_group("boss")
@@ -124,6 +134,7 @@ func _physics_process(delta: float) -> void:
 	_shoot_timer -= delta
 	_rush_cooldown = max(_rush_cooldown - delta, 0.0)
 	_dodge_cooldown = max(_dodge_cooldown - delta, 0.0)
+	_feint_timer = max(_feint_timer - delta, 0.0)
 	if _recent_hit_window > 0.0:
 		_recent_hit_window = max(_recent_hit_window - delta, 0.0)
 		if _recent_hit_window <= 0.0:
@@ -154,20 +165,28 @@ func _physics_process(delta: float) -> void:
 func _pick_state() -> void:
 	if _state == State.ENRAGED:
 		_state = State.ATTACK
-		_state_duration = randf_range(0.55, 1.1)
+		_state_duration = randf_range(0.70, 1.25)
 		_state_timer = _state_duration
 		return
-	match randi() % 4:
-		0: _enter_state(State.CIRCLE, randf_range(1.0, 1.8))
-		1: _enter_state(State.ATTACK, randf_range(0.9, 1.5))
-		2: _enter_state(State.RETREAT, randf_range(0.55, 1.0))
-		3: _enter_state(State.ATTACK, randf_range(0.75, 1.2))
+	var dist: float = global_position.distance_to(_target.global_position) if _target and is_instance_valid(_target) else 999.0
+	if dist < BOSS_STANDOFF_MIN_DIST:
+		_enter_state(State.RETREAT, randf_range(0.60, 1.05))
+		return
+	var roll := randf()
+	if roll < 0.36:
+		_enter_state(State.CIRCLE, randf_range(1.10, 2.05))
+	elif roll < 0.76:
+		_enter_state(State.ATTACK, randf_range(0.85, 1.45))
+	else:
+		_enter_state(State.RETREAT, randf_range(0.55, 1.05))
 
 func _enter_state(s: int, dur: float) -> void:
 	_state = s
 	_state_timer = dur
 	_state_duration = dur
 	_attack_index = (_attack_index + 1) % 5
+	_burst_step = 0
+	_pick_new_strafe_bias()
 
 func _check_enrage() -> void:
 	if _health / _max_health < 0.5 and _state != State.ENRAGED:
@@ -181,6 +200,7 @@ func _check_enrage() -> void:
 
 ## ── idle ──
 func _tick_idle(delta: float) -> void:
+	_cruise_towards(_ideal_standoff_position(), 0.45, delta)
 	if _state_timer <= 0:
 		_pick_state()
 
@@ -196,8 +216,9 @@ func _tick_circle(delta: float) -> void:
 	elif dist_to_player > BOSS_STANDOFF_MAX_DIST:
 		var to_player: Vector2 = global_position.direction_to(_target.global_position)
 		pos += to_player * (dist_to_player - BOSS_STANDOFF_MAX_DIST) * 0.55
-	global_position = global_position.lerp(pos, 9.5 * delta)
-	rotation = global_position.angle_to_point(_target.global_position) + PI * 0.5
+	pos += _strafe_bias
+	_cruise_towards(pos, 1.0, delta)
+	_face_target(delta)
 
 	if _state_timer <= 0:
 		_check_enrage()
@@ -212,8 +233,7 @@ func _tick_attack(delta: float) -> void:
 		2: _do_rotation_ring(delta, spd_boost)
 		3: _do_summon(delta, spd_boost)
 		4: _do_standoff_burst(delta, spd_boost)
-	var follow: float = 8.0 if _state == State.ENRAGED else 6.0
-	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, follow * delta)
+	_face_target(delta)
 
 	if _state_timer <= 0:
 		_check_enrage()
@@ -227,8 +247,9 @@ func _tick_retreat(delta: float) -> void:
 	var to_center: Vector2 = global_position.direction_to(center)
 	var edge_bias: float = _get_edge_bias()
 	var move_dir: Vector2 = (away * (1.0 - edge_bias) + to_center * edge_bias).normalized()
-	global_position += move_dir * spd * delta
-	rotation = global_position.angle_to_point(_target.global_position) + PI * 0.5
+	_velocity_blend = _velocity_blend.lerp(move_dir * spd, BOSS_CRUISE_ACCEL * delta)
+	global_position += _velocity_blend * delta
+	_face_target(delta)
 	if _state_timer <= 0:
 		_check_enrage()
 		_pick_state()
@@ -236,7 +257,43 @@ func _tick_retreat(delta: float) -> void:
 ## ── 攻击模式 ────────────────────────────────────────────────
 
 func _get_boss_attack_damage() -> int:
-	return max(1, 8 + _level * 2 + GameState.boss_encounter_count * 4)
+	return max(1, 3 + _level + GameState.boss_encounter_count * 2)
+
+func _pick_new_strafe_bias() -> void:
+	var screen := get_viewport_rect().size
+	_strafe_bias = Vector2(randf_range(-screen.x * 0.10, screen.x * 0.10), randf_range(-screen.y * 0.04, screen.y * 0.08))
+	_feint_timer = randf_range(BOSS_FEINT_INTERVAL_MIN, BOSS_FEINT_INTERVAL_MAX)
+
+func _predict_target_position() -> Vector2:
+	if not _target or not is_instance_valid(_target):
+		return global_position
+	var target_velocity := Vector2.ZERO
+	var maybe_velocity: Variant = _target.get("velocity")
+	if typeof(maybe_velocity) == TYPE_VECTOR2:
+		target_velocity = maybe_velocity
+	return _target.global_position + target_velocity * BOSS_LEAD_SECONDS
+
+func _ideal_standoff_position() -> Vector2:
+	var predicted := _predict_target_position()
+	var to_boss: Vector2 = predicted.direction_to(global_position)
+	if to_boss.length_squared() <= 0.001:
+		to_boss = Vector2.UP
+	var dist := clampf(global_position.distance_to(predicted), BOSS_STANDOFF_MIN_DIST + 40.0, BOSS_STANDOFF_MAX_DIST - 40.0)
+	return _clamp_to_arena(predicted + to_boss.normalized() * dist + _strafe_bias)
+
+func _cruise_towards(target_pos: Vector2, speed_scale: float, delta: float) -> void:
+	if _feint_timer <= 0.0:
+		_pick_new_strafe_bias()
+	var desired := global_position.direction_to(_clamp_to_arena(target_pos))
+	var speed: float = (210.0 + _level * 9.0) * speed_scale * (1.22 if _state == State.ENRAGED else 1.0)
+	_velocity_blend = _velocity_blend.lerp(desired * speed, BOSS_CRUISE_ACCEL * delta)
+	global_position += _velocity_blend * delta
+
+func _face_target(delta: float) -> void:
+	if not _target or not is_instance_valid(_target):
+		return
+	var target_angle := global_position.angle_to_point(_predict_target_position()) + PI * 0.5
+	rotation = lerp_angle(rotation, target_angle, BOSS_MAX_TURN_RATE * delta)
 
 func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float, color: Color) -> void:
 	var bullet := Pool.acquire("bullet", _bullet_scene)
@@ -251,41 +308,42 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 ## 1. 瞄准射击 — 3/5发追踪弹
 func _do_aimed_shot(delta: float, spd: float) -> void:
 	var count: int = 4 + (1 if _level >= 10 else 0) + (1 if _level >= 15 else 0)
+	_cruise_towards(_ideal_standoff_position(), 0.42, delta)
 	if _shoot_timer <= 0:
-		var angle: float = global_position.angle_to_point(_target.global_position)
+		var angle: float = global_position.angle_to_point(_predict_target_position())
 		for i in range(count):
 			var a: float = angle + (i - count / 2.0) * 0.06
-			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 760.0, Color(1.0, 0.3, 0.3, 1.0))
-			_shoot_timer = 0.18 / spd
-	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 640.0, Color(1.0, 0.3, 0.3, 1.0))
+		_shoot_timer = 0.28 / spd
 
 ## 2. 扇形弹幕 — 5/7/9发
 func _do_fan_spread(delta: float, spd: float) -> void:
 	var count: int = 6 + (2 if _level >= 10 else 0) + (2 if _level >= 15 else 0)
+	_cruise_towards(_ideal_standoff_position(), 0.35, delta)
 	if _shoot_timer <= 0:
-		var base: float = global_position.angle_to_point(_target.global_position)
-		var spread: float = PI * 0.5
+		var base: float = global_position.angle_to_point(_predict_target_position())
+		var spread: float = PI * 0.42
 		for i in range(count):
 			var a: float = base - spread * 0.5 + spread * i / (count - 1)
-			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 820.0, Color(0.4, 0.5, 1.0, 1.0))
-			_shoot_timer = 0.34 / spd
-	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 660.0, Color(0.4, 0.5, 1.0, 1.0))
+		_shoot_timer = 0.46 / spd
 
 ## 3. 旋转激光 — 6/8/10发环形
 func _do_rotation_ring(delta: float, spd: float) -> void:
 	var count: int = 8 + (2 if _level >= 10 else 0) + (2 if _level >= 15 else 0)
 	var ring_speed: float = 2.0 * spd
+	_cruise_towards(_ideal_standoff_position(), 0.28, delta)
 	if _shoot_timer <= 0:
 		var total: int = count + (count if _state == State.ENRAGED else 0)
 		for i in range(total):
 			var a: float = _shoot_angle_offset + float(i) * TAU / total
-			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, ceil(_get_boss_attack_damage() * 0.6), 620.0, Color(0.8, 0.2, 0.9, 1.0))
-			_shoot_timer = 0.50 / spd
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, ceil(_get_boss_attack_damage() * 0.55), 500.0, Color(0.8, 0.2, 0.9, 1.0))
+		_shoot_timer = 0.62 / spd
 	_shoot_angle_offset += delta * ring_speed
-	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
 
 ## 4. 召唤小兵 — 2/3/4个
 func _do_summon(delta: float, spd: float) -> void:
+	_cruise_towards(_ideal_standoff_position(), 0.30, delta)
 	if _shoot_timer <= 0:
 		var count: int = 1 + (1 if _level >= 10 else 0)
 		for i in range(count):
@@ -301,19 +359,18 @@ func _do_summon(delta: float, spd: float) -> void:
 				e.set_target(_target)
 			e.enemy_died.connect(_on_summon_died)
 			get_tree().current_scene.add_child(e)
-			_shoot_timer = 1.6 / spd
-	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 3.0 * delta)
+		_shoot_timer = 2.0 / spd
 
 func _do_standoff_burst(delta: float, spd: float) -> void:
-	var away: Vector2 = global_position.direction_to(_target.global_position) * -1.0
-	global_position += away * (220.0 + _level * 7.0) * delta
+	_cruise_towards(_ideal_standoff_position(), 0.78, delta)
 	if _shoot_timer <= 0:
-		var base: float = global_position.angle_to_point(_target.global_position)
+		var base: float = global_position.angle_to_point(_predict_target_position())
+		var lane := (_burst_step % 3) - 1
 		for i in range(3):
-			var a: float = base + (i - 1) * 0.09
-			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 22, a, _get_boss_attack_damage(), 840.0, Color(1.0, 0.62, 0.25, 1.0))
-		_shoot_timer = 0.24 / spd
-	rotation = lerp_angle(rotation, global_position.angle_to_point(_target.global_position) + PI * 0.5, 5.0 * delta)
+			var a: float = base + (i - 1) * 0.07 + float(lane) * 0.035
+			_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 22, a, _get_boss_attack_damage(), 700.0, Color(1.0, 0.62, 0.25, 1.0))
+		_burst_step += 1
+		_shoot_timer = 0.34 / spd
 
 ## 5. 冲刺撞击 — 直线冲向玩家
 func _do_charge(delta: float, spd: float) -> void:
@@ -414,7 +471,7 @@ func _score_dodge_position(pos: Vector2) -> float:
 	var dist_player: float = pos.distance_to(_target.global_position)
 	return edge_space * 1.8 + dist_player * 0.18
 
-func take_damage(amount: float = 1.0) -> void:
+func take_damage(amount: float = 1.0, _killer_peer_id: int = -1) -> void:
 	var applied: float = max(amount, 0.0)
 	if applied <= 0.0:
 		return
@@ -468,7 +525,7 @@ func _hit_knockback() -> void:
 
 func die() -> void:
 	GameState.on_boss_killed()
-	GameState.add_score(200 * _level)
+	GameState.add_score(200 * _level, -1)
 	boss_died.emit()
 	call_deferred("_spawn_explosion")
 	queue_free()

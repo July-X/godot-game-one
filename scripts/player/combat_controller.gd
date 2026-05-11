@@ -45,18 +45,19 @@ func reset_shoot_timer() -> void:
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
 
 func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, level: int, speed: float) -> void:
+	var owner_peer: int = _player.peer_id if is_player else -1
 	if NetworkManager.is_online():
 		## 联机统一走服务器权威：
 		## - Host: 本地生成并广播
 		## - Client: 仅上报请求，不本地生成，避免重复碰撞结算
 		var _m = get_tree().current_scene
 		if _m and _m.has_method("register_bullet_spawn"):
-			_m.register_bullet_spawn(pos, angle, damage, is_player, level, speed)
+			_m.register_bullet_spawn(pos, angle, damage, is_player, level, speed, Color(1, 1, 1, 1), owner_peer)
 		if not multiplayer.is_server():
 			return
 	var bullet := Pool.acquire("bullet", _bullet_scene)
 	get_tree().current_scene.add_child(bullet)
-	bullet.setup(pos, angle, damage, is_player, level, speed)
+	bullet.setup(pos, angle, damage, is_player, level, speed, owner_peer)
 
 
 ## ── 普攻 ────────────────────────────────────────────
@@ -135,11 +136,11 @@ func fire_laser() -> void:
 		var pos: Vector2 = _player.global_position + Vector2.from_angle(angle) * 28
 		var bolt := _laser_scene.instantiate()
 		get_tree().current_scene.add_child(bolt)
-		bolt.setup(pos, angle, damage)
+		bolt.setup(pos, angle, damage, _player.peer_id)
 		if NetworkManager.is_online():
 			var _m = get_tree().current_scene
 			if _m and _m.has_method("register_laser_spawn"):
-				_m.register_laser_spawn(pos, angle, damage)
+				_m.register_laser_spawn(pos, angle, damage, _player.peer_id)
 	SFX.play_shoot()
 
 
@@ -270,7 +271,7 @@ func _spawn_homing_missiles(delta: float) -> void:
 			var angle: float = _player.rotation + PI + (i - (tier - 1) * 0.5) * 0.15
 			var missile := _missile_scene.instantiate()
 			get_tree().current_scene.add_child(missile)
-			missile.setup(pos, angle, _get_missile_damage())
+			missile.setup(pos, angle, _get_missile_damage(), _player.peer_id)
 
 
 ## ── 自动拾取 ────────────────────────────────────────

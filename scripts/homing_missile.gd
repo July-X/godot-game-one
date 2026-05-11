@@ -6,16 +6,18 @@ var _lifetime: float = 5.0
 var _target: Node2D = null
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _trail_points: PackedVector2Array = PackedVector2Array()
+var owner_peer_id: int = -1
 
 func _ready() -> void:
 	add_to_group("player_bullets")
 	connect("body_entered", _on_body_entered)
 	connect("area_entered", _on_area_entered)
 
-func setup(pos: Vector2, angle: float, damage: float) -> void:
+func setup(pos: Vector2, angle: float, damage: float, owner_id: int = -1) -> void:
 	global_position = pos
 	rotation = angle + PI * 0.5
 	_damage = damage
+	owner_peer_id = owner_id
 
 var _trail_frame_skip: int = 0
 
@@ -99,10 +101,13 @@ func _normalized_damage(damage: float) -> int:
 func _report_enemy_hit(enemy: Node2D, damage: float) -> void:
 	if not enemy.has_method("get_entity_id"):
 		return
-	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage))
+	var attacker_peer := owner_peer_id
+	if attacker_peer <= 0 and multiplayer.has_multiplayer_peer():
+		attacker_peer = multiplayer.get_unique_id()
+	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage), attacker_peer)
 
 func _apply_or_report_enemy_damage(enemy: Node2D, damage: float) -> void:
 	if _is_server_authority():
-		enemy.take_damage(damage)
+		enemy.take_damage(damage, owner_peer_id)
 	else:
 		_report_enemy_hit(enemy, damage)

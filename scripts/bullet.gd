@@ -12,6 +12,7 @@ var _has_bounced: bool = false
 var _level: int = 1
 var _pooled: bool = false
 var _is_network_ghost: bool = false
+var owner_peer_id: int = -1
 
 @onready var _sprite: Sprite2D = $Sprite2D
 
@@ -30,11 +31,12 @@ func reset() -> void:
 	_level = 1
 	_lifetime = 4.0
 	_is_network_ghost = false
+	owner_peer_id = -1
 	remove_from_group("player_bullets")
 	remove_from_group("enemy_bullets")
 	_sprite.modulate = Color(1, 1, 1, 1)
 
-func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0) -> void:
+func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0, owner_id: int = -1) -> void:
 	global_position = pos
 	_direction = Vector2.from_angle(angle)
 	rotation = angle + PI * 0.5
@@ -43,6 +45,7 @@ func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: in
 	_has_bounced = false
 	_level = level
 	_speed = speed
+	owner_peer_id = owner_id
 	remove_from_group("player_bullets")
 	remove_from_group("enemy_bullets")
 	if is_player:
@@ -114,11 +117,14 @@ func _on_body_entered(body: Node2D) -> void:
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if body.has_method("get_entity_id"):
-					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))))
+					var attacker_peer := owner_peer_id
+					if attacker_peer <= 0:
+						attacker_peer = multiplayer.get_unique_id()
+					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
 				_spawn_hit()
 				_recycle()
 			else:
-				body.take_damage(_damage)
+				body.take_damage(_damage, owner_peer_id)
 				_spawn_hit()
 				_recycle()
 	else:
@@ -150,11 +156,14 @@ func _on_area_entered(area: Area2D) -> void:
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				var enemy = area.get_parent()
 				if enemy.has_method("get_entity_id"):
-					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))))
+					var attacker_peer := owner_peer_id
+					if attacker_peer <= 0:
+						attacker_peer = multiplayer.get_unique_id()
+					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
 				_spawn_hit()
 				_recycle()
 			else:
-				area.get_parent().take_damage(_damage)
+				area.get_parent().take_damage(_damage, owner_peer_id)
 				_spawn_hit()
 				_recycle()
 

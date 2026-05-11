@@ -42,16 +42,15 @@ func _physics_process(delta: float) -> void:
 
 func take_damage(amount: float) -> void:
 	_health -= amount
+	_health = max(_health, 0)
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property($Sprite2D, "modulate", Color(2.0, 1.8, 1.0, 1.0), 0.04)
 	tween.tween_callback(func():
 		var recover := create_tween()
 		recover.tween_property($Sprite2D, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.1)
 	)
-	if _health <= 0:
-		_destroy()
 
-func _destroy() -> void:
+func _destroy(killer_peer_id: int = -1) -> void:
 	if NetworkManager.is_online() and multiplayer.is_server():
 		var scene := get_tree().current_scene
 		if scene and scene.has_method("_on_network_asteroid_destroyed"):
@@ -60,7 +59,7 @@ func _destroy() -> void:
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
 	SFX.play_explosion()
-	GameState.add_score(50)
+	GameState.add_score(50, killer_peer_id)
 	queue_free()
 
 func _on_body_entered(body: Node2D) -> void:
@@ -76,6 +75,13 @@ func _on_area_entered(area: Area2D) -> void:
 		return
 	if area.is_in_group("player_bullets") and area.has_method("setup"):
 		take_damage(area._damage)
+		if _health <= 0:
+			var killer_peer_id := -1
+			if area.has_method("get"):
+				var maybe_owner: Variant = area.get("owner_peer_id")
+				if typeof(maybe_owner) == TYPE_INT and int(maybe_owner) > 0:
+					killer_peer_id = int(maybe_owner)
+			_destroy(killer_peer_id)
 		var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 		get_tree().current_scene.add_child(hit)
 		hit.global_position = global_position

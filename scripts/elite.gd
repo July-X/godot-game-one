@@ -284,7 +284,7 @@ func _update_shield(delta: float) -> void:
 	else:
 		_shield_sprite.visible = false
 
-func take_damage(amount: int = 1) -> void:
+func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	if _dead:
 		return
 	if _shield > 0:
@@ -301,7 +301,7 @@ func take_damage(amount: int = 1) -> void:
 	var tween := create_tween()
 	tween.tween_property(self, "modulate", Color(1, 1, 1, 1), 0.08)
 	if _health <= 0:
-		_die()
+		_die(killer_peer_id)
 
 func _spawn_shield_hit_effect() -> void:
 	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
@@ -324,11 +324,11 @@ func _update_health_bar() -> void:
 		_health_bar.max_value = _max_health
 		_health_bar.value = _health
 
-func _die() -> void:
+func _die(killer_peer_id: int = -1) -> void:
 	_dead = true
 	elite_died.emit()
-	GameState.add_kill()
-	GameState.add_score(1000 * GameState.level)
+	GameState.add_kill(killer_peer_id)
+	GameState.add_score(1000 * GameState.level, killer_peer_id)
 	call_deferred("_spawn_explosion")
 	call_deferred("_spawn_rewards")
 	queue_free()
@@ -341,11 +341,20 @@ func _spawn_explosion() -> void:
 	SFX.play_explosion()
 
 func _spawn_rewards() -> void:
-	for type in ["heal", "bomb", "spread", "speed", "heal", "power"]:
+	var types: Array[String] = ["heal", "bomb", "spread", "speed", "heal", "power", "heal", "power", "speed", "spread", "heal", "bomb"]
+	var alive_ids: Array[int] = []
+	if NetworkManager.is_online() and multiplayer.is_server():
+		alive_ids = GameState.get_alive_player_ids()
+	var assign_idx: int = 0
+	for type in types:
 		var pu = _powerup_scene.instantiate()
 		get_tree().current_scene.add_child(pu)
 		pu.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
 		pu.setup(type)
+		if alive_ids.size() > 0:
+			var assigned_peer_id: int = alive_ids[assign_idx % alive_ids.size()]
+			pu.set_meta("assigned_peer_id", assigned_peer_id)
+			assign_idx += 1
 		if NetworkManager.is_online() and multiplayer.is_server():
 			var scene := get_tree().current_scene
 			if scene and scene.has_method("register_powerup_entity"):

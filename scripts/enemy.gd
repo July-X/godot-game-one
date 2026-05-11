@@ -149,16 +149,16 @@ func _shoot_circle() -> void:
 		var a: float = float(i) * TAU / 6.0
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.3, 780.0, Color(0.6, 0.3, 1.0, 1.0))
 
-func take_damage(amount: int = 1) -> void:
+func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	health -= amount
 	modulate = Color(2, 2, 2, 1)
 	var tween := create_tween()
 	tween.tween_property(self, "modulate", Color(1, 1, 1, 1), 0.08)
 	if health <= 0:
-		die()
+		die(killer_peer_id)
 
-func die() -> void:
-	GameState.add_kill()
+func die(killer_peer_id: int = -1) -> void:
+	GameState.add_kill(killer_peer_id)
 	enemy_died.emit()
 	## 延迟生成特效和道具，避免物理查询冲突
 	call_deferred("_spawn_explosion")

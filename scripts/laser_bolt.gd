@@ -11,6 +11,7 @@ var _line_points: PackedVector2Array = PackedVector2Array()
 var _has_bounced: bool = false
 var _target: Node2D = null
 var _is_network_ghost: bool = false
+var owner_peer_id: int = -1
 ## 寻敌角度（两条射线宽度 × 2，即 0.15×2×2 = 0.6 弧度）
 const HOMING_ANGLE: float = 0.6
 const HOMING_SPEED: float = 4.0
@@ -19,13 +20,14 @@ func _ready() -> void:
 	add_to_group("player_bullets")
 	connect("body_entered", _on_body_entered)
 
-func setup(pos: Vector2, angle: float, damage: float) -> void:
+func setup(pos: Vector2, angle: float, damage: float, owner_id: int = -1) -> void:
 	global_position = pos
 	_direction = Vector2.from_angle(angle)
 	rotation = angle
 	_damage = damage
 	_target = null
 	_has_bounced = false
+	owner_peer_id = owner_id
 
 func set_network_ghost(v: bool) -> void:
 	_is_network_ghost = v
@@ -168,10 +170,13 @@ func _normalized_damage(damage: float) -> int:
 func _report_enemy_hit(enemy: Node2D, damage: float) -> void:
 	if not enemy.has_method("get_entity_id"):
 		return
-	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage))
+	var attacker_peer := owner_peer_id
+	if attacker_peer <= 0 and multiplayer.has_multiplayer_peer():
+		attacker_peer = multiplayer.get_unique_id()
+	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage), attacker_peer)
 
 func _apply_or_report_enemy_damage(enemy: Node2D, damage: float) -> void:
 	if _is_server_authority():
-		enemy.take_damage(damage)
+		enemy.take_damage(damage, owner_peer_id)
 	else:
 		_report_enemy_hit(enemy, damage)

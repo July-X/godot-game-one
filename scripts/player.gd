@@ -71,6 +71,7 @@ func _connect_signals() -> void:
 	if _pickup_area:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
+	_on_shield_changed(peer_id, GameState.get_shield_layers(peer_id))
 	if _motion.mobile_mode:
 		var mc := get_tree().current_scene.find_child("MobileControls", true, false)
 		if mc:
@@ -88,21 +89,39 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
 		return
+	var mp_active := _is_multiplayer_session_active()
+	var locally_controlled := _is_locally_controlled_player()
 	## 冷却推进与玩家状态同步：
 	## - Host 需要为所有玩家都推进 CD（包括加入者对应节点）
 	## - Client 仅推进本机玩家，避免非本机节点干扰
-	if NetworkManager.is_online():
-		if multiplayer.is_server() or is_multiplayer_authority():
+	if mp_active:
+		if multiplayer.is_server() or locally_controlled:
 			_tick_runtime(delta)
 	else:
 		_tick_runtime(delta)
-	## 仅在真实联机时才做 authority 拦截，避免单机被残留联机状态误伤。
-	if NetworkManager.is_online() and not is_multiplayer_authority():
+	## 仅在真实多人会话中做 authority 拦截，避免单机/残留状态误伤战斗链路。
+	if mp_active and not locally_controlled:
 		return
 
 	_motion.update(delta, GameState.get_move_speed_multiplier(), get_viewport_rect().size)
 	_combat.update(delta)
 	_feedback.update(delta)
+
+func _is_multiplayer_session_active() -> bool:
+	if not multiplayer.has_multiplayer_peer() or multiplayer.multiplayer_peer == null:
+		return false
+	return multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+func _is_locally_controlled_player() -> bool:
+	if not _is_multiplayer_session_active():
+		return true
+	if has_method("is_multiplayer_authority") and is_multiplayer_authority():
+		return true
+	if multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
+		var local_peer_id := multiplayer.get_unique_id()
+		return peer_id == local_peer_id
+	## 兜底：联机初始化早期未取到 peer 时，先允许本机节点执行，避免战斗逻辑被误拦截。
+	return true
 
 
 func _tick_runtime(delta: float) -> void:
@@ -143,7 +162,9 @@ func on_level_up() -> void:
 
 ## ── 护盾 ──────────────────────────────────────────────
 
-func _on_shield_changed(layers: int) -> void:
+func _on_shield_changed(changed_peer_id: int, layers: int) -> void:
+	if changed_peer_id != peer_id:
+		return
 	_pending_shield_layers = layers
 	if not _shield_dirty:
 		_shield_dirty = true
