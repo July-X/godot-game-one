@@ -64,3 +64,14 @@ func release(node: Node) -> void:
 
 	# 直接释放 — 不保留引用，pool 用完了会自动创建新节点
 	node.queue_free()
+
+func reset_all() -> void:
+	for node in _active.keys():
+		if is_instance_valid(node):
+			node.queue_free()
+	_active.clear()
+	for arr in _pools.values():
+		for node in arr:
+			if is_instance_valid(node):
+				node.queue_free()
+	_pools.clear()

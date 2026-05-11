@@ -49,6 +49,7 @@ var _pending_bullet_spawns: Array = []
 var _pending_laser_spawns: Array = []
 var _alive_players: Dictionary = {}
 var _client_bg_frame_skip: int = 0
+var _fallback_in_progress: bool = false
 
 @onready var _bg_color: ColorRect = $BgColor
 
@@ -359,13 +360,31 @@ func _on_networked_player_died(p_peer_id: int) -> void:
 		_refresh_primary_player_target()
 
 func _fallback_to_single_player(message: String = "") -> void:
+	if _fallback_in_progress:
+		return
+	_fallback_in_progress = true
 	if not message.is_empty():
 		_show_death_marquee_text(message)
+	_clear_network_runtime_state()
 	NetworkManager.disconnect_network()
-	call_deferred("_reload_as_single_player")
+	call_deferred("_reload_as_single_player_clean")
 
-func _reload_as_single_player() -> void:
-	get_tree().reload_current_scene()
+func _clear_network_runtime_state() -> void:
+	_pending_bullet_spawns.clear()
+	_pending_laser_spawns.clear()
+	_entity_target_positions.clear()
+	_despawned_entity_ids.clear()
+	_entities.clear()
+	_players.clear()
+	_alive_players.clear()
+	_clear_runtime_entities_on_game_over()
+	if Pool and Pool.has_method("reset_all"):
+		Pool.reset_all()
+
+func _reload_as_single_player_clean() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_despawn_player(p_peer_id: int) -> void:
