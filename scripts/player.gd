@@ -88,11 +88,18 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
 		return
+	## 冷却推进与玩家状态同步：
+	## - Host 需要为所有玩家都推进 CD（包括加入者对应节点）
+	## - Client 仅推进本机玩家，避免非本机节点干扰
+	if NetworkManager.is_online():
+		if multiplayer.is_server() or is_multiplayer_authority():
+			_tick_runtime(delta)
+	else:
+		_tick_runtime(delta)
 	## 仅在真实联机时才做 authority 拦截，避免单机被残留联机状态误伤。
 	if NetworkManager.is_online() and not is_multiplayer_authority():
 		return
 
-	_tick_runtime(delta)
 	_motion.update(delta, GameState.get_move_speed_multiplier(), get_viewport_rect().size)
 	_combat.update(delta)
 	_feedback.update(delta)

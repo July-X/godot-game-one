@@ -58,6 +58,8 @@ var _sync_dirty: bool = false
 var _sync_timer: float = 0.0
 const SYNC_INTERVAL: float = 0.1  # 每 100ms 发送一次
 var _server_player_states: Dictionary = {}
+var _pending_skill_ack: Dictionary = {}
+var _pending_laser_ack: Dictionary = {}
 
 func _local_peer_id() -> int:
 	if NetworkManager.is_online() and multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
@@ -72,6 +74,7 @@ func _new_player_state() -> Dictionary:
 	return {
 		"current_health": START_HEALTH,
 		"max_health": START_HEALTH,
+		"is_alive": true,
 		"shield_layers": 0,
 		"shoot_level": 1,
 		"shoot_speed_level": 1,
@@ -175,6 +178,7 @@ func _rpc_request_use_skill(peer_id: int) -> void:
 func _rpc_confirm_skill_used(peer_id: int) -> void:
 	if _local_peer_id() != peer_id:
 		return
+	_pending_skill_ack.erase(_peer_key(peer_id))
 	var s := _state(peer_id)
 	s.skill_cooldown = SKILL_COOLDOWN_MAX
 	_player_states[_peer_key(peer_id)] = s
@@ -196,6 +200,7 @@ func _rpc_request_use_laser(peer_id: int) -> void:
 func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
 	if _local_peer_id() != peer_id:
 		return
+	_pending_laser_ack.erase(_peer_key(peer_id))
 	var s := _state(peer_id)
 	s.laser_cooldown = cooldown
 	_player_states[_peer_key(peer_id)] = s
@@ -252,6 +257,8 @@ func reset_game() -> void:
 	boss_encounter_count = 0
 	last_boss_level = 0
 	_player_states.clear()
+	_pending_skill_ack.clear()
+	_pending_laser_ack.clear()
 	_state(_local_peer_id())
 	_sync_local_view()
 	health_changed.emit(current_health, max_health)
@@ -287,6 +294,9 @@ func level_up() -> void:
 	kills_for_next_level = 10 + level * 5
 	for key: String in _player_states.keys():
 		var s: Dictionary = _player_states[key]
+		if not bool(s.get("is_alive", true)):
+			_player_states[key] = s
+			continue
 		s.bullet_power_level = min(int(s.bullet_power_level) + 1, 50)
 		s.current_health = min(int(s.current_health) + 1, int(s.max_health))
 		_player_states[key] = s
@@ -302,6 +312,8 @@ func level_up() -> void:
 func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
+	if not bool(s.get("is_alive", true)):
+		return true
 	if int(s.shield_layers) > 0:
 		var absorbed: int = min(int(s.shield_layers), amount)
 		s.shield_layers = int(s.shield_layers) - absorbed
@@ -318,6 +330,10 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 		SFX.play_player_hurt()
 		if int(s.current_health) <= 0 and _is_local_peer(pid):
 			game_over.emit(score, level)
+	if int(s.current_health) <= 0:
+		s.current_health = 0
+		s.is_alive = false
+		s.shield_layers = 0
 	_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
 		_sync_local_view()
@@ -329,6 +345,8 @@ func heal(amount: int = 1, peer_id: int = -1) -> void:
 		return
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
+	if not bool(s.get("is_alive", true)):
+		return
 	if int(s.current_health) >= int(s.max_health):
 		if int(s.max_health) < HEALTH_CAP:
 			s.max_health = min(int(s.max_health) + amount, HEALTH_CAP)
@@ -352,6 +370,8 @@ func heal(amount: int = 1, peer_id: int = -1) -> void:
 func collect_powerup(type: String, peer_id: int = -1) -> void:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
+	if not bool(s.get("is_alive", true)):
+		return
 	var changed_in_place := false
 	if _is_local_peer(pid):
 		powerup_collected.emit(type)
@@ -388,6 +408,7 @@ func use_skill(peer_id: int = -1) -> bool:
 			return false
 		s.skill_cooldown = SKILL_COOLDOWN_MAX
 		_player_states[_peer_key(pid)] = s
+		_pending_skill_ack[_peer_key(pid)] = true
 		if _is_local_peer(pid):
 			_sync_local_view()
 			skill_used.emit(pid)
@@ -409,7 +430,15 @@ func tick_skill_cooldown(delta: float, peer_id: int = -1) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if _server_player_states.has(_peer_key(pid)):
 			var server_s: Dictionary = _server_player_states[_peer_key(pid)]
-			s.skill_cooldown = float(server_s.get("skill_cooldown", s.skill_cooldown))
+			var pending := _pending_skill_ack.has(_peer_key(pid))
+			var server_cd := float(server_s.get("skill_cooldown", s.skill_cooldown))
+			if pending:
+				## 防止“请求后立刻被旧同步覆盖为0”的窗口期抖动
+				s.skill_cooldown = max(server_cd, float(s.skill_cooldown))
+				if server_cd > 0.0:
+					_pending_skill_ack.erase(_peer_key(pid))
+			else:
+				s.skill_cooldown = server_cd
 			_player_states[_peer_key(pid)] = s
 			if _is_local_peer(pid):
 				_sync_local_view()
@@ -429,6 +458,7 @@ func use_laser(peer_id: int = -1) -> bool:
 			return false
 		s.laser_cooldown = get_laser_cooldown_max(pid)
 		_player_states[_peer_key(pid)] = s
+		_pending_laser_ack[_peer_key(pid)] = true
 		if _is_local_peer(pid):
 			_sync_local_view()
 		_rpc_request_use_laser.rpc_id(1, pid)
@@ -449,7 +479,14 @@ func tick_laser_cooldown(delta: float, peer_id: int = -1) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if _server_player_states.has(_peer_key(pid)):
 			var server_s: Dictionary = _server_player_states[_peer_key(pid)]
-			s.laser_cooldown = float(server_s.get("laser_cooldown", s.laser_cooldown))
+			var pending := _pending_laser_ack.has(_peer_key(pid))
+			var server_cd := float(server_s.get("laser_cooldown", s.laser_cooldown))
+			if pending:
+				s.laser_cooldown = max(server_cd, float(s.laser_cooldown))
+				if server_cd > 0.0:
+					_pending_laser_ack.erase(_peer_key(pid))
+			else:
+				s.laser_cooldown = server_cd
 			_player_states[_peer_key(pid)] = s
 			if _is_local_peer(pid):
 				_sync_local_view()
@@ -536,6 +573,8 @@ func get_move_speed_bonus(peer_id: int = -1) -> float:
 func apply_reward(reward_type: String, peer_id: int = -1) -> void:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
+	if not bool(s.get("is_alive", true)):
+		return
 	match reward_type:
 		"laser_cd":
 			s.laser_cd_bonus = float(s.laser_cd_bonus) + 1.0

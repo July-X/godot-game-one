@@ -22,6 +22,18 @@ var entity_id: int = 0
 
 func get_entity_id() -> int:
 	return entity_id
+
+func get_network_health() -> float:
+	return float(_health)
+
+func get_network_max_health() -> float:
+	return float(_max_health)
+
+func apply_network_health(hp: float, max_hp: float) -> void:
+	_max_health = max(int(max_hp), 1)
+	_health = clampi(int(hp), 0, _max_health)
+	_update_health_bar()
+
 var _is_network_ghost: bool = false
 var _attack_pattern: int = 0
 var _pattern_timer: float = 0.0
@@ -79,8 +91,7 @@ func _physics_process(delta: float) -> void:
 	if not GameState.game_running or _dead:
 		return
 	if _is_network_ghost:
-		if _health_bar:
-			_health_bar.value = _health
+		_update_health_bar()
 		return
 
 	_handle_movement(delta)

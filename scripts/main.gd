@@ -744,9 +744,23 @@ func _clear_non_boss_entities() -> void:
 		if n == _boss:
 			continue
 		if n and is_instance_valid(n):
+			if NetworkManager.is_online() and multiplayer.is_server() and n.has_method("get_entity_id"):
+				var despawn_eid: int = int(n.get_entity_id())
+				if despawn_eid > 0:
+					_despawned_entity_ids[despawn_eid] = true
+					if _entities.has(despawn_eid):
+						_entities.erase(despawn_eid)
+					_rpc_despawn_entity.rpc(despawn_eid)
 			n.queue_free()
 	for a in get_tree().get_nodes_in_group("asteroids"):
 		if a and is_instance_valid(a):
+			if NetworkManager.is_online() and multiplayer.is_server() and a.has_method("get_entity_id"):
+				var despawn_aid: int = int(a.get_entity_id())
+				if despawn_aid > 0:
+					_despawned_entity_ids[despawn_aid] = true
+					if _entities.has(despawn_aid):
+						_entities.erase(despawn_aid)
+					_rpc_despawn_entity.rpc(despawn_aid)
 			a.queue_free()
 	for b in get_tree().get_nodes_in_group("player_bullets"):
 		if b and is_instance_valid(b):
@@ -1126,9 +1140,16 @@ func _rpc_sync_entity_positions(data: PackedFloat64Array) -> void:
 		var eid := int(data[i])
 		var x := data[i + 1]
 		var y := data[i + 2]
-		i += 3
+		var hp := data[i + 3]
+		var max_hp := data[i + 4]
+		i += 5
 		if _entities.has(eid) and is_instance_valid(_entities[eid]):
-			_entities[eid].global_position = Vector2(x, y)
+			var node: Node2D = _entities[eid] as Node2D
+			if node == null:
+				continue
+			node.global_position = Vector2(x, y)
+			if node.has_method("apply_network_health"):
+				node.apply_network_health(hp, max_hp)
 
 ## Host：打包所有实体位置
 func _batch_sync_entity_positions() -> void:
@@ -1141,6 +1162,14 @@ func _batch_sync_entity_positions() -> void:
 			data.append(eid as float)
 			data.append(node.global_position.x)
 			data.append(node.global_position.y)
+			var hp: float = -1.0
+			var max_hp: float = -1.0
+			if node.has_method("get_network_health"):
+				hp = float(node.get_network_health())
+			if node.has_method("get_network_max_health"):
+				max_hp = float(node.get_network_max_health())
+			data.append(hp)
+			data.append(max_hp)
 	if data.size() > 0:
 		_rpc_sync_entity_positions.rpc(data)
 

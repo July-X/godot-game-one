@@ -160,7 +160,7 @@ func _update_cooldowns() -> void:
 				cd_max = GameState.SKILL_COOLDOWN_MAX
 			"laser":
 				cd = GameState.get_laser_cooldown()
-				cd_max = GameState.LASER_COOLDOWN_MAX
+				cd_max = GameState.get_laser_cooldown_max()
 		var progress: float = 1.0 - cd / cd_max if cd_max > 0 else 1.0
 		slot.overlay.set_ready_progress(progress)
 		if cd > 0:
