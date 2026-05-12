@@ -30,6 +30,8 @@ var _cached_extra_bullet_count: int = -1
 var _cached_extra_damage_bonus: int = -1
 var _cached_laser_cd_bonus: float = -1.0
 var _cached_move_speed_bonus: float = -1.0
+var _cached_shield_cur: int = -1
+var _cached_shield_max: int = -1
 var _cached_score: int = -1
 var _cached_player_scores_signature: String = ""
 var _fps_accum: float = 0.0
@@ -387,13 +389,17 @@ func _refresh_powerup_display_if_needed() -> void:
 	var extra_damage_bonus := GameState.get_extra_damage_bonus()
 	var laser_cd_bonus := GameState.get_laser_cd_bonus()
 	var move_speed_bonus := GameState.get_move_speed_bonus()
+	var shield_cur := GameState.get_shield_layers()
+	var shield_max := GameState.get_shield_max_hp()
 	if spread_level == _cached_spread_level \
 	and speed_level == _cached_speed_level \
 	and power_level == _cached_power_level \
 	and extra_bullet_count == _cached_extra_bullet_count \
 	and extra_damage_bonus == _cached_extra_damage_bonus \
 	and is_equal_approx(laser_cd_bonus, _cached_laser_cd_bonus) \
-	and is_equal_approx(move_speed_bonus, _cached_move_speed_bonus):
+	and is_equal_approx(move_speed_bonus, _cached_move_speed_bonus) \
+	and _cached_shield_cur == shield_cur \
+	and _cached_shield_max == shield_max:
 		return
 	_update_powerup_display()
 
@@ -472,6 +478,21 @@ func _update_powerup_display() -> void:
 		"speed": {"name": "速射", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
 		"power": {"name": "威力", "color": Color(1.0, 0.4, 0.3), "bar": Color(0.9, 0.3, 0.2)},
 	}
+	## 护盾值进度条
+	var shield_cur: int = GameState.get_shield_layers()
+	var shield_max: int = GameState.get_shield_max_hp()
+	_cached_shield_cur = shield_cur
+	_cached_shield_max = shield_max
+	if shield_max > 0:
+		var shield_fill_w: int = int(POWERUP_BAR_WIDTH * float(min(shield_cur, shield_max)) / float(shield_max))
+		_add_powerup_bar(
+			"护盾",
+			Color(0.35, 0.65, 1.0, 0.95),
+			Color(0.3, 0.55, 0.95, 1.0),
+			shield_fill_w,
+			"%d/%d" % [shield_cur, shield_max]
+		)
+
 	var ordered_types: Array[String] = ["spread", "speed", "power"]
 	for type in ordered_types:
 		var level: int = 0

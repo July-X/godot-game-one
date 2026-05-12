@@ -64,7 +64,7 @@ func _draw_beam() -> void:
 	var perp := Vector2(-dir.y, dir.x)
 	var rect_end := _beam_start + dir * current_len
 	## 用多个窄矩形拼成渐变宽束（深红中心→浅红边缘）
-	var slices: int = 12
+	var slices: int = 36
 	for i in range(slices):
 		var t := (float(i) + 0.5) / float(slices)  ## -0.5~0.5 归一化到横向偏移比例
 		var offset := (t - 0.5) * _beam_width

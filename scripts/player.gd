@@ -27,6 +27,8 @@ var _shield_container: Node2D
 var ShieldRing = preload("res://scripts/shield_ring.gd")
 var _shield_dirty: bool = false
 var _pending_shield_layers: int = 0
+const SHIELD_RECHARGE_INTERVAL: float = 8.0
+var _shield_recharge_timer: float = SHIELD_RECHARGE_INTERVAL
 
 
 func _ready() -> void:
@@ -72,7 +74,9 @@ func _connect_signals() -> void:
 		_pickup_area.body_entered.connect(_on_pickup_body_entered)
 		_pickup_area.area_entered.connect(_on_pickup_area_entered)
 	GameState.shield_changed.connect(_on_shield_changed)
-	_on_shield_changed(peer_id, GameState.get_shield_layers(peer_id))
+	## 初始护盾为 0，8 秒充能后获得
+	_pending_shield_layers = 0
+	_rebuild_shields()
 	if _motion.mobile_mode:
 		var mc := get_tree().current_scene.find_child("MobileControls", true, false)
 		if mc:
@@ -125,10 +129,27 @@ func _is_locally_controlled_player() -> bool:
 	return true
 
 
+func _compute_shield_max_hp() -> int:
+	var bp := GameState.get_bullet_power_level(peer_id)
+	var mhp := GameState.get_max_health(peer_id)
+	var bonus := GameState.get_shield_bonus(peer_id)
+	return maxi(1, int((10 + bp * 2 + int(mhp * 0.2)) * 0.5) + bonus)
+
+func _update_shield_recharge(delta: float) -> void:
+	if GameState.get_shield_layers(peer_id) > 0:
+		_shield_recharge_timer = SHIELD_RECHARGE_INTERVAL
+		return
+	_shield_recharge_timer -= delta
+	if _shield_recharge_timer <= 0.0:
+		_shield_recharge_timer = SHIELD_RECHARGE_INTERVAL
+		var max_shield := _compute_shield_max_hp()
+		GameState.set_shield_layers(peer_id, max_shield)
+
 func _tick_runtime(delta: float) -> void:
 	_invincible_timer = max(_invincible_timer - delta, 0.0)
 	GameState.tick_skill_cooldown(delta, peer_id)
 	GameState.tick_laser_cooldown(delta, peer_id)
+	_update_shield_recharge(delta)
 
 
 ## ── 公开入口 ──────────────────────────────────────────
@@ -187,9 +208,7 @@ func _on_shield_changed(changed_peer_id: int, layers: int) -> void:
 	if changed_peer_id != peer_id:
 		return
 	_pending_shield_layers = layers
-	if not _shield_dirty:
-		_shield_dirty = true
-		call_deferred("_rebuild_shields")
+	_rebuild_shields()
 
 
 func _rebuild_shields() -> void:

@@ -86,7 +86,7 @@ func _ready() -> void:
 	GameState.game_over.connect(_on_game_over_triggered)
 	_debug_log_variant_assets()
 	var online := NetworkManager.is_online()
-	print("[Main] online=", online, " server=", multiplayer.is_server(), " peer_id=", multiplayer.get_unique_id())
+	print("[Main] online=", online)
 	if online and not multiplayer.is_server():
 		_apply_client_perf_profile()
 
@@ -761,7 +761,7 @@ func _on_elite_died() -> void:
 		var eid: int = _elite.entity_id
 		if _entities.has(eid):
 			_entities.erase(eid)
-		if multiplayer.is_server():
+		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 			_rpc_despawn_entity.rpc(eid)
 	_elite = null
 	GameState.post_elite_multiplier = 1.0 + GameState.elite_encounter_count * 0.05
@@ -906,7 +906,7 @@ func _on_boss_died() -> void:
 		var eid: int = _boss.entity_id
 		if _entities.has(eid):
 			_entities.erase(eid)
-		if multiplayer.is_server():
+		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 			_rpc_despawn_entity.rpc(eid)
 	_boss = null
 	_exit_boss_fight_mode()
@@ -1102,7 +1102,7 @@ func _finish_multiplayer_game_over(final_score: int, final_level: int) -> void:
 		return
 	GameState.stop_game()
 	_pending_boss_level = 0
-	if multiplayer.is_server():
+	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 		_rpc_force_game_over.rpc(final_score, final_level)
 	_clear_runtime_entities_on_game_over()
 	_show_death_marquee()
@@ -1683,15 +1683,40 @@ func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_
 		return
 	_pending_laser_spawns.append([pos.x, pos.y, angle, damage, owner_peer_id])
 
+
+func broadcast_boss_shield_create(pos: Vector2) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_create_boss_shield.rpc(pos.x, pos.y)
+
+func broadcast_boss_shield_destroy() -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_destroy_boss_shield.rpc()
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_create_boss_shield(pos_x: float, pos_y: float) -> void:
+	if _boss == null or not is_instance_valid(_boss):
+		return
+	if _boss.has_method("_create_shield_circle"):
+		_boss._create_shield_circle()
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_destroy_boss_shield() -> void:
+	if _boss == null or not is_instance_valid(_boss):
+		return
+	if _boss.has_method("_spawn_shield_shatter_burst"):
+		_boss._spawn_shield_shatter_burst()
+	if _boss.has_method("_destroy_shield_circle"):
+		_boss._destroy_shield_circle()
+
 func broadcast_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
 	_show_boss_ultimate_laser_charge(pos, duration)
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_show_boss_ultimate_laser_charge.rpc(pos.x, pos.y, duration)
 
 func broadcast_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
-	_show_boss_ultimate_laser_fire(from, to, travel_time, width)
+	_show_boss_ultimate_laser_fire(from, to, travel_time, width, hold_duration)
 	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_show_boss_ultimate_laser_fire.rpc(from.x, from.y, to.x, to.y, travel_time, width)
+		_rpc_show_boss_ultimate_laser_fire.rpc(from.x, from.y, to.x, to.y, travel_time, width, hold_duration)
 
 func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
 	var visual := Node2D.new()
@@ -1702,12 +1727,12 @@ func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
 	if _hud and _hud.has_method("show_center_banner"):
 		_hud.show_center_banner("究极激光炮充能", 0.9, Color(1.0, 0.28, 0.12, 1.0))
 
-func _show_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float) -> void:
+func _show_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
 	var visual := Node2D.new()
 	visual.set_script(_boss_ultimate_laser_visual_script)
 	add_child(visual)
 	if visual.has_method("setup_beam"):
-		visual.setup_beam(from, to, travel_time, width)
+		visual.setup_beam(from, to, travel_time, width, hold_duration)
 
 ## 每帧 flush 待发送激光
 func _flush_laser_spawns() -> void:
@@ -1760,8 +1785,8 @@ func _rpc_show_boss_ultimate_laser_charge(pos_x: float, pos_y: float, duration: 
 	_show_boss_ultimate_laser_charge(Vector2(pos_x, pos_y), duration)
 
 @rpc("authority", "reliable", "call_remote")
-func _rpc_show_boss_ultimate_laser_fire(from_x: float, from_y: float, to_x: float, to_y: float, travel_time: float, width: float) -> void:
-	_show_boss_ultimate_laser_fire(Vector2(from_x, from_y), Vector2(to_x, to_y), travel_time, width)
+func _rpc_show_boss_ultimate_laser_fire(from_x: float, from_y: float, to_x: float, to_y: float, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
+	_show_boss_ultimate_laser_fire(Vector2(from_x, from_y), Vector2(to_x, to_y), travel_time, width, hold_duration)
 
 ## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
 ## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）

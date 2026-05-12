@@ -88,6 +88,7 @@ var _ultimate_laser_charge_timer: float = 0.0
 var _ultimate_laser_fire_timer: float = 0.0
 var _ultimate_laser_start: Vector2 = Vector2.ZERO
 var _ultimate_laser_end: Vector2 = Vector2.ZERO
+var _laser_dot_accumulator: float = 0.0
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
@@ -114,9 +115,9 @@ const BOSS_FEINT_INTERVAL_MAX: float = 1.25
 const BOSS_MAX_SUMMONS: int = 2
 const BOSS_ULTIMATE_LASER_HP_INTERVAL: float = 0.25  ## 每损失 15% 血量触发一次
 const BOSS_ULTIMATE_LASER_CHARGE: float = 2.0
-const BOSS_ULTIMATE_LASER_TRAVEL: float = 2.0
+const BOSS_ULTIMATE_LASER_TRAVEL: float = 3.0
 const BOSS_ULTIMATE_LASER_WIDTH: float = 110.0
-const BOSS_ULTIMATE_LASER_HOLD_SECONDS: float = 12.0
+const BOSS_ULTIMATE_LASER_HOLD_SECONDS: float = 10.0
 const BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC: float = 10.0
 const ULTIMATE_LASER_INNER_RATIO: float = 0.3  ## 内圈比例（秒杀区）
 
@@ -411,6 +412,7 @@ func _start_ultimate_laser() -> void:
 	_ultimate_laser_firing = false
 	_ultimate_laser_charge_timer = BOSS_ULTIMATE_LASER_CHARGE
 	_ultimate_laser_fire_timer = 0.0
+	_laser_dot_accumulator = 0.0
 	_velocity_blend = Vector2.ZERO
 	_enter_state(State.ATTACK, BOSS_ULTIMATE_LASER_CHARGE + BOSS_ULTIMATE_LASER_TRAVEL)
 	modulate = Color(1.4, 0.55, 0.45, 1.0)
@@ -437,7 +439,7 @@ func _tick_ultimate_laser(delta: float) -> void:
 		return
 	if _ultimate_laser_firing:
 		_ultimate_laser_fire_timer -= delta
-		if _ultimate_laser_fire_timer <= BOSS_ULTIMATE_LASER_HOLD_SECONDS and _ultimate_laser_fire_timer > 0.0:
+		if _ultimate_laser_fire_timer > 0.0:
 			_apply_continuous_laser_damage(delta)
 		if _ultimate_laser_fire_timer <= 0.0:
 			_ultimate_laser_firing = false
@@ -489,12 +491,20 @@ func _apply_continuous_laser_damage(delta: float) -> void:
 			elif player.has_method("take_damage"):
 				player.take_damage(99999.0)
 		else:
-			## 外圈 - 每秒固定伤害
-			if player.has_method("take_damage"):
-				player.take_damage(BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC * delta)
+			## 外圈 - 每秒固定伤害（累积模式，确保稳定触发）
+			_laser_dot_accumulator += BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC * delta
+			if _laser_dot_accumulator >= 1.0 and player.has_method("take_damage"):
+				player.take_damage(int(_laser_dot_accumulator))
+				_laser_dot_accumulator -= int(_laser_dot_accumulator)
 
 func _distance_to_beam_center(point: Vector2) -> float:
-	var ab := _ultimate_laser_end - _ultimate_laser_start
+	var beam_end := _ultimate_laser_end
+	## 推进阶段：只检测光束当前尖端到起点的范围
+	if _ultimate_laser_firing and _ultimate_laser_fire_timer > BOSS_ULTIMATE_LASER_HOLD_SECONDS:
+		var elapsed := BOSS_ULTIMATE_LASER_TRAVEL + BOSS_ULTIMATE_LASER_HOLD_SECONDS - _ultimate_laser_fire_timer
+		var travel_progress := clampf(elapsed / BOSS_ULTIMATE_LASER_TRAVEL, 0.0, 1.0)
+		beam_end = _ultimate_laser_start.lerp(_ultimate_laser_end, travel_progress)
+	var ab := beam_end - _ultimate_laser_start
 	var len_sq := ab.length_squared()
 	if len_sq <= 0.001:
 		return -1.0
@@ -537,6 +547,10 @@ func _update_phase_loops(delta: float) -> void:
 		_drop_supply_fragments()
 
 func _pick_new_strafe_bias() -> void:
+	if not is_inside_tree():
+		_strafe_bias = Vector2(randf_range(-30.0, 30.0), randf_range(-12.0, 24.0))
+		_feint_timer = randf_range(BOSS_FEINT_INTERVAL_MIN, BOSS_FEINT_INTERVAL_MAX)
+		return
 	var screen := get_viewport_rect().size
 	_strafe_bias = Vector2(randf_range(-screen.x * 0.10, screen.x * 0.10), randf_range(-screen.y * 0.04, screen.y * 0.08))
 	_feint_timer = randf_range(BOSS_FEINT_INTERVAL_MIN, BOSS_FEINT_INTERVAL_MAX)

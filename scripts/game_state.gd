@@ -83,6 +83,7 @@ func _new_player_state() -> Dictionary:
 		"extra_bullet_count": 0,
 		"extra_damage_bonus": 0,
 		"move_speed_bonus": 0.0,
+		"shield_max_bonus": 0,
 	}
 
 func _alive_peer_ids() -> Array[int]:
@@ -134,6 +135,8 @@ func _is_local_peer(peer_id: int) -> bool:
 	return (peer_id if peer_id > 0 else _local_peer_id()) == _local_peer_id()
 
 func _process(delta: float) -> void:
+	if not multiplayer.has_multiplayer_peer():
+		return
 	if not multiplayer.is_server():
 		return
 	if not _sync_dirty:
@@ -283,6 +286,8 @@ func _from_dict(data: Dictionary) -> void:
 			_emit_shield_changed_for_peer(int(key))
 
 func _mark_dirty() -> void:
+	if not multiplayer.has_multiplayer_peer():
+		return
 	if multiplayer.is_server():
 		_sync_dirty = true
 
@@ -292,7 +297,7 @@ func ensure_player_state(peer_id: int) -> void:
 	if not _player_scores.has(key):
 		_player_scores[key] = 0
 		_emit_scores_changed()
-	if multiplayer.is_server():
+	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 		if not _server_player_states.has(key):
 			_server_player_states[key] = _new_player_state()
 	_mark_dirty()
@@ -366,14 +371,6 @@ func add_kill(killer_peer_id: int = -1) -> void:
 	add_score(10 * level, killer_peer_id)
 	if kills >= kills_for_next_level:
 		level_up()
-	## 单机保留“击杀里程碑 +1 护盾”奖励；联机改为按玩家独立掉落/奖励，不再全员同步加层。
-	if not NetworkManager.is_online() and total_kills % 10 == 0:
-		var local_key := _peer_key(_local_peer_id())
-		var local_state: Dictionary = _state(_local_peer_id())
-		local_state.shield_layers = min(int(local_state.shield_layers) + 1, 30)
-		_player_states[local_key] = local_state
-		_sync_local_view()
-		_emit_shield_changed_for_peer(_local_peer_id())
 	if total_kills > 0 and total_kills % 20 == 0 and total_kills != last_elite_threshold:
 		last_elite_threshold = total_kills
 		elite_spawn_requested.emit()
@@ -650,6 +647,22 @@ func get_current_health(peer_id: int = -1) -> int:
 func get_max_health(peer_id: int = -1) -> int:
 	return int(_state(peer_id).max_health)
 
+func get_shield_bonus(peer_id: int = -1) -> int:
+	return int(_state(peer_id).get("shield_max_bonus", 0))
+
+func set_shield_layers(peer_id: int, layers: int) -> void:
+	var s := _state(peer_id)
+	s.shield_layers = clampi(layers, 0, 999)
+	_player_states[_peer_key(peer_id)] = s
+	_sync_local_view()
+	_emit_shield_changed_for_peer(peer_id)
+
+func get_shield_max_hp(peer_id: int = -1) -> int:
+	var bp := get_bullet_power_level(peer_id)
+	var mhp := get_max_health(peer_id)
+	var bonus := get_shield_bonus(peer_id)
+	return maxi(1, int((10 + bp * 2 + int(mhp * 0.2)) * 0.5) + bonus)
+
 func get_shield_layers(peer_id: int = -1) -> int:
 	return int(_state(peer_id).shield_layers)
 
@@ -692,7 +705,7 @@ func apply_reward(reward_type: String, peer_id: int = -1) -> void:
 		"speed":
 			s["move_speed_bonus"] = float(s.get("move_speed_bonus", 0.0)) + 0.10
 		"shield":
-			s["shield_layers"] = min(int(s.get("shield_layers", 0)) + 3, 30)
+			s["shield_max_bonus"] = int(s.get("shield_max_bonus", 0)) + 20
 		_:
 			return
 	_player_states[_peer_key(pid)] = s
