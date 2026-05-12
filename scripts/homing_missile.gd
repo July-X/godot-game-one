@@ -1,5 +1,7 @@
 extends Area2D
 
+enum MissileState { SEARCH, HOMING, DYING }
+
 var _speed: float = 400.0
 var _damage: float = 3.0
 var _lifetime: float = 5.0
@@ -7,6 +9,12 @@ var _target: Node2D = null
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _trail_points: PackedVector2Array = PackedVector2Array()
 var owner_peer_id: int = -1
+
+## 寻敌阶段最大飞行距离
+var _search_distance: float = 300.0
+var _search_traveled: float = 0.0
+var _state: int = MissileState.SEARCH
+var _dying_timer: float = 0.15
 
 func _ready() -> void:
 	add_to_group("player_bullets")
@@ -18,6 +26,8 @@ func setup(pos: Vector2, angle: float, damage: float, owner_id: int = -1) -> voi
 	rotation = angle + PI * 0.5
 	_damage = damage
 	owner_peer_id = owner_id
+	_state = MissileState.SEARCH
+	_search_traveled = 0.0
 
 var _trail_frame_skip: int = 0
 
@@ -25,22 +35,43 @@ func _physics_process(delta: float) -> void:
 	_lifetime -= delta
 	_trail_points.append(global_position)
 
-	if _lifetime <= 0:
-		queue_free()
-		return
+	match _state:
+		MissileState.SEARCH:
+			_search_traveled += _speed * delta
+			_find_target()
+			if is_instance_valid(_target):
+				_state = MissileState.HOMING
+			elif _search_traveled >= _search_distance or _lifetime <= 0:
+				_state = MissileState.DYING
+				_dying_timer = 0.15
+			else:
+				var forward: Vector2 = Vector2.RIGHT.rotated(rotation - PI * 0.5)
+				global_position += forward * _speed * delta
 
-	_find_target()
-	if is_instance_valid(_target):
-		var dir: Vector2 = global_position.direction_to(_target.global_position)
-		rotation = lerp_angle(rotation, dir.angle() + PI * 0.5, 3.0 * delta)
-		global_position += dir * _speed * delta
-	else:
-		var forward: Vector2 = Vector2.RIGHT.rotated(rotation - PI * 0.5)
-		global_position += forward * _speed * delta
+		MissileState.HOMING:
+			if is_instance_valid(_target):
+				var dir: Vector2 = global_position.direction_to(_target.global_position)
+				rotation = lerp_angle(rotation, dir.angle() + PI * 0.5, 3.0 * delta)
+				global_position += dir * _speed * delta
+			else:
+				_state = MissileState.DYING
+				_dying_timer = 0.15
 
-	var screen := get_viewport_rect().size
-	if global_position.x < -30 or global_position.x > screen.x + 30 or global_position.y < -30 or global_position.y > screen.y + 30:
-		queue_free()
+		MissileState.DYING:
+			_dying_timer -= delta
+			scale = scale.lerp(Vector2.ZERO, 6.0 * delta)
+			modulate.a = max(modulate.a - delta * 4.0, 0.0)
+			if _dying_timer <= 0.0:
+				queue_free()
+				return
+			var dying_dir: Vector2 = Vector2.RIGHT.rotated(rotation - PI * 0.5)
+			global_position += dying_dir * _speed * delta * 0.5
+
+	if _state != MissileState.DYING:
+		var screen := get_viewport_rect().size
+		if global_position.x < -30 or global_position.x > screen.x + 30 or global_position.y < -30 or global_position.y > screen.y + 30:
+			queue_free()
+			return
 
 	_trail_frame_skip += 1
 	if _trail_frame_skip % 2 == 0:
@@ -82,7 +113,7 @@ func _is_priority_enemy(node: Node) -> bool:
 	return node.is_in_group("boss") or node.has_method("get_network_shield")
 
 func _on_body_entered(body: Node2D) -> void:
-	if not GameState.game_running:
+	if not GameState.game_running or _state == MissileState.DYING:
 		return
 	if body.is_in_group("enemies") and body.has_method("take_damage"):
 		_apply_or_report_enemy_damage(body, _damage)
@@ -90,7 +121,7 @@ func _on_body_entered(body: Node2D) -> void:
 		queue_free()
 
 func _on_area_entered(area: Area2D) -> void:
-	if not GameState.game_running:
+	if not GameState.game_running or _state == MissileState.DYING:
 		return
 	if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
 		_apply_or_report_enemy_damage(area.get_parent(), _damage)

@@ -113,8 +113,8 @@ func _draw() -> void:
 		var pts: PackedVector2Array = []
 		for p in _line_points:
 			pts.append(to_local(p))
-		draw_polyline(pts, Color(0.5, 0.2, 1.0, 0.5), 6.0)
-		draw_polyline(pts, Color(0.8, 0.5, 1.0, 0.35), 10.0)
+		draw_polyline(pts, Color(0.5, 0.2, 1.0, 0.5), 3.0)
+		draw_polyline(pts, Color(0.8, 0.5, 1.0, 0.35), 5.0)
 	var tail := Vector2.RIGHT.rotated(-rotation) * 32
 	draw_line(tail, Vector2.ZERO, Color(0.3, 0.3, 1.0, 0.95), 3.0)
 	draw_line(tail, Vector2.ZERO, Color(0.6, 0.9, 1.0, 0.7), 7.0)

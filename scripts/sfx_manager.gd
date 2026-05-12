@@ -61,6 +61,7 @@ func _generate_tone(freq: float, duration: float, volume: float = 0.3, sample_ra
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.stereo = false
+	stream.mix_rate = 44100
 	stream.data = data
 	return stream
 
@@ -82,6 +83,7 @@ func _generate_sweep(start_f: float, end_f: float, duration: float, volume: floa
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.stereo = false
+	stream.mix_rate = 44100
 	stream.data = data
 	return stream
 
@@ -101,6 +103,7 @@ func _generate_noise(duration: float, volume: float = 0.3) -> AudioStreamWAV:
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.stereo = false
+	stream.mix_rate = 44100
 	stream.data = data
 	return stream
 

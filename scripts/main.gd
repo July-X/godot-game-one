@@ -49,6 +49,7 @@ var _boss_reward_claimed_peers: Dictionary = {}
 const ENTITY_SYNC_INTERVAL: float = 0.033
 const ENTITY_SYNC_STRIDE: int = 5
 const ENTITY_SHIELD_SYNC_STRIDE: int = 3
+const ENTITY_ROTATION_SYNC_STRIDE: int = 2
 const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
@@ -299,12 +300,10 @@ func _spawn_player() -> void:
 
 
 func _get_networked_player_spawn_position(p_peer_id: int) -> Vector2:
-	var slot := p_peer_id - 1
-	if slot < 0:
-		slot = 0
-	var offset := float(slot % 2) * 180.0
-	var row := float(slot / 2) * 90.0
-	return Vector2(540.0 + offset, 500.0 - row)
+	var screen := get_viewport_rect().size
+	if p_peer_id == 1:
+		return Vector2(screen.x * 0.32, screen.y * 0.7)
+	return Vector2(screen.x * 0.68, screen.y * 0.7)
 
 
 func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
@@ -570,6 +569,7 @@ func _on_network_enemy_died(entity_id: int) -> void:
 		_entities.erase(entity_id)
 	if multiplayer.is_server():
 		_rpc_despawn_entity.rpc(entity_id)
+		GameState._rpc_play_sfx.rpc("enemy_death")
 
 ## Client → Host（经 GameState 转发）：敌人受击
 func _on_network_enemy_hit(entity_id: int, damage: int, attacker_peer_id: int = -1) -> void:
@@ -690,6 +690,9 @@ func _on_network_asteroid_destroyed(entity_id: int) -> void:
 	_despawned_entity_ids[entity_id] = true
 	_entity_target_positions.erase(entity_id)
 	if _entities.has(entity_id):
+		var node: Node = _entities[entity_id]
+		if is_instance_valid(node):
+			node.queue_free()
 		_entities.erase(entity_id)
 	_rpc_despawn_entity.rpc(entity_id)
 
@@ -724,9 +727,14 @@ func _spawn_elite() -> void:
 	tween.tween_property(_elite, "position", Vector2(640, 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_elite_shield_broken_window_started() -> void:
+	var eid := -1
+	if _elite != null and is_instance_valid(_elite):
+		eid = int(_elite.entity_id)
 	_show_elite_shield_break_banner()
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_show_elite_shield_break_banner.rpc()
+		if eid > 0:
+			_rpc_elite_shield_destroyed.rpc(eid)
 
 func _show_elite_shield_break_banner() -> void:
 	var now := int(Time.get_ticks_msec())
@@ -856,13 +864,19 @@ func _on_boss_died() -> void:
 	if _hud and _hud.has_method("hide_boss_status"):
 		_hud.hide_boss_status()
 	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_show_boss_reward_panel.rpc()
-	_show_reward_panel()
+		_grant_random_boss_rewards_to_alive_players()
+	elif not NetworkManager.is_online():
+		_grant_random_boss_reward_to_peer(-1)
 
 func _on_boss_phase_changed(phase_name: String) -> void:
 	_last_boss_hud_phase = phase_name
 	if _hud and _hud.has_method("show_center_banner"):
 		_hud.show_center_banner(phase_name, 0.8, Color(1.0, 0.55, 0.85, 1.0))
+	if NetworkManager.is_online() and multiplayer.is_server() and _boss != null:
+		var vid: int = 1
+		if _boss.has_method("get_sprite_variant_id"):
+			vid = _boss.get_sprite_variant_id()
+		_rpc_sync_boss_phase.rpc(phase_name, vid)
 
 func _update_boss_hud() -> void:
 	if _hud == null or not _hud.has_method("show_boss_status"):
@@ -887,6 +901,8 @@ func _enter_boss_fight_mode() -> void:
 		_bg_color.color = Color(0.14, 0.03, 0.03, 1.0)
 	if BGM and BGM.has_method("play_boss_bgm"):
 		BGM.play_boss_bgm()
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_set_boss_bg.rpc(true)
 
 func _exit_boss_fight_mode() -> void:
 	_boss_fight_active = false
@@ -894,6 +910,8 @@ func _exit_boss_fight_mode() -> void:
 		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
 	if BGM and BGM.has_method("play_bgm"):
 		BGM.play_bgm()
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_set_boss_bg.rpc(false)
 
 func _clear_non_boss_entities() -> void:
 	for n in get_tree().get_nodes_in_group("enemies"):
@@ -973,23 +991,18 @@ func _show_boss_warning() -> void:
 	tween.parallel().tween_property(warning, "modulate:a", 0.0, 0.3)
 	tween.tween_callback(cl.queue_free)
 
-var _reward_panel_scene = preload("res://scripts/reward_panel.gd")
+func _grant_random_boss_rewards_to_alive_players() -> void:
+	var peer_ids := GameState.get_alive_player_ids()
+	if peer_ids.is_empty():
+		peer_ids = [1]
+	for peer_id in peer_ids:
+		_grant_random_boss_reward_to_peer(peer_id)
 
-func _show_reward_panel() -> void:
-	if not GameState.game_running:
+func _grant_random_boss_reward_to_peer(peer_id: int) -> void:
+	var pool := _boss_reward_pool()
+	if pool.is_empty():
 		return
-	var panel := _reward_panel_scene.new()
-	panel.z_index = 200
-	panel.setup()
-	panel.reward_chosen.connect(_on_reward_chosen)
-	add_child(panel)
-
-func _on_reward_chosen(reward_type: String) -> void:
-	if NetworkManager.is_online() and not multiplayer.is_server():
-		_rpc_request_boss_reward.rpc_id(1, reward_type)
-		return
-	var peer_id := multiplayer.get_unique_id() if NetworkManager.is_online() else -1
-	_apply_boss_reward_for_peer(reward_type, peer_id)
+	_apply_boss_reward_for_peer(pool.pick_random(), peer_id)
 
 func _apply_boss_reward_for_peer(reward_type: String, peer_id: int) -> void:
 	if not _is_valid_boss_reward(reward_type):
@@ -1001,12 +1014,17 @@ func _apply_boss_reward_for_peer(reward_type: String, peer_id: int) -> void:
 		_boss_reward_claimed_peers[resolved_peer] = true
 	GameState.apply_reward(reward_type, resolved_peer)
 	GameState.notify_boss_reward_applied()
+	if NetworkManager.is_online() and multiplayer.is_server() and GameState.has_method("force_sync_to_peer"):
+		GameState.force_sync_to_peer(resolved_peer)
 	_send_boss_reward_feedback(resolved_peer, reward_type)
 	if _player and is_instance_valid(_player) and _player.has_method("_update_appearance"):
 		_player._update_appearance()
 
 func _is_valid_boss_reward(reward_type: String) -> bool:
-	return reward_type in ["laser_cd", "bullet_count", "damage", "speed", "shield"]
+	return reward_type in _boss_reward_pool()
+
+func _boss_reward_pool() -> Array[String]:
+	return ["laser_cd", "bullet_count", "damage", "speed"]
 
 func _on_player_died() -> void:
 	if _player and is_instance_valid(_player):
@@ -1314,6 +1332,29 @@ func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
 		_elite.shield_broken_window_started.connect(_on_elite_shield_broken_window_started)
 	add_child(_elite)
 
+## Host → Client：强制销毁精英护盾光晕（护盾同步包可能丢包或迟到）
+@rpc("authority", "reliable", "call_remote")
+func _rpc_elite_shield_destroyed(eid: int) -> void:
+	var node: Node = null
+	if _entities.has(eid) and is_instance_valid(_entities[eid]):
+		node = _entities[eid]
+	elif _elite and is_instance_valid(_elite) and int(_elite.entity_id) == eid:
+		node = _elite
+	if node and node.has_method("force_network_shield_destroyed"):
+		node.force_network_shield_destroyed()
+
+## Host → Client：同步 Boss 阶段变换
+@rpc("authority", "reliable", "call_remote")
+func _rpc_sync_boss_phase(phase_name: String, variant_id: int) -> void:
+	if _boss == null or not is_instance_valid(_boss):
+		return
+	if _boss.has_method("set_sprite_variant"):
+		_boss.set_sprite_variant(variant_id)
+	if _boss.has_method("_apply_visual_state"):
+		_boss._apply_visual_state()
+	if _hud and _hud.has_method("show_center_banner"):
+		_hud.show_center_banner(phase_name, 0.8, Color(1.0, 0.55, 0.85, 1.0))
+
 ## Host → Client：生成 Boss 幽灵副本
 @rpc("authority", "reliable", "call_remote")
 func _rpc_spawn_boss(eid: int, level: int, variant_id: int) -> void:
@@ -1366,14 +1407,14 @@ func _rpc_spawn_powerup(eid: int, powerup_type: String, pos_x: float, pos_y: flo
 func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2) -> void:
 	if _hud and _hud.has_method("show_pickup_toast"):
 		_hud.show_pickup_toast(powerup_type, world_pos)
-	if powerup_type == "core" and _hud and _hud.has_method("show_boss_buff_banner"):
-		_hud.show_boss_buff_banner("核心碎片已吸收", "当前技能与激光冷却缩短 30%", Color(1.0, 0.78, 0.24, 1.0))
+	if powerup_type == "core" and _hud and _hud.has_method("show_center_banner"):
+		_hud.show_center_banner("冷却加速", 0.6, Color(1.0, 0.78, 0.24, 1.0))
 
-func on_local_boss_reward_feedback(reward_type: String) -> void:
-	if _hud == null or not _hud.has_method("show_boss_buff_banner"):
+func on_local_boss_reward_feedback(_reward_type: String) -> void:
+	if _hud == null:
 		return
-	var info := _boss_reward_feedback_text(reward_type)
-	_hud.show_boss_buff_banner(info.title, info.desc, Color(0.65, 0.9, 1.0, 1.0))
+	if _hud.has_method("show_boss_bonus_attribute_feedback"):
+		_hud.show_boss_bonus_attribute_feedback()
 
 func _send_powerup_feedback(peer_id: int, powerup_type: String, world_pos: Vector2) -> void:
 	var target_peer := peer_id if peer_id > 0 else 1
@@ -1389,27 +1430,9 @@ func _send_boss_reward_feedback(peer_id: int, reward_type: String) -> void:
 	else:
 		_rpc_show_boss_reward_feedback.rpc_id(target_peer, reward_type)
 
-func _boss_reward_feedback_text(reward_type: String) -> Dictionary:
-	match reward_type:
-		"laser_cd":
-			return {"title": "Boss Buff：激光加速", "desc": "激光冷却永久 -1 秒"}
-		"bullet_count":
-			return {"title": "Boss Buff：弹幕扩展", "desc": "常规射击子弹数量永久 +1"}
-		"damage":
-			return {"title": "Boss Buff：火力增强", "desc": "子弹伤害永久 +2"}
-		"speed":
-			return {"title": "Boss Buff：机动强化", "desc": "移动速度永久 +10%"}
-		"shield":
-			return {"title": "Boss Buff：护盾充能", "desc": "立即获得 3 层护盾"}
-	return {"title": "Boss Buff 已获得", "desc": "战斗能力已提升"}
-
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_powerup_feedback(powerup_type: String, pos_x: float, pos_y: float) -> void:
 	on_local_powerup_feedback(powerup_type, Vector2(pos_x, pos_y))
-
-@rpc("authority", "reliable", "call_remote")
-func _rpc_show_boss_reward_panel() -> void:
-	_show_reward_panel()
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_boss_reward_feedback(reward_type: String) -> void:
@@ -1422,15 +1445,6 @@ func _rpc_show_elite_warning() -> void:
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_elite_shield_break_banner() -> void:
 	_show_elite_shield_break_banner()
-
-@rpc("any_peer", "reliable", "call_remote")
-func _rpc_request_boss_reward(reward_type: String) -> void:
-	if not multiplayer.is_server():
-		return
-	var requester := multiplayer.get_remote_sender_id()
-	if requester <= 0:
-		return
-	_apply_boss_reward_for_peer(reward_type, requester)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_spawn_asteroid(eid: int, pos_x: float, pos_y: float) -> void:
@@ -1474,7 +1488,7 @@ func _rpc_despawn_entity(eid: int) -> void:
 	for n in get_tree().get_nodes_in_group("asteroids"):
 		if not is_instance_valid(n):
 			continue
-		if n.name == str(eid):
+		if n.name == str(eid) or (n.has_method("get_entity_id") and int(n.get_entity_id()) == eid):
 			n.queue_free()
 
 ## Host → Client：实体位置批量同步
@@ -1504,7 +1518,7 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array) -> void:
 			node.apply_network_health(hp, max_hp)
 
 ## Host → Client：只同步带护盾实体的护盾值，避免所有实体同步包膨胀。
-@rpc("authority", "unreliable", "call_remote")
+@rpc("authority", "reliable", "call_remote")
 func _rpc_sync_entity_shields(data: PackedFloat32Array) -> void:
 	var i := 0
 	while i + ENTITY_SHIELD_SYNC_STRIDE - 1 < data.size():
@@ -1517,12 +1531,26 @@ func _rpc_sync_entity_shields(data: PackedFloat32Array) -> void:
 			if shield >= 0.0 and node.has_method("apply_network_shield"):
 				node.apply_network_shield(shield, max_shield)
 
+## Host → Client：同步少数需要朝向的实体；主位置包仍保持 5 字段，避免所有实体承担 rotation 成本。
+@rpc("authority", "unreliable", "call_remote")
+func _rpc_sync_entity_rotations(data: PackedFloat32Array) -> void:
+	var i := 0
+	while i + ENTITY_ROTATION_SYNC_STRIDE - 1 < data.size():
+		var eid := int(data[i])
+		var rot := data[i + 1]
+		i += ENTITY_ROTATION_SYNC_STRIDE
+		if _entities.has(eid) and is_instance_valid(_entities[eid]):
+			var node: Node = _entities[eid]
+			if node.has_method("apply_network_rotation"):
+				node.apply_network_rotation(rot)
+
 ## Host：打包所有实体位置
 func _batch_sync_entity_positions() -> void:
 	if _entities.is_empty():
 		return
 	var data := PackedFloat32Array()
 	var shield_data := PackedFloat32Array()
+	var rotation_data := PackedFloat32Array()
 	for eid: int in _entities:
 		var node = _entities[eid]
 		if is_instance_valid(node):
@@ -1541,10 +1569,15 @@ func _batch_sync_entity_positions() -> void:
 				shield_data.append(eid as float)
 				shield_data.append(float(node.get_network_shield()))
 				shield_data.append(float(node.get_network_max_shield()))
+			if node.has_method("get_network_rotation") and node.has_method("apply_network_rotation"):
+				rotation_data.append(eid as float)
+				rotation_data.append(float(node.get_network_rotation()))
 	if data.size() > 0:
 		_rpc_sync_entity_positions.rpc(data)
 	if shield_data.size() > 0:
 		_rpc_sync_entity_shields.rpc(shield_data)
+	if rotation_data.size() > 0:
+		_rpc_sync_entity_rotations.rpc(rotation_data)
 
 ## 子弹同步 ──────────────────────────────────────────────────
 
@@ -1612,6 +1645,11 @@ func _rpc_spawn_bullets(data: Array) -> void:
 			bullet.set_network_ghost(true)
 
 ## 激光同步：
+@rpc("authority", "reliable", "call_remote")
+func _rpc_set_boss_bg(active: bool) -> void:
+	if _bg_color:
+		_bg_color.color = Color(0.14, 0.03, 0.03, 1.0) if active else Color(0.06, 0.06, 0.12, 1.0)
+
 ## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
 ## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）
 @rpc("any_peer", "unreliable_ordered", "call_remote")

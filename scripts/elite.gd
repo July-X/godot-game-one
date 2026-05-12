@@ -46,8 +46,10 @@ func apply_network_shield(shield: float, max_shield: float) -> void:
 	var was_shielded := _shield > 0
 	_max_shield = max(int(max_shield), 1)
 	_shield = clampi(int(shield), 0, _max_shield)
+	if _shield > 0:
+		_shield_break_visual_played = false
 	if _is_network_ghost and was_shielded and _shield <= 0:
-		_spawn_shield_shatter_burst()
+		_play_shield_break_visual()
 		shield_broken_window_started.emit()
 	_update_shield_visual_color(0.45)
 	_update_shield_bar()
@@ -68,6 +70,7 @@ var _health_at_phase_change: bool = false
 var _close_escape_cooldown: float = 0.0
 var _phase_b_timer: float = 0.0
 var _phase_c_drone_timer: float = 1.6
+var _shield_break_visual_played: bool = false
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
@@ -103,11 +106,15 @@ func set_target(target: Node2D) -> void:
 	_target = target
 
 func set_difficulty(mult: float) -> void:
-	var lv: int = GameState.level
-	_health = int((50.0 + lv * 15.0) * mult)
+	var total_hp := GameState.get_max_health(1)
+	if NetworkManager.is_online():
+		for pid in NetworkManager.connected_peers:
+			total_hp += GameState.get_max_health(pid)
+	_health = int(total_hp * 2.5 * mult)
 	_max_health = _health
-	_shield = int((80.0 + lv * 10.0) * mult)
+	_shield = int(total_hp * 1.0 * mult)
 	_max_shield = _shield
+	_shield_break_visual_played = false
 	BASE_SPEED = 50.0 * mult
 	CHASE_SPEED = 65.0 * mult
 
@@ -362,7 +369,7 @@ func _spawn_shield_hit_effect() -> void:
 
 func _shield_break_effect() -> void:
 	SFX.play_explosion()
-	_spawn_shield_shatter_burst()
+	_play_shield_break_visual()
 	for i in range(6):
 		var exp = _explosion_scene.instantiate()
 		get_tree().current_scene.add_child(exp)
@@ -372,7 +379,20 @@ func _shield_break_effect() -> void:
 		_shield_circle.set_color(Color(0, 0, 0, 0))
 	_update_shield_bar()
 
+func force_network_shield_destroyed() -> void:
+	_shield = 0
+	_play_shield_break_visual()
+	_update_shield_visual_color(0.0)
+	_update_shield_bar()
+
+func _play_shield_break_visual() -> void:
+	if _shield_break_visual_played:
+		return
+	_shield_break_visual_played = true
+	_spawn_shield_shatter_burst()
+
 func _spawn_shield_shatter_burst() -> void:
+	_destroy_shield_circle()
 	var burst := Node2D.new()
 	burst.set_script(_shield_shatter_scene)
 	get_tree().current_scene.add_child(burst)
@@ -380,6 +400,11 @@ func _spawn_shield_shatter_burst() -> void:
 	burst.z_index = 8
 	if burst.has_method("setup"):
 		burst.setup(78.0, Color(1.0, 0.72, 0.18, 0.95), 22)
+
+func _destroy_shield_circle() -> void:
+	if _shield_circle and is_instance_valid(_shield_circle):
+		_shield_circle.queue_free()
+	_shield_circle = null
 
 func _update_health_bar() -> void:
 	if _health_bar:

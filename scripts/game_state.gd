@@ -166,11 +166,35 @@ func _to_dict() -> Dictionary:
 		"player_scores": _player_scores.duplicate(true),
 	}
 
-@rpc("authority", "unreliable", "call_remote")
+@rpc("authority", "reliable", "call_remote")
 func _rpc_sync_game_state(data: Dictionary) -> void:
 	_from_dict(data)
 
+func force_sync_to_peer(peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if peer_id > 0:
+		_rpc_sync_game_state.rpc_id(peer_id, _to_dict())
+	else:
+		_rpc_sync_game_state.rpc(_to_dict())
+
 ## ── 伤害 RPC ──────────────────────────────────────────────────
+
+## Host → Client：播放音效
+@rpc("authority", "unreliable", "call_remote")
+func _rpc_play_sfx(sound: String) -> void:
+	match sound:
+		"enemy_death":
+			if SFX and SFX.has_method("play_enemy_death"):
+				SFX.play_enemy_death()
+		"player_hurt":
+			if SFX and SFX.has_method("play_player_hurt"):
+				SFX.play_player_hurt()
+			if multiplayer.is_server():
+				_rpc_play_sfx.rpc("player_hurt")
+		"explosion":
+			if SFX and SFX.has_method("play_explosion"):
+				SFX.play_explosion()
 
 ## Client → Host：报告敌人受击
 @rpc("any_peer", "reliable")
@@ -667,15 +691,15 @@ func apply_reward(reward_type: String, peer_id: int = -1) -> void:
 		return
 	match reward_type:
 		"laser_cd":
-			s.laser_cd_bonus = float(s.laser_cd_bonus) + 1.0
+			s["laser_cd_bonus"] = float(s.get("laser_cd_bonus", 0.0)) + 1.0
 		"bullet_count":
-			s.extra_bullet_count = int(s.extra_bullet_count) + 1
+			s["extra_bullet_count"] = int(s.get("extra_bullet_count", 0)) + 1
 		"damage":
-			s.extra_damage_bonus = int(s.extra_damage_bonus) + 2
+			s["extra_damage_bonus"] = int(s.get("extra_damage_bonus", 0)) + 2
 		"speed":
-			s.move_speed_bonus = float(s.move_speed_bonus) + 0.10
+			s["move_speed_bonus"] = float(s.get("move_speed_bonus", 0.0)) + 0.10
 		"shield":
-			s.shield_layers = min(int(s.shield_layers) + 3, 30)
+			s["shield_layers"] = min(int(s.get("shield_layers", 0)) + 3, 30)
 		_:
 			return
 	_player_states[_peer_key(pid)] = s

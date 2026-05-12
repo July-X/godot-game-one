@@ -41,6 +41,10 @@ var _boss_status_phase: Label = null
 var _boss_buff_banner: Control = null
 const POWERUP_BAR_WIDTH: int = 120
 const POWERUP_BAR_HEIGHT: int = 14
+const BOSS_BONUS_LASER_CD_MAX: float = 5.0
+const BOSS_BONUS_BULLET_COUNT_MAX: float = 4.0
+const BOSS_BONUS_DAMAGE_MAX: float = 20.0
+const BOSS_BONUS_MOVE_SPEED_MAX: float = 0.5
 const SKILL_SLOT_DESKTOP: Vector2 = Vector2(144, 144)
 const SKILL_SLOT_MOBILE: Vector2 = Vector2(116, 116)
 const SKILL_BAR_MOBILE_MARGIN: Vector2 = Vector2(30, 38)
@@ -533,77 +537,105 @@ func _update_powerup_display() -> void:
 		if prev_level > 0:
 			prev_fill_w = int(bar_w * float(prev_level) / float(max_level))
 
-		# 行容器: SPR ████░░  8/15
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		_powerup_display.add_child(row)
+		_add_powerup_bar(
+			labels[type].name,
+			labels[type].color,
+			labels[type].bar,
+			fill_w,
+			"%d/%d" % [level, max_level],
+			prev_fill_w,
+			prev_level >= 0 and prev_level != level
+		)
 
-		# 名称标签
-		var name_lbl := Label.new()
-		name_lbl.text = labels[type].name + "  "
-		name_lbl.add_theme_color_override("font_color", labels[type].color)
-		name_lbl.add_theme_font_size_override("font_size", 12)
-		name_lbl.vertical_alignment = 1
-		row.add_child(name_lbl)
-
-		# 进度条背景
-		var bg := ColorRect.new()
-		bg.custom_minimum_size = Vector2(bar_w, bar_h)
-		bg.size = Vector2(bar_w, bar_h)
-		bg.color = Color(0.08, 0.08, 0.15, 0.7)
-		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(bg)
-
-		# 进度条填充
-		var fill := ColorRect.new()
-		fill.size = Vector2(fill_w, bar_h)
-		fill.color = labels[type].bar
-		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bg.add_child(fill)
-
-		# 数值标签（覆盖在进度条上）
-		var val_lbl := Label.new()
-		val_lbl.size = Vector2(bar_w, bar_h)
-		val_lbl.text = "%d/%d" % [level, max_level]
-		val_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
-		val_lbl.add_theme_font_size_override("font_size", 10)
-		val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bg.add_child(val_lbl)
-
-		if prev_level >= 0 and prev_level != level:
-			_animate_powerup_row(row, bg, fill, val_lbl, prev_fill_w, fill_w, bar_h, labels[type].bar)
-
-	var boss_bonus_lines: Array[String] = []
-	if _cached_extra_bullet_count > 0:
-		boss_bonus_lines.append("Boss奖励: 子弹数量 +%d" % _cached_extra_bullet_count)
-	if _cached_extra_damage_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 额外伤害 +%d" % _cached_extra_damage_bonus)
-	if _cached_laser_cd_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 激光冷却 -%.1fs" % _cached_laser_cd_bonus)
-	if _cached_move_speed_bonus > 0:
-		boss_bonus_lines.append("Boss奖励: 移速 +%d%%" % int(round(_cached_move_speed_bonus * 100.0)))
-
-	if boss_bonus_lines.size() > 0:
-		var spacer := Control.new()
-		spacer.custom_minimum_size = Vector2(0, 4)
-		_powerup_display.add_child(spacer)
-		for line in boss_bonus_lines:
-			var bonus_lbl := Label.new()
-			bonus_lbl.text = line
-			bonus_lbl.add_theme_color_override("font_color", Color(0.98, 0.82, 0.35, 0.98))
-			bonus_lbl.add_theme_font_size_override("font_size", 11)
-			bonus_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.85))
-			bonus_lbl.add_theme_constant_override("shadow_outline_size", 1)
-			bonus_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-			_powerup_display.add_child(bonus_lbl)
+	_render_boss_bonus_section()
 
 	if prev_extra_bullet_count != _cached_extra_bullet_count \
 	or prev_extra_damage_bonus != _cached_extra_damage_bonus \
 	or not is_equal_approx(prev_laser_cd_bonus, _cached_laser_cd_bonus) \
 	or not is_equal_approx(prev_move_speed_bonus, _cached_move_speed_bonus):
 		_pulse_powerup_bonus_lines()
+
+
+func _render_boss_bonus_section() -> void:
+	var has_bullet := _cached_extra_bullet_count > 0
+	var has_damage := _cached_extra_damage_bonus > 0
+	var has_laser := _cached_laser_cd_bonus > 0.0
+	var has_speed := _cached_move_speed_bonus > 0.0
+	if not has_bullet and not has_damage and not has_laser and not has_speed:
+		return
+	_add_boss_bonus_group_header()
+	if has_bullet:
+		_add_boss_bonus_bar("弹幕", float(_cached_extra_bullet_count), BOSS_BONUS_BULLET_COUNT_MAX, "+%d/%d" % [_cached_extra_bullet_count, int(BOSS_BONUS_BULLET_COUNT_MAX)], Color(1.0, 0.78, 0.28), Color(1.0, 0.58, 0.16))
+	if has_damage:
+		_add_boss_bonus_bar("火力", float(_cached_extra_damage_bonus), BOSS_BONUS_DAMAGE_MAX, "+%d/%d" % [_cached_extra_damage_bonus, int(BOSS_BONUS_DAMAGE_MAX)], Color(1.0, 0.58, 0.32), Color(1.0, 0.35, 0.18))
+	if has_laser:
+		_add_boss_bonus_bar("激光", _cached_laser_cd_bonus, BOSS_BONUS_LASER_CD_MAX, "-%.1f/%.1fs" % [_cached_laser_cd_bonus, BOSS_BONUS_LASER_CD_MAX], Color(0.58, 0.86, 1.0), Color(0.25, 0.72, 1.0))
+	if has_speed:
+		_add_boss_bonus_bar("移速", _cached_move_speed_bonus, BOSS_BONUS_MOVE_SPEED_MAX, "+%d/%d%%" % [int(round(_cached_move_speed_bonus * 100.0)), int(BOSS_BONUS_MOVE_SPEED_MAX * 100.0)], Color(0.7, 1.0, 0.58), Color(0.32, 0.88, 0.38))
+
+func _add_boss_bonus_bar(name: String, value: float, max_value: float, value_text: String, name_color: Color, bar_color: Color) -> void:
+	var fill_w := int(POWERUP_BAR_WIDTH * clampf(value / max(max_value, 0.001), 0.0, 1.0))
+	_add_powerup_bar(name, name_color, bar_color, fill_w, value_text, 0, false, true)
+
+func _add_boss_bonus_group_header() -> void:
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 3)
+	spacer.set_meta("boss_bonus_row", true)
+	_powerup_display.add_child(spacer)
+	var title := Label.new()
+	title.text = "Boss强化"
+	title.add_theme_color_override("font_color", Color(1.0, 0.74, 0.28, 0.98))
+	title.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.88))
+	title.add_theme_constant_override("shadow_outline_size", 1)
+	title.add_theme_font_size_override("font_size", 11)
+	title.set_meta("boss_bonus_label", true)
+	_powerup_display.add_child(title)
+
+func _add_powerup_bar(name: String, name_color: Color, bar_color: Color, fill_w: int, value_text: String, prev_fill_w: int = 0, animate: bool = false, is_boss_bonus: bool = false) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	if is_boss_bonus:
+		row.set_meta("boss_bonus_row", true)
+	_powerup_display.add_child(row)
+
+	var name_lbl := Label.new()
+	name_lbl.text = name + "  "
+	name_lbl.add_theme_color_override("font_color", name_color)
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	if is_boss_bonus:
+		name_lbl.set_meta("boss_bonus_label", true)
+	row.add_child(name_lbl)
+
+	var bg := ColorRect.new()
+	bg.custom_minimum_size = Vector2(POWERUP_BAR_WIDTH, POWERUP_BAR_HEIGHT)
+	bg.size = Vector2(POWERUP_BAR_WIDTH, POWERUP_BAR_HEIGHT)
+	bg.color = Color(0.08, 0.08, 0.15, 0.7)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(bg)
+
+	var fill := ColorRect.new()
+	fill.size = Vector2(clampi(fill_w, 0, POWERUP_BAR_WIDTH), POWERUP_BAR_HEIGHT)
+	fill.color = bar_color
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if is_boss_bonus:
+		fill.set_meta("boss_bonus_fill", true)
+	bg.add_child(fill)
+
+	var val_lbl := Label.new()
+	val_lbl.size = Vector2(POWERUP_BAR_WIDTH, POWERUP_BAR_HEIGHT)
+	val_lbl.text = value_text
+	val_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+	val_lbl.add_theme_font_size_override("font_size", 10)
+	val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	val_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	val_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if is_boss_bonus:
+		val_lbl.set_meta("boss_bonus_label", true)
+	bg.add_child(val_lbl)
+
+	if animate:
+		_animate_powerup_row(row, bg, fill, val_lbl, prev_fill_w, fill_w, POWERUP_BAR_HEIGHT, bar_color)
 
 func _animate_powerup_row(row: Control, bg: ColorRect, fill: ColorRect, val_lbl: Label, prev_fill_w: int, fill_w: int, bar_h: int, bar_color: Color) -> void:
 	row.scale = Vector2(0.98, 0.98)
@@ -642,13 +674,23 @@ func _animate_powerup_row(row: Control, bg: ColorRect, fill: ColorRect, val_lbl:
 
 func _pulse_powerup_bonus_lines() -> void:
 	for child in _powerup_display.get_children():
-		if child is Label and String(child.text).begins_with("Boss奖励:"):
-			var lbl := child as Label
-			lbl.scale = Vector2(0.98, 0.98)
-			lbl.modulate = Color(1.0, 0.95, 0.65, 0.75)
-			var tween := create_tween().set_parallel(true)
-			tween.tween_property(lbl, "scale", Vector2(1, 1), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-			tween.tween_property(lbl, "modulate", Color(0.98, 0.82, 0.35, 0.98), 0.18)
+		_pulse_boss_bonus_node(child)
+
+func _pulse_boss_bonus_node(node: Node) -> void:
+	if node is Label and bool(node.get_meta("boss_bonus_label", false)):
+		var lbl := node as Label
+		lbl.scale = Vector2(0.98, 0.98)
+		lbl.modulate = Color(1.0, 0.95, 0.65, 0.75)
+		var tween := create_tween().set_parallel(true)
+		tween.tween_property(lbl, "scale", Vector2(1, 1), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tween.tween_property(lbl, "modulate", Color(1.0, 0.85, 0.4, 0.98), 0.18)
+	if node is ColorRect and bool(node.get_meta("boss_bonus_fill", false)):
+		var rect := node as ColorRect
+		rect.modulate = Color(1.35, 1.35, 1.15, 1.0)
+		var fill_tween := create_tween()
+		fill_tween.tween_property(rect, "modulate", Color(1, 1, 1, 1), 0.22)
+	for child in node.get_children():
+		_pulse_boss_bonus_node(child)
 
 func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()
@@ -770,6 +812,10 @@ func _update_fps(delta: float) -> void:
 func add_skill(data: Dictionary) -> void:
 	_skill_data.append(data)
 	_create_skill_slot(data)
+
+func show_boss_bonus_attribute_feedback() -> void:
+	_update_powerup_display()
+	_pulse_powerup_bonus_lines()
 
 func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.0, 0.3, 0.2, 1.0)) -> void:
 	var banner := Label.new()

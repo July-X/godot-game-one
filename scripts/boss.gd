@@ -35,8 +35,19 @@ func get_network_max_health() -> float:
 func get_network_level() -> int:
 	return _level
 
+func get_network_rotation() -> float:
+	return global_rotation
+
 func get_sprite_variant_id() -> int:
 	return _sprite_variant_id
+
+func apply_network_rotation(rot: float) -> void:
+	_network_target_rotation = rot
+	if not _is_network_ghost:
+		return
+	if not get_meta("net_rot_sync_inited", false):
+		global_rotation = rot
+		set_meta("net_rot_sync_inited", true)
 
 func apply_network_health(hp: float, max_hp: float) -> void:
 	if max_hp > 0.0:
@@ -67,6 +78,7 @@ var _supply_timer: float = 10.0
 var _rift_timer: float = 1.4
 var _live_summons: int = 0
 var _dead: bool = false
+var _network_target_rotation: float = 0.0
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
@@ -154,6 +166,7 @@ func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
 		return
 	if _is_network_ghost:
+		global_rotation = lerp_angle(global_rotation, _network_target_rotation, 0.45)
 		if _health_bar:
 			_health_bar.value = _health
 		return
@@ -311,6 +324,20 @@ func get_phase_name() -> String:
 			return "核心过载"
 	return "压制校准"
 
+func _apply_phase_sprite(phase: int) -> void:
+	if _sprite == null:
+		return
+	var variant := 1
+	match phase:
+		BossPhase.SUPPRESSION:
+			variant = 1
+		BossPhase.RIFT:
+			variant = 2
+		BossPhase.OVERLOAD:
+			variant = 3
+	_sprite_variant_id = variant
+	_sprite.texture = SpriteFactory.create_boss_sprite(variant)
+
 func _phase_speed_mult() -> float:
 	match _phase:
 		BossPhase.SUPPRESSION:
@@ -332,12 +359,13 @@ func _update_phase_from_health(emit_event: bool) -> void:
 		return
 	_phase = next_phase
 	_last_phase_name = get_phase_name()
+	_apply_phase_sprite(_phase)
 	_circle_radius = 300.0
 	if _phase == BossPhase.RIFT:
 		_circle_radius = 250.0
 	elif _phase == BossPhase.OVERLOAD:
 		_circle_radius = 210.0
-	modulate = Color(1.2, 0.72, 0.66, 1.0) if _phase == BossPhase.OVERLOAD else Color(1, 1, 1, 1)
+	modulate = Color(1.0, 1.0, 1.0, 1.0)
 	if _label:
 		_label.text = "%s Lv%d" % [get_phase_name(), _level]
 	if emit_event:

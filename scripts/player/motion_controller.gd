@@ -53,11 +53,11 @@ func _update_desktop(delta: float, speed_multiplier: float) -> void:
 func _update_mobile(delta: float, speed_multiplier: float) -> void:
 	if touch_move.length() > 0.1:
 		var target: Vector2 = touch_move * move_speed * speed_multiplier
-		mobile_vel = mobile_vel.lerp(target, 4.0 * delta)
+		mobile_vel = mobile_vel.lerp(target, 10.0 * delta)
 		_player.velocity = mobile_vel
 		_player.rotation = _player.velocity.angle() + PI * 0.5
 	else:
-		mobile_vel = mobile_vel.lerp(Vector2.ZERO, 5.0 * delta)
+		mobile_vel = mobile_vel.lerp(Vector2.ZERO, 12.0 * delta)
 		_player.velocity = mobile_vel
 
 

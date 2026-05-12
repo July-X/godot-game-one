@@ -14,6 +14,9 @@ var _rotation_speed: float = 0.0
 var _size: int = 24
 var _health: int = MAX_HEALTH
 
+func get_entity_id() -> int:
+	return entity_id
+
 func _ready() -> void:
 	_size = randi_range(20, 50)
 	$CollisionShape2D.shape.radius = _size * 0.5
