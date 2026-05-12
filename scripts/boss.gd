@@ -79,6 +79,14 @@ var _rift_timer: float = 1.4
 var _live_summons: int = 0
 var _dead: bool = false
 var _network_target_rotation: float = 0.0
+var _last_laser_hp_ratio: float = 1.0
+var _shield_active: bool = false
+var _ultimate_laser_charging: bool = false
+var _ultimate_laser_firing: bool = false
+var _ultimate_laser_charge_timer: float = 0.0
+var _ultimate_laser_fire_timer: float = 0.0
+var _ultimate_laser_start: Vector2 = Vector2.ZERO
+var _ultimate_laser_end: Vector2 = Vector2.ZERO
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
@@ -103,6 +111,13 @@ const BOSS_CRUISE_ACCEL: float = 7.5
 const BOSS_FEINT_INTERVAL_MIN: float = 0.55
 const BOSS_FEINT_INTERVAL_MAX: float = 1.25
 const BOSS_MAX_SUMMONS: int = 2
+const BOSS_ULTIMATE_LASER_HP_INTERVAL: float = 0.25  ## 每损失 15% 血量触发一次
+const BOSS_ULTIMATE_LASER_CHARGE: float = 2.0
+const BOSS_ULTIMATE_LASER_TRAVEL: float = 2.0
+const BOSS_ULTIMATE_LASER_WIDTH: float = 110.0
+const BOSS_ULTIMATE_LASER_HOLD_SECONDS: float = 12.0
+const BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC: float = 10.0
+const ULTIMATE_LASER_INNER_RATIO: float = 0.3  ## 内圈比例（秒杀区）
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
@@ -132,6 +147,7 @@ func setup(level: int) -> void:
 	var level_scale: float = 1.0 + clampf((_level - 5) * 0.03, 0.0, 0.45)
 	_max_health = max(player_dps * BOSS_TARGET_TTK_SECONDS * BOSS_EXPECTED_PLAYER_UPTIME * _mult * level_scale, 900.0)
 	_health = _max_health
+	_last_laser_hp_ratio = 1.0
 	_shoot_angle_offset = randf() * TAU
 	_circle_dir = 1.0 if randf() < 0.5 else -1.0
 	_circle_radius = 340.0
@@ -178,6 +194,13 @@ func _physics_process(delta: float) -> void:
 	_state_timer -= delta
 	_shoot_timer -= delta
 	_update_phase_from_health(true)
+	if _should_start_ultimate_laser():
+		_start_ultimate_laser()
+	if _ultimate_laser_charging or _ultimate_laser_firing:
+		_tick_ultimate_laser(delta)
+		if _health_bar:
+			_health_bar.value = _health
+		return
 	_update_phase_loops(delta)
 	_rush_cooldown = max(_rush_cooldown - delta, 0.0)
 	_dodge_cooldown = max(_dodge_cooldown - delta, 0.0)
@@ -347,6 +370,104 @@ func _phase_speed_mult() -> float:
 		BossPhase.OVERLOAD:
 			return 1.2
 	return 1.0
+
+func _should_start_ultimate_laser() -> bool:
+	if _dead or _ultimate_laser_charging or _ultimate_laser_firing:
+		return false
+	if _health <= 0.0 or _max_health <= 0.0:
+		return false
+	if not _target or not is_instance_valid(_target):
+		return false
+	var current_ratio: float = _health / maxf(_max_health, 1.0)
+	return _last_laser_hp_ratio - current_ratio >= BOSS_ULTIMATE_LASER_HP_INTERVAL
+
+func _start_ultimate_laser() -> void:
+	_last_laser_hp_ratio = _health / maxf(_max_health, 1.0)
+	_shield_active = true
+	_ultimate_laser_charging = true
+	_ultimate_laser_firing = false
+	_ultimate_laser_charge_timer = BOSS_ULTIMATE_LASER_CHARGE
+	_ultimate_laser_fire_timer = 0.0
+	_velocity_blend = Vector2.ZERO
+	_enter_state(State.ATTACK, BOSS_ULTIMATE_LASER_CHARGE + BOSS_ULTIMATE_LASER_TRAVEL)
+	modulate = Color(1.4, 0.55, 0.45, 1.0)
+	## 显示护盾光晕
+	if _sprite:
+		_sprite.modulate = Color(0.65, 0.85, 1.2, 1.0)
+	var scene := get_tree().current_scene
+	if scene and scene.has_method("broadcast_boss_ultimate_laser_charge"):
+		scene.broadcast_boss_ultimate_laser_charge(global_position, BOSS_ULTIMATE_LASER_CHARGE)
+
+func _tick_ultimate_laser(delta: float) -> void:
+	_face_target(delta)
+	if _ultimate_laser_charging:
+		_ultimate_laser_charge_timer -= delta
+		var pulse: float = 1.0 + sin(Time.get_ticks_msec() * 0.026) * 0.18
+		if _sprite:
+			_sprite.modulate = Color(pulse, 0.42 + pulse * 0.18, 0.38 + pulse * 0.12, 1.0)
+		if _ultimate_laser_charge_timer <= 0.0:
+			_fire_ultimate_laser()
+		return
+	if _ultimate_laser_firing:
+		_ultimate_laser_fire_timer -= delta
+		if _ultimate_laser_fire_timer <= BOSS_ULTIMATE_LASER_HOLD_SECONDS and _ultimate_laser_fire_timer > 0.0:
+			_apply_continuous_laser_damage(delta)
+		if _ultimate_laser_fire_timer <= 0.0:
+			_ultimate_laser_firing = false
+			_state_timer = 0.0
+			modulate = Color(1.0, 1.0, 1.0, 1.0)
+			if _sprite:
+				_sprite.modulate = Color(1.0, 1.0, 1.0, 1.0)
+			_pick_state()
+
+func _fire_ultimate_laser() -> void:
+	_ultimate_laser_charging = false
+	_ultimate_laser_firing = true
+	_ultimate_laser_fire_timer = BOSS_ULTIMATE_LASER_TRAVEL + BOSS_ULTIMATE_LASER_HOLD_SECONDS
+	_ultimate_laser_start = global_position
+	var aim_point: Vector2 = _predict_target_position()
+	var dir: Vector2 = _ultimate_laser_start.direction_to(aim_point)
+	if dir.length_squared() <= 0.001:
+		dir = Vector2.DOWN
+	var screen: Vector2 = get_viewport_rect().size
+	_ultimate_laser_end = _ultimate_laser_start + dir.normalized() * screen.length() * 1.35
+	var scene := get_tree().current_scene
+	if scene and scene.has_method("broadcast_boss_ultimate_laser_fire"):
+		scene.broadcast_boss_ultimate_laser_fire(_ultimate_laser_start, _ultimate_laser_end, BOSS_ULTIMATE_LASER_TRAVEL, BOSS_ULTIMATE_LASER_WIDTH, BOSS_ULTIMATE_LASER_HOLD_SECONDS)
+
+func _apply_continuous_laser_damage(delta: float) -> void:
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
+	for player in get_tree().get_nodes_in_group("player"):
+		if not (player is Node2D) or not is_instance_valid(player):
+			continue
+		var pos := (player as Node2D).global_position
+		var dist := _distance_to_beam_center(pos)
+		if dist < 0.0 or dist > BOSS_ULTIMATE_LASER_WIDTH * 0.5:
+			continue
+		var ratio: float = dist / (BOSS_ULTIMATE_LASER_WIDTH * 0.5)
+		if ratio <= ULTIMATE_LASER_INNER_RATIO:
+			## 内圈 - 秒杀
+			if player.has_method("force_kill"):
+				player.force_kill()
+			elif player.has_method("take_damage"):
+				player.take_damage(99999.0)
+		else:
+			## 外圈 - 每秒固定伤害
+			if player.has_method("take_damage"):
+				player.take_damage(BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC * delta)
+
+func _distance_to_beam_center(point: Vector2) -> float:
+	var ab := _ultimate_laser_end - _ultimate_laser_start
+	var len_sq := ab.length_squared()
+	if len_sq <= 0.001:
+		return -1.0
+	var t := clampf((point - _ultimate_laser_start).dot(ab) / len_sq, 0.0, 1.0)
+	var closest := _ultimate_laser_start + ab * t
+	var dist := point.distance_to(closest)
+	if dist > BOSS_ULTIMATE_LASER_WIDTH * 0.5:
+		return -1.0
+	return dist
 
 func _update_phase_from_health(emit_event: bool) -> void:
 	var ratio: float = _health / max(_max_health, 1.0)
@@ -673,6 +794,10 @@ func take_damage(amount: float = 1.0, _killer_peer_id: int = -1) -> void:
 	var applied: float = max(amount, 0.0)
 	if applied <= 0.0:
 		return
+	if _shield_active:
+		## 激光期间无敌护罩吸收所有伤害
+		_hit_flash()
+		return
 	_health -= applied
 	if _fire_pressure_window > 0.0:
 		_fire_pressure_hits += 1
@@ -725,7 +850,6 @@ func die() -> void:
 	if _dead:
 		return
 	_dead = true
-	GameState.on_boss_killed()
 	GameState.add_score(200 * _level, -1)
 	_spawn_core_fragments()
 	boss_died.emit()

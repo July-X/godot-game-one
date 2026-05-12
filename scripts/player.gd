@@ -156,6 +156,15 @@ func take_damage(amount: float = 1.0) -> void:
 		died.emit()
 		queue_free()
 
+func force_kill() -> void:
+	if not GameState.is_player_alive(peer_id):
+		return
+	var lethal_damage := GameState.get_current_health(peer_id) + GameState.get_shield_layers(peer_id) + 9999
+	GameState.take_damage(lethal_damage, peer_id)
+	_feedback.spawn_explosion()
+	died.emit()
+	queue_free()
+
 func _normalize_incoming_damage(amount: float) -> int:
 	if amount <= 0.0:
 		return 0

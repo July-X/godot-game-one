@@ -11,8 +11,6 @@ signal laser_used(peer_id)
 signal player_scores_changed(scores, total_score)
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
-signal boss_defeated
-signal boss_reward_applied
 
 const START_HEALTH: int = 50
 const HEALTH_CAP: int = 2000
@@ -40,8 +38,6 @@ const SKILL_COOLDOWN_MAX: float = 15.0
 var laser_cooldown: float = 0.0
 const LASER_COOLDOWN_MAX: float = 10.0
 
-## Boss 系统
-var boss_active: bool = false
 var boss_encounter_count: int = 0
 var last_boss_level: int = 0
 
@@ -155,7 +151,6 @@ func _to_dict() -> Dictionary:
 		"kills": kills,
 		"total_kills": total_kills,
 		"game_running": game_running,
-		"boss_active": boss_active,
 		"elite_encounter_count": elite_encounter_count,
 		"post_elite_multiplier": post_elite_multiplier,
 		"last_elite_threshold": last_elite_threshold,
@@ -264,7 +259,6 @@ func _from_dict(data: Dictionary) -> void:
 	kills = data.get("kills", 0)
 	total_kills = data.get("total_kills", 0)
 	game_running = data.get("game_running", false)
-	boss_active = data.get("boss_active", false)
 	elite_encounter_count = data.get("elite_encounter_count", 0)
 	post_elite_multiplier = data.get("post_elite_multiplier", 1.0)
 	last_elite_threshold = data.get("last_elite_threshold", 0)
@@ -314,7 +308,6 @@ func reset_game() -> void:
 	last_elite_threshold = 0
 	elite_encounter_count = 0
 	post_elite_multiplier = 1.0
-	boss_active = false
 	boss_encounter_count = 0
 	last_boss_level = 0
 	_player_states.clear()
@@ -425,7 +418,7 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 			max_health = s.max_health
 			health_changed.emit(current_health, max_health)
 		SFX.play_player_hurt()
-		if int(s.current_health) <= 0 and _is_local_peer(pid):
+		if int(s.current_health) <= 0 and _is_local_peer(pid) and not NetworkManager.is_online():
 			game_over.emit(score, level)
 	if int(s.current_health) <= 0:
 		s.current_health = 0
@@ -710,20 +703,8 @@ func apply_reward(reward_type: String, peer_id: int = -1) -> void:
 	_mark_dirty()
 
 func on_boss_started() -> void:
-	boss_active = true
 	boss_encounter_count += 1
 	_mark_dirty()
-
-func on_boss_killed() -> void:
-	boss_active = false
-	boss_defeated.emit()
-	_mark_dirty()
-
-func force_set_boss_active(v: bool) -> void:
-	boss_active = v
-
-func notify_boss_reward_applied() -> void:
-	boss_reward_applied.emit()
 
 func stop_game() -> void:
 	if not game_running:

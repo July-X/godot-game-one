@@ -17,6 +17,7 @@ func update(delta: float) -> void:
 	_invincible_timer = max(_invincible_timer - delta, 0.0)
 	_update_walk_animation(delta)
 	_update_invincible_flash()
+	_update_engine_breathing(delta)
 
 
 func update_walk_animation(delta: float) -> void:
@@ -29,6 +30,16 @@ func reset_pose() -> void:
 	if _engine_glow:
 		_engine_glow.position.y = 32.0
 
+
+var _breath_timer: float = 0.0
+
+func _update_engine_breathing(delta: float) -> void:
+	if not _engine_glow or not _engine_glow.visible:
+		return
+	_breath_timer += delta * 2.5
+	var breath: float = 0.85 + sin(_breath_timer) * 0.15
+	_engine_glow.modulate.a = breath
+	_engine_glow.scale.x = breath
 
 func _update_walk_animation(delta: float) -> void:
 	if _player.velocity.length() > 10.0:
@@ -54,6 +65,8 @@ func _update_invincible_flash() -> void:
 
 ## ── 外观刷新 ────────────────────────────────────────
 
+var _base_breath_alpha: float = 0.6
+
 func update_appearance() -> void:
 	var visual_tier: int = _get_visual_tier()
 	var shoot_level: int = GameState.get_shoot_level(_player.peer_id)
@@ -63,7 +76,8 @@ func update_appearance() -> void:
 	if _engine_glow:
 		_engine_glow.visible = true
 		_engine_glow.position.y = 32.0
-		_engine_glow.modulate = Color(1.0, 0.6, 0.2, 0.6 + shoot_level * 0.2)
+		_base_breath_alpha = 0.6 + shoot_level * 0.2
+		_engine_glow.modulate = Color(1.0, 0.6, 0.2, _base_breath_alpha)
 		_engine_glow.scale = Vector2(1.0, 1.0 + shoot_level * 0.06)
 		if _engine_glow.texture == null:
 			var tex_path: String = "res://assets/sprites/ui/engine_flame.png"
@@ -86,7 +100,10 @@ func _apply_peer_tint() -> void:
 
 func _get_visual_tier() -> int:
 	var tier := int((GameState.level - 1) / 5) + 1
-	return clampi(tier, 1, 5)
+	tier = clampi(tier, 1, 5)
+	if NetworkManager.is_online() and _player.peer_id != 1:
+		tier = maxi(tier - 1, 1)
+	return tier
 
 
 ## ── 受击表现 ────────────────────────────────────────

@@ -38,7 +38,6 @@ var _boss_status_root: Control = null
 var _boss_status_fill: ColorRect = null
 var _boss_status_label: Label = null
 var _boss_status_phase: Label = null
-var _boss_buff_banner: Control = null
 const POWERUP_BAR_WIDTH: int = 120
 const POWERUP_BAR_HEIGHT: int = 14
 const BOSS_BONUS_LASER_CD_MAX: float = 5.0
@@ -77,7 +76,6 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_changed)
 	GameState.health_changed.connect(_on_health_changed)
 	GameState.powerup_collected.connect(_on_powerup_collected)
-	GameState.boss_reward_applied.connect(_on_boss_reward_applied)
 	GameState.player_scores_changed.connect(_on_player_scores_changed)
 	_update_score(0)
 	_update_level(1)
@@ -114,47 +112,19 @@ func _setup_skill_bar() -> void:
 
 ## 动态创建单个技能按钮
 func _create_skill_slot(data: Dictionary) -> void:
-	var slot_size := _get_skill_slot_size()
+	var slot_size := _get_skill_slot_size() * 0.8
 
 	# Button 容器
 	var btn := Button.new()
 	btn.custom_minimum_size = slot_size
 	btn.size = slot_size
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	var normal_sb := StyleBoxFlat.new()
-	normal_sb.bg_color = Color(0.08, 0.10, 0.18, 0.82)
-	normal_sb.border_color = Color(0.35, 0.55, 0.85, 0.95)
-	normal_sb.border_width_left = 2
-	normal_sb.border_width_top = 2
-	normal_sb.border_width_right = 2
-	normal_sb.border_width_bottom = 2
-	var hover_sb := StyleBoxFlat.new()
-	hover_sb.bg_color = Color(0.12, 0.15, 0.25, 0.92)
-	hover_sb.border_color = Color(0.55, 0.75, 1.0, 1.0)
-	hover_sb.border_width_left = 2
-	hover_sb.border_width_top = 2
-	hover_sb.border_width_right = 2
-	hover_sb.border_width_bottom = 2
-	var pressed_sb := StyleBoxFlat.new()
-	pressed_sb.bg_color = Color(0.20, 0.22, 0.34, 0.96)
-	pressed_sb.border_color = Color(0.92, 0.82, 0.35, 1.0)
-	pressed_sb.border_width_left = 2
-	pressed_sb.border_width_top = 2
-	pressed_sb.border_width_right = 2
-	pressed_sb.border_width_bottom = 2
-	var disabled_sb := StyleBoxFlat.new()
-	disabled_sb.bg_color = Color(0.05, 0.05, 0.08, 0.55)
-	disabled_sb.border_color = Color(0.18, 0.18, 0.26, 0.75)
-	disabled_sb.border_width_left = 2
-	disabled_sb.border_width_top = 2
-	disabled_sb.border_width_right = 2
-	disabled_sb.border_width_bottom = 2
-	btn.add_theme_stylebox_override("normal", normal_sb)
-	btn.add_theme_stylebox_override("pressed", pressed_sb)
-	btn.add_theme_stylebox_override("hover", hover_sb)
-	btn.add_theme_stylebox_override("disabled", disabled_sb)
-	btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.95))
-	btn.add_theme_font_size_override("font_size", 16)
+	var empty_sb := StyleBoxFlat.new()
+	empty_sb.bg_color = Color(0, 0, 0, 0)
+	btn.add_theme_stylebox_override("normal", empty_sb)
+	btn.add_theme_stylebox_override("pressed", empty_sb)
+	btn.add_theme_stylebox_override("hover", empty_sb)
+	btn.add_theme_stylebox_override("disabled", empty_sb)
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.z_index = 30
 	btn.pressed.connect(_on_skill_slot_pressed.bind(data))
@@ -163,7 +133,7 @@ func _create_skill_slot(data: Dictionary) -> void:
 	# 半透明背景框
 	var bg := ColorRect.new()
 	bg.size = slot_size
-	bg.color = Color(0.1, 0.12, 0.2, 0.30)
+	bg.color = Color(0, 0, 0, 0)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.z_index = 1
 	btn.add_child(bg)
@@ -235,7 +205,7 @@ func _get_skill_slot_size() -> Vector2:
 func _layout_skill_bar() -> void:
 	if _skill_bar == null:
 		return
-	var slot_size := _get_skill_slot_size()
+	var slot_size := _get_skill_slot_size() * 0.8
 	var gap: float = 8.0
 	var count: int = max(_skill_slots.size(), 2)
 	var bar_size := Vector2(slot_size.x * float(count) + gap * float(count - 1), slot_size.y)
@@ -298,7 +268,7 @@ func _verify_skill_bar_layout() -> void:
 		or rect.end.y < 0.0
 	if outside:
 		push_error("[HUD] SkillBar outside design canvas: rect=%s canvas=%s. Resetting to bottom-right anchors." % [str(rect), str(canvas_size)])
-		var slot_size := _get_skill_slot_size()
+		var slot_size := _get_skill_slot_size() * 0.8
 		var bar_size := Vector2(slot_size.x * 2.0 + 8.0, slot_size.y)
 		_skill_bar.anchor_left = 1.0
 		_skill_bar.anchor_top = 1.0
@@ -409,9 +379,6 @@ func _on_game_over(final_score: int, final_level: int) -> void:
 func _on_powerup_collected(type: String) -> void:
 	_update_powerup_display()
 
-func _on_boss_reward_applied() -> void:
-	_update_powerup_display()
-
 func _refresh_powerup_display_if_needed() -> void:
 	var spread_level := GameState.get_shoot_level()
 	var speed_level := GameState.get_shoot_speed_level()
@@ -460,7 +427,7 @@ func _update_player_scores(scores: Dictionary, total_score: int) -> void:
 		var pid: int = int(String(key))
 		rows.append("%s: %d" % [_peer_label(pid), int(scores[key])])
 	if rows.is_empty():
-		_player_scores_label.text = "A: 0  |  B: 0"
+		_player_scores_label.text = "P1: 0  |  P2: 0"
 	else:
 		_player_scores_label.text = "  |  ".join(rows)
 	_score_label.text = "总分: %d" % total_score
@@ -468,11 +435,11 @@ func _update_player_scores(scores: Dictionary, total_score: int) -> void:
 	_cached_player_scores_signature = str(scores)
 
 func _peer_label(peer_id: int) -> String:
+	## ENet 的 Client peer_id 不保证固定为 2；本项目限制 1 个 Client，
+	## 因此 UI 层按角色槽位显示：Host=P1，唯一 Client=P2。
 	if peer_id == 1:
-		return "A"
-	if peer_id == 2:
-		return "B"
-	return "P%d" % peer_id
+		return "P1"
+	return "P2"
 
 func _update_health(current: int, maximum: int) -> void:
 	if _health_bar:
@@ -763,7 +730,7 @@ func _refresh_leaderboard() -> void:
 func _format_leaderboard_players(entry: Dictionary) -> String:
 	var players: Dictionary = entry.get("players", {})
 	if players.is_empty():
-		return "A:0 B:0"
+		return "P1:0 P2:0"
 	var keys: Array = players.keys()
 	keys.sort()
 	var parts: Array[String] = []
@@ -773,7 +740,7 @@ func _format_leaderboard_players(entry: Dictionary) -> String:
 			continue
 		parts.append("%s:%d" % [_peer_label(int(key_str)), int(players[key])])
 	if parts.is_empty():
-		return "A:0 B:0"
+		return "P1:0 P2:0"
 	return " ".join(parts)
 
 func _update_platform_hints() -> void:
@@ -836,70 +803,6 @@ func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.
 	tween.tween_interval(maxf(hold, 0.2))
 	tween.tween_property(banner, "modulate:a", 0.0, 0.28)
 	tween.tween_callback(banner.queue_free)
-
-func show_boss_buff_banner(title: String, desc: String, accent: Color = Color(1.0, 0.78, 0.24, 1.0)) -> void:
-	if _boss_buff_banner and is_instance_valid(_boss_buff_banner):
-		_boss_buff_banner.queue_free()
-	var canvas_size := _get_design_canvas_size()
-	var panel := Panel.new()
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.size = Vector2(560.0, 92.0)
-	panel.position = Vector2(maxf((canvas_size.x - panel.size.x) * 0.5, 16.0), 76.0)
-	panel.z_index = 88
-	panel.modulate.a = 0.0
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.045, 0.08, 0.92)
-	sb.border_width_left = 2
-	sb.border_width_top = 2
-	sb.border_width_right = 2
-	sb.border_width_bottom = 2
-	sb.border_color = accent
-	panel.add_theme_stylebox_override("panel", sb)
-	add_child(panel)
-	_boss_buff_banner = panel
-
-	var stripe := ColorRect.new()
-	stripe.position = Vector2(0.0, 0.0)
-	stripe.size = Vector2(8.0, panel.size.y)
-	stripe.color = accent
-	stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(stripe)
-
-	var title_lbl := Label.new()
-	title_lbl.position = Vector2(24.0, 12.0)
-	title_lbl.size = Vector2(panel.size.x - 48.0, 30.0)
-	title_lbl.text = title
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	title_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	title_lbl.add_theme_font_size_override("font_size", 22)
-	title_lbl.add_theme_color_override("font_color", accent)
-	title_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
-	title_lbl.add_theme_constant_override("shadow_outline_size", 2)
-	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(title_lbl)
-
-	var desc_lbl := Label.new()
-	desc_lbl.position = Vector2(24.0, 48.0)
-	desc_lbl.size = Vector2(panel.size.x - 48.0, 26.0)
-	desc_lbl.text = desc
-	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	desc_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	desc_lbl.add_theme_font_size_override("font_size", 16)
-	desc_lbl.add_theme_color_override("font_color", Color(0.95, 0.98, 1.0, 0.98))
-	desc_lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.85))
-	desc_lbl.add_theme_constant_override("shadow_outline_size", 1)
-	desc_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(desc_lbl)
-
-	var tween := create_tween()
-	tween.tween_property(panel, "modulate:a", 1.0, 0.16)
-	tween.tween_interval(2.4)
-	tween.tween_property(panel, "modulate:a", 0.0, 0.25)
-	tween.tween_callback(func():
-		if _boss_buff_banner == panel:
-			_boss_buff_banner = null
-		panel.queue_free()
-	)
 
 func show_boss_status(current: float, maximum: float, phase_name: String) -> void:
 	_ensure_boss_status_ui()

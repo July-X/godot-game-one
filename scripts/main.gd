@@ -9,6 +9,7 @@ extends Node2D
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _laser_scene = preload("res://scenes/entities/laser_bolt.tscn")
+var _boss_ultimate_laser_visual_script = preload("res://scripts/boss_ultimate_laser_visual.gd")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
@@ -365,7 +366,7 @@ func _on_networked_player_died(p_peer_id: int) -> void:
 	_alive_players.erase(p_peer_id)
 	## 合作模式：仅当全员死亡（或全部离场）才结束。
 	if _alive_players.is_empty():
-		_on_player_died()
+		_finish_multiplayer_game_over(GameState.score, GameState.level)
 	else:
 		_refresh_primary_player_target()
 
@@ -405,6 +406,10 @@ func _reload_as_single_player_clean(delay_seconds: float = 0.0) -> void:
 func _rpc_despawn_player(p_peer_id: int) -> void:
 	if not _players.has(p_peer_id):
 		return
+	var was_local_player := NetworkManager.is_online() \
+		and multiplayer.has_multiplayer_peer() \
+		and multiplayer.multiplayer_peer != null \
+		and p_peer_id == multiplayer.get_unique_id()
 	var node: Node = _players[p_peer_id]
 	if is_instance_valid(node):
 		node.queue_free()
@@ -412,6 +417,8 @@ func _rpc_despawn_player(p_peer_id: int) -> void:
 	_alive_players.erase(p_peer_id)
 	if _player != null and is_instance_valid(_player) and _player.name == str(p_peer_id):
 		_player = null
+	if was_local_player and not _alive_players.is_empty():
+		_show_death_marquee_text("你已坠毁，等待队友继续战斗")
 
 func _spawn_hud() -> void:
 	_hud = _hud_scene.instantiate()
@@ -754,9 +761,7 @@ func _on_elite_died() -> void:
 	_elite = null
 	GameState.post_elite_multiplier = 1.0 + GameState.elite_encounter_count * 0.05
 	if _pending_boss_level > 0 and GameState.game_running:
-		var pending_level: int = _pending_boss_level
-		_pending_boss_level = 0
-		call_deferred("_on_boss_spawn_requested", pending_level)
+		call_deferred("_consume_pending_boss_spawn")
 
 func _show_elite_warning() -> void:
 	if _hud and _hud.has_method("show_center_banner"):
@@ -785,11 +790,11 @@ func _show_elite_warning() -> void:
 func _on_boss_spawn_requested(level: int) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		return
-	if _boss != null and is_instance_valid(_boss):
+	if _has_active_boss():
 		return
 	if not GameState.game_running:
 		return
-	if _elite != null and is_instance_valid(_elite):
+	if _is_elite_blocking_boss_spawn():
 		## 精英仍在场时，缓存本次 Boss 触发，待精英死亡后立即补发
 		_pending_boss_level = maxi(_pending_boss_level, level)
 		return
@@ -799,10 +804,50 @@ func _on_boss_spawn_requested(level: int) -> void:
 	timer.timeout.connect(func():
 		if not GameState.game_running:
 			return
+		if _is_elite_blocking_boss_spawn():
+			_pending_boss_level = maxi(_pending_boss_level, level)
+			return
 		call_deferred("_spawn_boss", level)
 	)
 
+func _is_elite_blocking_boss_spawn() -> bool:
+	if _elite == null:
+		return false
+	if not is_instance_valid(_elite):
+		_elite = null
+		return false
+	if _elite.is_queued_for_deletion():
+		_elite = null
+		return false
+	return true
+
+func _has_active_boss() -> bool:
+	if _boss == null:
+		return false
+	if not is_instance_valid(_boss):
+		_boss = null
+		return false
+	if _boss.is_queued_for_deletion():
+		_boss = null
+		return false
+	return true
+
+func _consume_pending_boss_spawn() -> void:
+	if _pending_boss_level <= 0 or not GameState.game_running:
+		return
+	if _is_elite_blocking_boss_spawn():
+		call_deferred("_consume_pending_boss_spawn")
+		return
+	var pending_level: int = _pending_boss_level
+	_pending_boss_level = 0
+	_on_boss_spawn_requested(pending_level)
+
 func _spawn_boss(level: int) -> void:
+	if _has_active_boss():
+		return
+	if _is_elite_blocking_boss_spawn():
+		_pending_boss_level = maxi(_pending_boss_level, level)
+		return
 	_enter_boss_fight_mode()
 	_boss_reward_claimed_peers.clear()
 	_boss = _boss_scene.instantiate()
@@ -859,7 +904,6 @@ func _on_boss_died() -> void:
 		if multiplayer.is_server():
 			_rpc_despawn_entity.rpc(eid)
 	_boss = null
-	GameState.force_set_boss_active(false)
 	_exit_boss_fight_mode()
 	if _hud and _hud.has_method("hide_boss_status"):
 		_hud.hide_boss_status()
@@ -1013,7 +1057,6 @@ func _apply_boss_reward_for_peer(reward_type: String, peer_id: int) -> void:
 			return
 		_boss_reward_claimed_peers[resolved_peer] = true
 	GameState.apply_reward(reward_type, resolved_peer)
-	GameState.notify_boss_reward_applied()
 	if NetworkManager.is_online() and multiplayer.is_server() and GameState.has_method("force_sync_to_peer"):
 		GameState.force_sync_to_peer(resolved_peer)
 	_send_boss_reward_feedback(resolved_peer, reward_type)
@@ -1027,12 +1070,12 @@ func _boss_reward_pool() -> Array[String]:
 	return ["laser_cd", "bullet_count", "damage", "speed"]
 
 func _on_player_died() -> void:
+	if NetworkManager.is_online():
+		var peer_id := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null else 1
+		_on_networked_player_died(peer_id)
+		return
 	if _player and is_instance_valid(_player):
 		_alive_players.erase(_player.peer_id)
-	if NetworkManager.is_online() and not _alive_players.is_empty():
-		_show_death_marquee_text("你已坠毁，等待队友继续战斗")
-		_refresh_primary_player_target()
-		return
 	GameState.stop_game()
 	_pending_boss_level = 0
 	_clear_runtime_entities_on_game_over()
@@ -1043,9 +1086,23 @@ func _on_player_died() -> void:
 func _on_game_over_triggered(final_score: int, final_level: int) -> void:
 	if NetworkManager.is_online() and not _alive_players.is_empty():
 		return
-	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_force_game_over.rpc(final_score, final_level)
+	if NetworkManager.is_online():
+		_finish_multiplayer_game_over(final_score, final_level)
+		return
 	_on_player_died()
+
+func _finish_multiplayer_game_over(final_score: int, final_level: int) -> void:
+	if not NetworkManager.is_online():
+		_on_player_died()
+		return
+	GameState.stop_game()
+	_pending_boss_level = 0
+	if multiplayer.is_server():
+		_rpc_force_game_over.rpc(final_score, final_level)
+	_clear_runtime_entities_on_game_over()
+	_show_death_marquee()
+	if _hud and is_instance_valid(_hud) and _hud.has_method("_on_game_over"):
+		_hud._on_game_over(final_score, final_level)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_force_game_over(final_score: int, final_level: int) -> void:
@@ -1604,6 +1661,32 @@ func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_
 		return
 	_pending_laser_spawns.append([pos.x, pos.y, angle, damage, owner_peer_id])
 
+func broadcast_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
+	_show_boss_ultimate_laser_charge(pos, duration)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_show_boss_ultimate_laser_charge.rpc(pos.x, pos.y, duration)
+
+func broadcast_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
+	_show_boss_ultimate_laser_fire(from, to, travel_time, width)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_show_boss_ultimate_laser_fire.rpc(from.x, from.y, to.x, to.y, travel_time, width)
+
+func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
+	var visual := Node2D.new()
+	visual.set_script(_boss_ultimate_laser_visual_script)
+	add_child(visual)
+	if visual.has_method("setup_charge"):
+		visual.setup_charge(pos, duration)
+	if _hud and _hud.has_method("show_center_banner"):
+		_hud.show_center_banner("究极激光炮充能", 0.9, Color(1.0, 0.28, 0.12, 1.0))
+
+func _show_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float) -> void:
+	var visual := Node2D.new()
+	visual.set_script(_boss_ultimate_laser_visual_script)
+	add_child(visual)
+	if visual.has_method("setup_beam"):
+		visual.setup_beam(from, to, travel_time, width)
+
 ## 每帧 flush 待发送激光
 func _flush_laser_spawns() -> void:
 	if _pending_laser_spawns.is_empty():
@@ -1649,6 +1732,14 @@ func _rpc_spawn_bullets(data: Array) -> void:
 func _rpc_set_boss_bg(active: bool) -> void:
 	if _bg_color:
 		_bg_color.color = Color(0.14, 0.03, 0.03, 1.0) if active else Color(0.06, 0.06, 0.12, 1.0)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_show_boss_ultimate_laser_charge(pos_x: float, pos_y: float, duration: float) -> void:
+	_show_boss_ultimate_laser_charge(Vector2(pos_x, pos_y), duration)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_show_boss_ultimate_laser_fire(from_x: float, from_y: float, to_x: float, to_y: float, travel_time: float, width: float) -> void:
+	_show_boss_ultimate_laser_fire(Vector2(from_x, from_y), Vector2(to_x, to_y), travel_time, width)
 
 ## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
 ## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）

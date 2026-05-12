@@ -34,6 +34,11 @@ var _debug_tick: float = 0.0
 func _ready() -> void:
 	_connect_signals()
 	_show_mode_select()
+	## 隐藏联机调试信息（DebugTitle + DebugInfo），保留内部刷新逻辑供后续排查
+	_debug_info.visible = false
+	var _debug_title := get_node_or_null("VBox/DebugTitle")
+	if _debug_title:
+		_debug_title.visible = false
 	_refresh_debug_info()
 
 
@@ -78,6 +83,7 @@ func _show_mode_select() -> void:
 
 
 func _show_host_panel() -> void:
+	## 房主面板：创建 ENet 服务器 + 通过 Harmony/NSD 发布房间
 	_panel_mode_select.visible = false
 	_panel_host.visible = true
 	_panel_join.visible = false
@@ -104,6 +110,7 @@ func _show_host_panel() -> void:
 
 
 func _show_join_panel() -> void:
+	## 加入面板：启动 Harmony/NSD 扫描，发现附近房间后展示可点击列表
 	_panel_mode_select.visible = false
 	_panel_host.visible = false
 	_panel_join.visible = true
@@ -196,6 +203,7 @@ func _on_host_list_updated(hosts: Array) -> void:
 
 
 func _on_host_button_pressed(ip: String, port: int) -> void:
+	## 玩家点击房间按钮后发起 ENet 连接
 	var normalized_ip := ip.strip_edges()
 	if not _is_valid_ipv4(normalized_ip):
 		_lbl_join_status.text = "❌ 房间地址无效：%s（仅支持 IPv4）" % normalized_ip
@@ -211,6 +219,7 @@ func _on_host_button_pressed(ip: String, port: int) -> void:
 
 
 func _on_quick_join_pressed() -> void:
+	## 快速加入第一个可用房间
 	var hosts := HarmonyBridge.get_discovered_hosts()
 	if hosts.is_empty():
 		_lbl_join_status.text = "❌ 未发现可加入房间"
@@ -220,6 +229,7 @@ func _on_quick_join_pressed() -> void:
 
 
 func _deferred_join_host(ip: String, port: int) -> void:
+	## 延迟一帧发起连接，避免信号回调中直接操作网络导致的时序问题
 	if not _is_valid_ipv4(ip):
 		_lbl_join_status.text = "❌ 房间地址无效：%s" % ip
 		return
