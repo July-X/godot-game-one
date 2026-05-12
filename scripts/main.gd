@@ -45,10 +45,11 @@ var _entities: Dictionary = {}
 var _entity_target_positions: Dictionary = {}
 var _despawned_entity_ids: Dictionary = {}
 var _entity_sync_timer: float = 0.0
+var _health_sync_timer: float = 0.0
 var _last_entity_resync_request_msec: int = 0
 var _boss_reward_claimed_peers: Dictionary = {}
-const ENTITY_SYNC_INTERVAL: float = 0.033
-const ENTITY_SYNC_STRIDE: int = 5
+const ENTITY_SYNC_INTERVAL: float = 0.022
+const ENTITY_SYNC_STRIDE: int = 3
 const ENTITY_SHIELD_SYNC_STRIDE: int = 3
 const ENTITY_ROTATION_SYNC_STRIDE: int = 2
 const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
@@ -444,6 +445,10 @@ func _process(delta: float) -> void:
 			if _entity_sync_timer <= 0.0:
 				_entity_sync_timer = ENTITY_SYNC_INTERVAL
 				_batch_sync_entity_positions()
+			_health_sync_timer -= delta
+			if _health_sync_timer <= 0.0:
+				_health_sync_timer = 0.1
+				_batch_sync_entity_health()
 		_flush_bullet_spawns()
 		_flush_laser_spawns()
 
@@ -1556,8 +1561,6 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array) -> void:
 		var eid := int(data[i])
 		var x := data[i + 1]
 		var y := data[i + 2]
-		var hp := data[i + 3]
-		var max_hp := data[i + 4]
 		i += ENTITY_SYNC_STRIDE
 		if not _entities.has(eid) or not is_instance_valid(_entities[eid]):
 			if not _despawned_entity_ids.has(eid):
@@ -1571,8 +1574,20 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array) -> void:
 			node.global_position = target_pos
 			node.set_meta("net_sync_inited", true)
 		_entity_target_positions[eid] = target_pos
-		if node.has_method("apply_network_health"):
-			node.apply_network_health(hp, max_hp)
+
+## Host → Client：同步实体血量（低频 10Hz）
+@rpc("authority", "unreliable", "call_remote")
+func _rpc_sync_entity_health(data: PackedFloat32Array) -> void:
+	var i := 0
+	while i + 2 < data.size():
+		var eid := int(data[i])
+		var hp := data[i + 1]
+		var max_hp := data[i + 2]
+		i += 3
+		if _entities.has(eid) and is_instance_valid(_entities[eid]):
+			var node: Node = _entities[eid]
+			if node.has_method("apply_network_health"):
+				node.apply_network_health(hp, max_hp)
 
 ## Host → Client：只同步带护盾实体的护盾值，避免所有实体同步包膨胀。
 @rpc("authority", "reliable", "call_remote")
@@ -1602,6 +1617,21 @@ func _rpc_sync_entity_rotations(data: PackedFloat32Array) -> void:
 				node.apply_network_rotation(rot)
 
 ## Host：打包所有实体位置
+## Host：每 100ms 单独发送一次血量数据
+func _batch_sync_entity_health() -> void:
+	if _entities.is_empty():
+		return
+	var health_data := PackedFloat32Array()
+	for eid: int in _entities:
+		var node = _entities[eid]
+		if is_instance_valid(node) and node.has_method("get_network_health"):
+			health_data.append(eid as float)
+			health_data.append(float(node.get_network_health()))
+			if node.has_method("get_network_max_health"):
+				health_data.append(float(node.get_network_max_health()))
+	if health_data.size() > 0:
+		_rpc_sync_entity_health.rpc(health_data)
+
 func _batch_sync_entity_positions() -> void:
 	if _entities.is_empty():
 		return
@@ -1614,14 +1644,6 @@ func _batch_sync_entity_positions() -> void:
 			data.append(eid as float)
 			data.append(node.global_position.x)
 			data.append(node.global_position.y)
-			var hp: float = -1.0
-			var max_hp: float = -1.0
-			if node.has_method("get_network_health"):
-				hp = float(node.get_network_health())
-			if node.has_method("get_network_max_health"):
-				max_hp = float(node.get_network_max_health())
-			data.append(hp)
-			data.append(max_hp)
 			if node.has_method("get_network_shield") and node.has_method("get_network_max_shield"):
 				shield_data.append(eid as float)
 				shield_data.append(float(node.get_network_shield()))

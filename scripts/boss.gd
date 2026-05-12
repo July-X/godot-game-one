@@ -81,6 +81,7 @@ var _dead: bool = false
 var _network_target_rotation: float = 0.0
 var _last_laser_hp_ratio: float = 1.0
 var _shield_active: bool = false
+var _boss_shield_circle: Node2D = null
 var _ultimate_laser_charging: bool = false
 var _ultimate_laser_firing: bool = false
 var _ultimate_laser_charge_timer: float = 0.0
@@ -371,6 +372,28 @@ func _phase_speed_mult() -> float:
 			return 1.2
 	return 1.0
 
+func _create_shield_circle() -> void:
+	if _boss_shield_circle == null:
+		_boss_shield_circle = Node2D.new()
+		_boss_shield_circle.set_script(preload("res://scripts/shield_circle.gd"))
+		_boss_shield_circle.z_index = 3
+		_boss_shield_circle.position = Vector2(0, -12)
+		add_child(_boss_shield_circle)
+		_boss_shield_circle.setup(80.0, Color(0.35, 0.65, 1.0, 0.55))
+
+func _destroy_shield_circle() -> void:
+	if _boss_shield_circle and is_instance_valid(_boss_shield_circle):
+		_boss_shield_circle.queue_free()
+	_boss_shield_circle = null
+
+func _spawn_shield_shatter_burst() -> void:
+	var burst := Node2D.new()
+	burst.set_script(preload("res://scripts/shield_shatter_burst.gd"))
+	burst.global_position = global_position
+	burst.z_index = 8
+	if burst.has_method("setup"):
+		burst.setup(82.0, Color(0.35, 0.65, 1.0, 0.7), 24)
+
 func _should_start_ultimate_laser() -> bool:
 	if _dead or _ultimate_laser_charging or _ultimate_laser_firing:
 		return false
@@ -391,9 +414,13 @@ func _start_ultimate_laser() -> void:
 	_velocity_blend = Vector2.ZERO
 	_enter_state(State.ATTACK, BOSS_ULTIMATE_LASER_CHARGE + BOSS_ULTIMATE_LASER_TRAVEL)
 	modulate = Color(1.4, 0.55, 0.45, 1.0)
-	## 显示护盾光晕
+	## 创建护盾光晕
 	if _sprite:
 		_sprite.modulate = Color(0.65, 0.85, 1.2, 1.0)
+	_create_shield_circle()
+	var scene_shield := get_tree().current_scene
+	if scene_shield and scene_shield.has_method("broadcast_boss_shield_create"):
+		scene_shield.broadcast_boss_shield_create(global_position)
 	var scene := get_tree().current_scene
 	if scene and scene.has_method("broadcast_boss_ultimate_laser_charge"):
 		scene.broadcast_boss_ultimate_laser_charge(global_position, BOSS_ULTIMATE_LASER_CHARGE)
@@ -414,10 +441,19 @@ func _tick_ultimate_laser(delta: float) -> void:
 			_apply_continuous_laser_damage(delta)
 		if _ultimate_laser_fire_timer <= 0.0:
 			_ultimate_laser_firing = false
+			_shield_active = false
+			## 销毁护盾光晕 + 广播
+			_destroy_shield_circle()
+			_spawn_shield_shatter_burst()
+			var scene_shield := get_tree().current_scene
+			if scene_shield and scene_shield.has_method("broadcast_boss_shield_destroy"):
+				scene_shield.broadcast_boss_shield_destroy()
 			_state_timer = 0.0
 			modulate = Color(1.0, 1.0, 1.0, 1.0)
 			if _sprite:
 				_sprite.modulate = Color(1.0, 1.0, 1.0, 1.0)
+			if _health_bar:
+				_health_bar.modulate = Color(1, 1, 1, 1)
 			_pick_state()
 
 func _fire_ultimate_laser() -> void:
