@@ -112,6 +112,13 @@ func trigger_hit() -> void:
 	_invincible_timer = 1.0
 	_spawn_hit_effect()
 	_play_hit_animation()
+	## 受击是"我错了"的信号：震屏要明显、连击要清零，不能让玩家
+	## 挨打了还觉得连击在涨。
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("emit_hit_feedback"):
+		scene.emit_hit_feedback(scene.SHAKE_PLAYER_HURT, 0.05, false)
+	if SFX.has_method("reset_combo"):
+		SFX.reset_combo()
 
 
 func _play_hit_animation() -> void:

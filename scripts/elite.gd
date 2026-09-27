@@ -274,6 +274,9 @@ func _attack_ring() -> void:
 		var a: float = float(i) * TAU / float(count)
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 28, a, 1.0, 380.0, Color(1.0, 0.62, 0.35, 0.95))
 	SFX.play_explosion()
+	var scene_d := get_tree().current_scene
+	if scene_d != null and scene_d.has_method("emit_hit_feedback"):
+		scene_d.emit_hit_feedback(scene_d.SHAKE_ELITE_DEATH, 0.12, false)
 
 func _attack_triple_predictive() -> void:
 	if not _target or not is_instance_valid(_target):
@@ -350,6 +353,11 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 			_shield_break_effect()
 			_phase_b_timer = PHASE_B_EXPOSE_DURATION
 			shield_broken_window_started.emit()
+			## 破盾是玩家集火成功的里程碑：给强震屏 + 短定格，
+			## 让"打穿了"这个瞬间有分量，能直观告诉玩家现在是输出窗口
+			var scene := get_tree().current_scene
+			if scene != null and scene.has_method("emit_hit_feedback"):
+				scene.emit_hit_feedback(scene.SHAKE_ELITE_SHIELD_BREAK, 0.09, false)
 		return
 	var applied_damage: int = amount
 	if _phase_b_timer > 0.0:

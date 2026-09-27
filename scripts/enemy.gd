@@ -166,6 +166,11 @@ func die(killer_peer_id: int = -1) -> void:
 	queue_free()
 
 func _spawn_explosion() -> void:
+	## 击杀反馈：轻震屏。杂兵死亡极其频繁，强度必须压得很低，
+	## 否则连续击杀时画面一直在抖，反而读不清弹幕。
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("add_shake"):
+		scene.add_shake(scene.SHAKE_ENEMY_DEATH)
 	var exp = _explosion_scene.instantiate()
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position

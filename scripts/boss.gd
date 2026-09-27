@@ -426,6 +426,9 @@ func _start_ultimate_laser() -> void:
 	var scene := get_tree().current_scene
 	if scene and scene.has_method("broadcast_boss_ultimate_laser_charge"):
 		scene.broadcast_boss_ultimate_laser_charge(global_position, BOSS_ULTIMATE_LASER_CHARGE)
+	## 终局激光是全场最强预警：蓄力就给强震屏，让玩家的注意力被拽过来
+	if scene != null and scene.has_method("add_shake"):
+		scene.add_shake(scene.SHAKE_LASER_CHARGE)
 
 func _tick_ultimate_laser(delta: float) -> void:
 	_face_target(delta)
@@ -537,6 +540,10 @@ func _update_phase_from_health(emit_event: bool) -> void:
 		_label.text = "%s Lv%d" % [get_phase_name(), _level]
 	if emit_event:
 		phase_changed.emit(get_phase_name())
+		## 阶段切换是节奏转折点，给中等震屏让玩家"感觉到局面变了"
+		var scene := get_tree().current_scene
+		if scene != null and scene.has_method("add_shake"):
+			scene.add_shake(scene.SHAKE_BOSS_PHASE)
 
 func _update_phase_loops(delta: float) -> void:
 	if _phase != BossPhase.OVERLOAD:

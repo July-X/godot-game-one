@@ -12,6 +12,15 @@ var _stream_player_hurt: AudioStreamWAV
 var _stream_ui_confirm: AudioStreamWAV
 var _stream_ui_select: AudioStreamWAV
 var _stream_explosion: AudioStreamWAV
+## 命中确认音按强度分档生成：轻微命中用高频短促"叮"，强度高时降低音高、
+## 拉长尾巴，听感上就是"这一下更重"。比播放同一个音再调音量更有质感。
+var _hit_streams: Array[AudioStreamWAV] = []
+## 连击计数：连续命中时逐步升调，中断后回落。极低成本却最能放大"我打中了"的感觉。
+var _combo: int = 0
+var _combo_decay_left: float = 0.0
+const COMBO_WINDOW: float = 1.2
+const COMBO_MAX_PITCH_STEPS: int = 8
+const COMBO_PITCH_RATIO: float = 1.0595  ## 每个半音（2^(1/12)）
 
 func _ready() -> void:
 	_stream_shoot = _generate_sweep(1200.0, 400.0, 0.06, 0.15)
@@ -20,6 +29,15 @@ func _ready() -> void:
 	_stream_ui_confirm = _generate_tone(800.0, 0.08, 0.25)
 	_stream_ui_select = _generate_tone(500.0, 0.05, 0.15)
 	_stream_explosion = _generate_noise(0.3, 0.4)
+	## 4 档命中音：强度越高，基频越低、尾巴越长
+	var hit_specs: Array = [
+		{freq = 1500.0, dur = 0.04, vol = 0.22},
+		{freq = 1200.0, dur = 0.06, vol = 0.28},
+		{freq = 950.0, dur = 0.09, vol = 0.34},
+		{freq = 720.0, dur = 0.13, vol = 0.40},
+	]
+	for spec in hit_specs:
+		_hit_streams.append(_generate_tone(float(spec.freq), float(spec.dur), float(spec.vol)))
 	for i in _pool_size:
 		var player := AudioStreamPlayer.new()
 		add_child(player)
@@ -35,13 +53,6 @@ func _get_available_player(pool: Array[AudioStreamPlayer]) -> AudioStreamPlayer:
 		if not player.playing:
 			return player
 	return pool[0]
-
-func _play_stream(stream: AudioStreamWAV, pool: Array[AudioStreamPlayer]) -> void:
-	if pool.is_empty():
-		return
-	var p := _get_available_player(pool)
-	p.stream = stream
-	p.play()
 
 func _generate_tone(freq: float, duration: float, volume: float = 0.3, sample_rate: int = 44100) -> AudioStreamWAV:
 	var num_samples := int(duration * sample_rate)
@@ -131,3 +142,44 @@ func play_ui_select() -> void:
 
 func play_explosion() -> void:
 	_play_stream(_stream_explosion, _players)
+
+
+## 命中确认音。intensity 0~1 决定档位，并按连击数整体升调。
+##
+## 连击升调是性价比最高的一行反馈：玩家不需要看数字，只听音高就能感觉到
+## "连着呢"。窗口 1.2 秒，断了就从头再来。
+func play_hit_confirm(intensity: float = 0.2) -> void:
+	if _hit_streams.is_empty():
+		return
+	_combo = _combo + 1 if _combo_decay_left > 0.0 else 1
+	_combo_decay_left = COMBO_WINDOW
+	var idx: int = clampi(int(round(intensity * float(_hit_streams.size() - 1))), 0,
+		_hit_streams.size() - 1)
+	var stream: AudioStreamWAV = _hit_streams[idx]
+	var pitch: float = pow(COMBO_PITCH_RATIO,
+		float(mini(_combo - 1, COMBO_MAX_PITCH_STEPS)))
+	_play_stream(stream, _players, pitch)
+
+
+## 带音高倍率播放，pitch > 1 升调。
+func _play_stream(stream: AudioStreamWAV, pool: Array[AudioStreamPlayer],
+		pitch: float = 1.0) -> void:
+	if pool.is_empty() or stream == null:
+		return
+	var p := _get_available_player(pool)
+	p.stream = stream
+	p.pitch_scale = pitch
+	p.play()
+
+
+func _process(delta: float) -> void:
+	if _combo_decay_left > 0.0:
+		_combo_decay_left -= delta
+		if _combo_decay_left <= 0.0:
+			_combo = 0
+
+
+## 重置连击（玩家受击 / 死亡时调用，避免"挨打了还在爽"的错觉）
+func reset_combo() -> void:
+	_combo = 0
+	_combo_decay_left = 0.0

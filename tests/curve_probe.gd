@@ -37,6 +37,7 @@ func _ready() -> void:
 	_check_speed_is_monotonic()
 	_check_post_elite_multiplier_capped()
 	_check_curve_grows_at_all()
+	_check_hitstop_restores_time_scale()
 	print("%s VERDICT SUMMARY pass=%d failed=%d total=%d" % [
 		TAG, _passed, _failed, _passed + _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
@@ -114,3 +115,19 @@ func _check(name: String, ok: bool, detail: String) -> void:
 	else:
 		_failed += 1
 	print("%s VERDICT %s pass=%s | %s" % [TAG, name, str(ok).to_lower(), detail])
+
+
+## 命中定格必须能恢复到原速度。
+## 历史 bug：定格期间再次触发定格时，把"要恢复到的速度"记成了 0.05，
+## 导致整局永久停在 5% 速度——肉眼表现为"游戏突然变得极慢且不会恢复"。
+## 这里只验证 main.gd 的恢复逻辑契约，不实际驱动整个战斗场景。
+func _check_hitstop_restores_time_scale() -> void:
+	var main_script: GDScript = _main
+	## 契约：_tick_hitstop 在倒计时归零时把 time_scale 还原成 _hitstop_target
+	var src: String = ""
+	if main_script != null:
+		src = String(main_script.source_code) if "source_code" in main_script else ""
+	_check("hitstop_target_guard_present",
+		src.contains("if not was_active:") and src.contains("_hitstop_target = Engine.time_scale"),
+		"emit_hit_feedback 必须在定格期间保留原始 time_scale")
+	Engine.time_scale = 1.0

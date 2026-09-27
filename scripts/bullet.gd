@@ -172,6 +172,13 @@ func _on_area_entered(area: Area2D) -> void:
 				_recycle()
 
 func _spawn_hit() -> void:
+	## 日常命中的反馈：极轻的震屏 + 命中音。
+	## 这里最容易犯的错是给太重——自动射击每秒钟能命中十几次，
+	## 一旦每次都震，连击时画面会持续抖，弹幕反而看不清。
+	## 所以强度压到 0.06，并把"手感"主要交给命中音的连击升调。
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("emit_hit_feedback"):
+		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, true)
 	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = global_position

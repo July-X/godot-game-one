@@ -23,6 +23,11 @@ var _player: Node2D = null
 var _hud: Node = null
 var _elite: Node2D = null
 var _boss: Node2D = null
+## 统一震屏入口（trauma 累加模型，见 camera_shake.gd）。
+## 各处事件只管调 add_shake()，不要各自去写 camera.offset——那样多处震动
+## 会互相覆盖而不是叠加。旧路径 powerup.gd 仍用 screen_shake 场景，由
+## _spawn_shake 转发到这里。
+var _camera_shake: Node = null
 var _boss_variant_cycle: Array[int] = []
 var _boss_variant_last: int = 0
 var _current_boss_variant_id: int = 0
@@ -79,6 +84,22 @@ const ENEMY_SPEED_ELITE_MAX: float = 1.3
 ## 精英乘区封顶（原为 1 + 场次*0.05 无上限，20 级已 3.85、40 级 11.7）
 const POST_ELITE_MULT_STEP: float = 0.02
 const POST_ELITE_MULT_MAX: float = 2.2
+## 命中定格（hitstop）：把 time_scale 压到 HITSTOP_SCALE 维持极短时间再弹回，
+## 让"打中了"这一瞬间被身体感知到。只在单机生效（联机见 emit_hit_feedback）。
+const HITSTOP_SCALE: float = 0.05
+## 各事件的震屏强度分级。日常命中要轻，里程碑事件才允许到 0.45 以上，
+## 否则玩家会觉得画面一直在抖、反而读不清弹幕。
+const SHAKE_HIT: float = 0.06
+const SHAKE_ENEMY_DEATH: float = 0.10
+const SHAKE_PLAYER_HURT: float = 0.32
+const SHAKE_ELITE_SHIELD_BREAK: float = 0.45
+const SHAKE_ELITE_DEATH: float = 0.55
+const SHAKE_BOSS_PHASE: float = 0.40
+const SHAKE_EXPLOSION: float = 0.60
+const SHAKE_LASER_CHARGE: float = 0.50
+var _hitstop_left: float = 0.0
+var _hitstop_target: float = 1.0
+var _hitstop_last_usec: int = 0
 ## 玩家位置同步：[peer_id, x, y, rotation]，与实体同步同频（约 45Hz）
 const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
@@ -95,7 +116,47 @@ const DEATH_MARQUEE_FADE_SECONDS: float = 3.0
 
 @onready var _bg_color: ColorRect = $BgColor
 
+var _camera_shake_script = preload("res://scripts/camera_shake.gd")
+
+
+func _spawn_shake() -> void:
+	## 炸弹拾取的震屏。转发到统一的 trauma 入口。
+	add_shake(SHAKE_EXPLOSION)
+
+
+## 累加震屏强度。intensity 语义：0.1 轻微 / 0.3 明显 / 0.6 强烈 / 1.0 极限
+func add_shake(intensity: float) -> void:
+	if _camera_shake == null:
+		return
+	_camera_shake.add_trauma(intensity)
+
+
+## 统一反馈入口：震屏 + 命中定格 + 音效
+## design 见 docs/Design_Decisions.md「命中反馈链」。
+## hitstop 只在单机生效：联机会改变物理步进节奏导致两端 desync，
+## 联机下降级为"只震屏 + 只出音效"，保证两端表现一致。
+func emit_hit_feedback(intensity: float, hitstop_seconds: float = 0.0,
+		with_sound: bool = true) -> void:
+	add_shake(intensity)
+	if with_sound:
+		SFX.play_hit_confirm(intensity)
+	if hitstop_seconds > 0.0 and not NetworkManager.is_online():
+		## 先判断"是否已经在定格中"，再更新倒计时。
+		## 只有不在定格中时才记录要恢复到的速度：否则定格期间再触发一次，
+		## `_hitstop_target` 会被写成 0.05，结束时把 time_scale 恢复成 0.05，
+		## 整局就永久停在 5% 速度了。
+		var was_active: bool = _hitstop_left > 0.0
+		_hitstop_left = maxf(_hitstop_left, hitstop_seconds)
+		if not was_active:
+			_hitstop_target = Engine.time_scale
+		Engine.time_scale = HITSTOP_SCALE
+
+
 func _ready() -> void:
+	_hitstop_last_usec = Time.get_ticks_usec()
+	_camera_shake = _camera_shake_script.new()
+	_camera_shake.name = "CameraShake"
+	add_child(_camera_shake)
 	set_process(true)
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -482,6 +543,24 @@ func _spawn_hud() -> void:
 	_hud = _hud_scene.instantiate()
 	add_child(_hud)
 
+
+## 命中定格的推进：用**真实时间**计时，而不是 `_process` 的 delta。
+## `Engine.time_scale` 会把 delta 一起缩放，time_scale=0.05 时倒计时会慢 20 倍，
+## 60ms 的定格变成 1.2 秒，整局动作变得黏滞——这是 hitstop 最常见的实现错误。
+## 所以这里自己用 `Time.get_ticks_usec()` 算真实间隔。
+func _tick_hitstop() -> void:
+	var now_usec: int = Time.get_ticks_usec()
+	var real_delta: float = float(now_usec - _hitstop_last_usec) / 1000000.0
+	_hitstop_last_usec = now_usec
+	if _hitstop_left <= 0.0:
+		if Engine.time_scale != _hitstop_target:
+			Engine.time_scale = _hitstop_target
+		return
+	_hitstop_left -= real_delta
+	if _hitstop_left <= 0.0:
+		_hitstop_left = 0.0
+		Engine.time_scale = _hitstop_target
+
 func _spawn_mobile_controls() -> void:
 	if OS.has_feature("android") or OS.has_feature("ios"):
 		if get_node_or_null("MobileControls") != null:
@@ -491,6 +570,7 @@ func _spawn_mobile_controls() -> void:
 		add_child(mc)
 
 func _process(delta: float) -> void:
+	_tick_hitstop()
 	if not GameState.game_running:
 		return
 	_update_boss_hud()

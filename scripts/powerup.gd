@@ -208,8 +208,11 @@ func _bomb_effect() -> void:
 	call_deferred("_kill_enemies_sequential")
 
 func _spawn_shake() -> void:
-	var screen_shake = _screen_shake_scene.instantiate()
-	get_tree().current_scene.add_child(screen_shake)
+	## 旧实现自己实例化 screen_shake 场景直接写 camera.offset，
+	## 会和其他事件的震动互相覆盖。改为转发到 main.gd 的 trauma 入口统一叠加。
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("add_shake"):
+		scene.add_shake(scene.SHAKE_EXPLOSION)
 
 var _kill_queue: Array = []
 var _kill_idx: int = 0
