@@ -32,14 +32,19 @@ func reset_pose() -> void:
 
 
 var _breath_timer: float = 0.0
+var _base_breath_alpha: float = 0.6
+var _glow_base_scale: Vector2 = Vector2(1.45, 1.45)
 
 func _update_engine_breathing(delta: float) -> void:
 	if not _engine_glow or not _engine_glow.visible:
 		return
 	_breath_timer += delta * 2.5
 	var breath: float = 0.85 + sin(_breath_timer) * 0.15
-	_engine_glow.modulate.a = breath
-	_engine_glow.scale.x = breath
+	_engine_glow.modulate.a = _base_breath_alpha * breath
+	## 呼吸只做轻微的横向涨缩，纵向留给"射速等级越高尾焰越长"，
+	## 两者都基于 PLAYER_VISUAL_SCALE，不能写死倍率
+	var base: Vector2 = _glow_base_scale
+	_engine_glow.scale = Vector2(base.x * breath, base.y)
 
 func _update_walk_animation(delta: float) -> void:
 	if _player.velocity.length() > 10.0:
@@ -65,9 +70,8 @@ func _update_invincible_flash() -> void:
 
 ## ── 外观刷新 ────────────────────────────────────────
 
-var _base_breath_alpha: float = 0.6
-
 func update_appearance() -> void:
+	_apply_visual_scale()
 	var visual_tier: int = _get_visual_tier()
 	var shoot_level: int = GameState.get_shoot_level(_player.peer_id)
 	if _sprite:
@@ -78,7 +82,11 @@ func update_appearance() -> void:
 		_engine_glow.position.y = 32.0
 		_base_breath_alpha = 0.6 + shoot_level * 0.2
 		_engine_glow.modulate = Color(1.0, 0.6, 0.2, _base_breath_alpha)
-		_engine_glow.scale = Vector2(1.0, 1.0 + shoot_level * 0.06)
+		## 尾焰纵向随射速等级变长：给"变强了"一个持续可见的视觉反馈，
+		## 比只在属性条上加数字更容易被玩家注意到
+		_glow_base_scale = Vector2(PLAYER_VISUAL_SCALE,
+			PLAYER_VISUAL_SCALE * (1.0 + shoot_level * 0.06))
+		_engine_glow.scale = _glow_base_scale
 		if _engine_glow.texture == null:
 			var tex_path: String = "res://assets/sprites/ui/engine_flame.png"
 			if ResourceLoader.exists(tex_path):
@@ -121,17 +129,42 @@ func trigger_hit() -> void:
 		SFX.reset_combo()
 
 
+## 飞机在**设计空间**里的视觉放大倍率。
+##
+## 为什么不是去重画更大的图：项目是 1280×720 设计视口 + viewport 拉伸，
+## 64px 源图在 2560 宽的屏幕上本来就占 128 物理像素。把源图重画成 128px，
+## 它在视口里照样被缩回 64px 再放大，最终画面与现在**完全一致，零收益**。
+## 真正的收益是让飞机在设计空间里就占更大面积。
+##
+## 关键：只放大 Sprite2D，**不动 CollisionShape2D**（判定半径仍是 12px）。
+## 这是弹幕射击的通行做法——"视觉体型大于判定点"，画面更好看也更易读，
+## 而玩家的实际受击判定不变，难度没有被偷偷改掉。
+const PLAYER_VISUAL_SCALE: float = 1.45
+
+
+func _apply_visual_scale() -> void:
+	if _sprite == null:
+		return
+	_sprite.scale = Vector2(PLAYER_VISUAL_SCALE, PLAYER_VISUAL_SCALE)
+	if _engine_glow != null:
+		_engine_glow.scale = Vector2(PLAYER_VISUAL_SCALE, PLAYER_VISUAL_SCALE)
+
+
 func _play_hit_animation() -> void:
 	if not _sprite:
 		return
 	var base_color: Color = _sprite.modulate
+	var base_scale: float = PLAYER_VISUAL_SCALE
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(_sprite, "modulate", Color(3.0, 3.0, 3.0, 1.0), 0.04)
-	tween.tween_property(_sprite, "scale", Vector2(1.2, 1.2), 0.04)
+	tween.tween_property(_sprite, "scale",
+		Vector2(base_scale * 1.2, base_scale * 1.2), 0.04)
 	tween.tween_callback(func():
 		var recover := create_tween().set_parallel(true)
 		recover.tween_property(_sprite, "modulate", base_color, 0.12)
-		recover.tween_property(_sprite, "scale", Vector2(1.0, 1.0), 0.12)
+		## 受击回弹必须回到放大后的基准倍率，写死 (1,1) 会让飞机缩回原大小
+		recover.tween_property(_sprite, "scale",
+			Vector2(base_scale, base_scale), 0.12)
 	)
 
 
