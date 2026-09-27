@@ -185,19 +185,33 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 		if scene and scene.has_method("register_bullet_spawn"):
 			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
 
+## 敌弹速度分层。原来的三种攻击全部固定 780 px/s，等于只有一种速度——
+## 玩家无法通过"躲得开/躲不开"来区分威胁，只能靠颜色猜。
+## 弹幕的可读性来自**速度对比**：慢弹是墙（能绕、能读），快弹是针（只能闪）。
+## 把慢弹压到 430、快弹提到 950，两者跨越 2.2 倍，对比一眼可辨。
+const SPEED_SLOW: float = 430.0
+const SPEED_MID: float = 780.0
+const SPEED_FAST: float = 950.0
+
 func _shoot_single(angle: float) -> void:
 	var dmg: float = 1.0
-	_spawn_enemy_bullet(global_position + Vector2.from_angle(angle) * 20, angle, dmg, 780.0, Color(1.0, 0.4, 0.3, 1.0))
+	## 狙击手是"针"：高伤高速，必须提前看到
+	_spawn_enemy_bullet(global_position + Vector2.from_angle(angle) * 20, angle, dmg,
+		SPEED_FAST, Color(1.0, 0.4, 0.3, 1.0))
 
 func _shoot_spread(angle: float) -> void:
 	for i in range(-1, 2):
 		var a: float = angle + i * 0.2
-		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.5, 780.0, Color(0.3, 1.0, 0.4, 1.0))
+		## 散射者弹速取中间档，是可绕行的"墙"
+		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.5,
+			SPEED_MID, Color(0.3, 1.0, 0.4, 1.0))
 
 func _shoot_circle() -> void:
 	for i in range(6):
 		var a: float = float(i) * TAU / 6.0
-		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.3, 780.0, Color(0.6, 0.3, 1.0, 1.0))
+		## 环绕者的环形弹压到慢档：六发一环，速度快了玩家只能挨打、不能走位
+		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.3,
+			SPEED_SLOW, Color(0.6, 0.3, 1.0, 1.0))
 
 func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	health -= amount

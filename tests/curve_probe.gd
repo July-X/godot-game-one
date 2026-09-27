@@ -38,6 +38,7 @@ func _ready() -> void:
 	_check_post_elite_multiplier_capped()
 	_check_curve_grows_at_all()
 	_check_hitstop_restores_time_scale()
+	_check_spawn_density_bounded()
 	print("%s VERDICT SUMMARY pass=%d failed=%d total=%d" % [
 		TAG, _passed, _failed, _passed + _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
@@ -131,3 +132,14 @@ func _check_hitstop_restores_time_scale() -> void:
 		src.contains("if not was_active:") and src.contains("_hitstop_target = Engine.time_scale"),
 		"emit_hit_feedback 必须在定格期间保留原始 time_scale")
 	Engine.time_scale = 1.0
+
+
+## 刷怪密度门禁：间隔下限与同屏上限不能被调回"后期糊屏"的状态
+func _check_spawn_density_bounded() -> void:
+	var min_interval: float = _main.ENEMY_SPAWN_MIN_INTERVAL
+	var cap: int = _main.ENEMY_SCREEN_CAP
+	## 0.2s 间隔 = 每秒 5 只，是"后期同屏只增不减"的元凶
+	_check("spawn_interval_floor", min_interval >= 0.4,
+		"min_interval=%.2f (需 >=0.40)" % min_interval)
+	_check("enemy_screen_cap", cap > 0 and cap <= 30,
+		"cap=%d (需 1~30)" % cap)

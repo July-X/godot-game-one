@@ -372,10 +372,33 @@ func add_kill(killer_peer_id: int = -1) -> void:
 	add_score(10 * level, killer_peer_id)
 	if kills >= kills_for_next_level:
 		level_up()
-	if total_kills > 0 and total_kills % 20 == 0 and total_kills != last_elite_threshold:
-		last_elite_threshold = total_kills
-		elite_spawn_requested.emit()
+	_maybe_trigger_elite()
 	_mark_dirty()
+
+
+## 精英触发：阈值随等级递增（20 + level*2）。
+## 原来固定每 20 击杀一场，但累计击杀随等级平方增长——到 20 级已经是 57 场，
+## 精英从"内容单元"贬值成了节奏噪音，玩家见到精英不再有"要打一场硬仗"的预期。
+## 递增阈值让精英密度回到"每几级一个里程碑"的节奏。
+##
+## 用累计计数而不是取模：阈值会随等级变化，取模在阈值跳变时可能整段错过。
+func _maybe_trigger_elite() -> void:
+	var threshold: int = elite_kill_threshold()
+	if total_kills - last_elite_threshold < threshold:
+		return
+	## 等级可能在这一次击杀中跳了级，阈值要按等级差补记，否则会连续触发
+	var overshoot: int = total_kills - last_elite_threshold
+	last_elite_threshold = total_kills - (overshoot % threshold)
+	elite_spawn_requested.emit()
+
+
+func elite_kill_threshold() -> int:
+	return ELITE_BASE_KILLS + level * ELITE_KILLS_PER_LEVEL
+
+
+const ELITE_BASE_KILLS: int = 20
+const ELITE_KILLS_PER_LEVEL: int = 2
+
 
 func level_up() -> void:
 	level += 1

@@ -84,6 +84,12 @@ const ENEMY_SPEED_ELITE_MAX: float = 1.3
 ## 精英乘区封顶（原为 1 + 场次*0.05 无上限，20 级已 3.85、40 级 11.7）
 const POST_ELITE_MULT_STEP: float = 0.02
 const POST_ELITE_MULT_MAX: float = 2.2
+## 刷怪密度控制。
+## 间隔下限从 0.2 抬到 0.45：0.2s 意味着每秒 5 只，后期同屏数量只增不减，
+## 弹幕互相重叠后就没有可读性可言了。
+const ENEMY_SPAWN_MIN_INTERVAL: float = 0.45
+## 同屏敌人硬上限
+const ENEMY_SCREEN_CAP: int = 20
 ## 命中定格（hitstop）：把 time_scale 压到 HITSTOP_SCALE 维持极短时间再弹回，
 ## 让"打中了"这一瞬间被身体感知到。只在单机生效（联机见 emit_hit_feedback）。
 const HITSTOP_SCALE: float = 0.05
@@ -620,13 +626,23 @@ func _process(delta: float) -> void:
 
 	_enemy_spawn_timer -= delta
 	if _enemy_spawn_timer <= 0:
-		_spawn_enemy()
-		_enemy_spawn_timer = max(1.2 - GameState.level * 0.06, 0.2)
+		_enemy_spawn_timer = max(1.2 - GameState.level * 0.06, ENEMY_SPAWN_MIN_INTERVAL)
+		_spawn_enemy_if_below_cap()
 
 	_difficulty_timer += delta
 	if _difficulty_timer > 8.0:
 		_difficulty_timer = 0.0
-		_spawn_enemy()
+		_spawn_enemy_if_below_cap()
+
+
+## 同屏敌人数上限。原实现只在固定 8 秒一次的"难度脉冲"里无条件加怪，
+## 叠加高频刷怪后同屏数量只增不减，后期会糊成一片——弹幕一旦互相重叠，
+## 可读性就没了，所以必须硬性封顶。
+## 20 的取法：1280×720 下仍留得出躲避空间，同时精英/Boss 场另有独立通道。
+func _spawn_enemy_if_below_cap() -> void:
+	if get_tree().get_nodes_in_group("enemies").size() >= ENEMY_SCREEN_CAP:
+		return
+	_spawn_enemy()
 
 func _scroll_background(delta: float) -> void:
 	for layer in _bg_layers:
