@@ -183,3 +183,9 @@
 - Client 如果在主同步包中收到未知 `entity_id`，必须限频请求 Host 重发当前实体快照，作为可靠 spawn RPC 偶发漏收后的自愈路径。
 - 移动端技能按钮必须使用设计视口右下锚点布局；项目采用 `window/stretch/mode="viewport"`，不要用 Android 物理窗口尺寸直接计算 HUD 坐标，否则会在导出包中把按钮放到 1280x720 设计画布外。
 - `HUD` 继承 `CanvasLayer`，不能直接调用 `get_viewport_rect()`；需要视口尺寸时使用项目设计视口尺寸或 `get_viewport().get_visible_rect()`。HUD/主场景问题必须跑主场景运行验证，单纯 `--quit` 不能覆盖脚本解析和 `_ready/_process` 链路。
+- **玩家位置同步不使用引擎 `MultiplayerSynchronizer`**，改由 `main.gd` 显式同步（2026-09-27）。理由：本项目是每端各自 `change_scene_to_file("main.tscn")`，没有 `MultiplayerSpawner`；引擎的场景复制依赖"同步器节点路径可被解析"，客户端挂载战斗场景必然晚于 Host 开始广播，于是引擎持续丢包并报 `Node not found: "Main/1/MultiplayerSynchronizer"`，实测客户端约 2/3 概率完全拿不到 Host 的玩家节点。手工管线（`_batch_sync_players` / `_rpc_sync_player_states` / `_rpc_report_player_state`，4 字段 / 45Hz / 两端插值）与敌人、子弹共用同一节拍，行为可预期、可插值、能被探针断言。
+- **玩家节点的 multiplayer authority 必须递归设置**（`set_multiplayer_authority(peer_id, true)`）。非递归时子节点权威停在默认的 1（Host），会造成 Host 把 P2 幽灵坐标广播给客户端、客户端本机玩家被拽向幽灵位置，且客户端不发送自己的坐标、Host 上的幽灵永远冻结。
+- **玩家节点生成必须双通道补发**：Host 在 `main._ready()` 的广播早于客户端连接，广播进了虚空；因此 `player_connected` 时要 `_send_player_snapshot_to()` 补发完整名单，客户端 `_ready()` 的 `_request_player_sync()` 保留为兜底。只靠客户端请求时，请求可能早于 Host 建好 `_players` 到达并拿到空名单，客户端会永久缺一个远端幽灵节点。
+- **每端各自挂载主场景导致的入局期报错属于已知噪音**：`@rpc` 以节点所在场景路径（`Main`）寻址，客户端还在大厅时路径不存在，Host 的广播会被丢弃；丢掉的包由实体快照自愈机制补齐。回归门禁显式放行这一类，但打印计数，暴涨即视为退化。
+- **对象池当前不做节点复用**（2026-09-27 校准）。`release()` 一律 `queue_free()`，此前 `setup()` 仍在预实例化 40 发子弹 + 20 个命中特效且从不 `add_child`，这 60 个节点整局白占内存。早期真池化经历五次返工（父节点归属 + 归还时序），恢复前必须先补齐归还时的节点状态重置（速度 / 位置 / 计时 / 特效）。
+- **联机回归必须能自动判成败**。`tests/run_probe.sh` 统一起双进程、收口退出码、扫描 `SCRIPT ERROR` 与运行期引擎报错；探针内部统计断言并 `quit(1)`。人工 grep 日志不算验证。

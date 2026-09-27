@@ -80,17 +80,30 @@
 - 若未能验证，必须在结果说明中明确标注原因与风险。
 - 任何引擎版本、资源格式或场景结构变化，必须重新检查项目是否可加载。
 
-**联机改动必须跑回归探针**（不允许只做静态检查）：
+**联机改动必须跑回归门禁**（不允许只做静态检查）：
 
 ```bash
-# 双进程 headless，本机回环跑真实 ENet
+# 推荐：一条命令，自动起双进程 + 收口退出码 + 扫描引擎报错，全绿才 exit 0
+tests/run_probe.sh 7788
+```
+
+手工跑（需要实时看日志时）：
+
+```bash
 godot --headless --path . res://tests/lan_probe.tscn -- host 7788   &
 godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 ```
 
-探针输出 `[PROBE] ... VERDICT ... pass=true/false`，全部为 `true` 才算通过。
+判定标准：**`[PROBE] ... VERDICT SUMMARY pass=N failed=0` 且两个进程退出码都是 0**，
+`run_probe.sh` 还会额外把 `SCRIPT ERROR` 和运行期 `ERROR:` 计入失败。
+当前共 36 项断言（host 22 + client 14）。
+
 涉及 `hud.gd` / 场景结构的改动，还必须额外跑主场景运行验证
-（`--quit` 不覆盖 `_ready` / `_process` 链路）。
+（`--quit` 不覆盖 `_ready` / `_process` 链路）：
+
+```bash
+godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
+```
 
 ## 7. 工作约束
 
@@ -162,13 +175,14 @@ godot --headless --path . --quit
 - **单机闭环 ✅**：标题 → 战斗 → 精英 / Boss 波次 → 结算
 - **联机闭环 ✅**：2 人 Wi-Fi LAN / 鸿蒙近场发现 + ENet 战斗同步，Host 权威
 - **程序化管线 ✅**：贴图、音效、BGM 全部程序化，零外部资源依赖
-- **联机回归探针 ✅**：`tests/lan_probe.gd`，28 项断言
+- **联机回归门禁 ✅**：`tests/run_probe.sh` + `tests/lan_probe.gd`，**36 项断言**（host 22 + client 14），一条命令收口退出码
 
 **下一步可选扩展**：
 1. 双机联机性能压测（加入端 ≥ 60 FPS 的量化结论）
 2. 鸿蒙真机双端联调与稳定性压测
 3. 关卡节奏扩充
 4. 清理 `backup_3d/` 历史存档
+5. 子弹/命中特效的真对象池（需先补齐归还时的节点状态重置）
 
 **禁止事项**：
 - ✅ ~~不引入联网、多人、后端服务~~ → **已解除**：2026-05-09 引入 2 人 Wi-Fi LAN 合作模式（无互联网、无云后端）
@@ -185,8 +199,12 @@ godot --headless --path . --quit
   - `scripts/network_manager.gd`（Autoload）
   - `scenes/ui/lobby.tscn` + `scripts/lobby.gd`
 - 多人模式改动文件：
-  - `scripts/player.gd`（加 authority 守卫 + MultiplayerSynchronizer）
-  - `scripts/main.gd`（加 MultiplayerSpawner + 多玩家生成）
+  - `scripts/player.gd`（authority 守卫；权威必须 `set_multiplayer_authority(peer_id, true)` 递归设置）
+  - `scripts/main.gd`（多玩家生成 + 玩家位置显式同步，**不使用 MultiplayerSynchronizer**）
   - `project.godot`（注册 NetworkManager autoload）
 - 敌人逻辑服务器权威，不在客户端重复执行；客户端只做渲染和输入。
 - 任何 `@rpc("any_peer")` 函数体内必须有 `if not multiplayer.is_server(): return` 守卫。
+- **玩家位置同步走 `main.gd` 的手工管线**（`_batch_sync_players` / `_rpc_sync_player_states` /
+  `_rpc_report_player_state`），不要在 `player.tscn` 挂 `MultiplayerSynchronizer`：
+  引擎场景复制会因客户端晚挂载 `main.tscn` 而持续丢包，原因见
+  `docs/architecture.md` §11.7。

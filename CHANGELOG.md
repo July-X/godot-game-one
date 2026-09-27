@@ -4,27 +4,69 @@
 
 ### 修复
 
+- **客户端间歇性丢失远端玩家**（本轮最严重，由回归探针暴露）：
+  客户端约 2/3 概率完全拿不到 Host 的玩家节点——画面上少一个人、位置也不同步。
+  三层根因逐层修掉：
+  1. `player.tscn` 的 `MultiplayerSynchronizer` 与「每端各自 `change_scene` 进
+     `main.tscn`」冲突，引擎场景复制持续报 `Node not found:
+     "Main/1/MultiplayerSynchronizer"` / `Failed to get path from RPC: Main`
+     并丢弃同步包 → 删除同步器与 `SceneReplicationConfig`。
+  2. `player.gd` 的 `set_multiplayer_authority(peer_id)` 非递归，子节点权威停在
+     默认的 1（Host），Host 会把 P2 幽灵坐标灌到客户端本机玩家上（手感像被
+     橡皮筋拽住）→ 改为递归设置。
+  3. 玩家位置改由 `main.gd` 显式同步：`_batch_sync_players` /
+     `_rpc_sync_player_states` / `_rpc_report_player_state`，4 字段
+     （`peer_id, x, y, rotation`）、45Hz、与敌人子弹同一节拍，两端都跑
+     `_apply_player_interpolation`，本机节点永不接受远端坐标。
+- **新加入端可能永久缺一个远端玩家**：Host 自己在 `main._ready()` 的生成广播
+  早于客户端连接，广播进了虚空；客户端的补齐请求又可能早于 Host 建好
+  `_players` 到达并拿到空名单 → `player_connected` 时调用
+  `_send_player_snapshot_to()` 补发完整名单，客户端请求保留为兜底。
 - **`pool.gd` 空池取用崩溃**：原 `acquire()` 写 `var pool: Array = _pools.get(type_name)`，
   当该类型尚未 `setup()` 时会把 `null` 赋给 `Array` 类型变量，Godot 4 直接抛运行时错误并中断函数，
   导致 `acquire()` 返回 `null`，随后 `add_child(null)` 与 `node.setup()` 连锁报错。
   实际触发路径：`Pool.reset_all()`（断线回退单机 / 结算清理）之后旧场景还会继续开火约 5 秒，
-  这段时间内每帧喷错误。改为先 `_pools.has()` 判断并按需惰性 `setup()`，再用带默认值的 `get()`。
+  这段时间内每帧喷错误。
 - **`powerup.gd` 入树前访问 `@onready` 节点**：联机同步链路在 `add_child()` **之前**调用
   `setup()`（见 `main.gd::_rpc_spawn_powerup`），此时 `@onready var _sprite` 仍为 `null`，
   `_setup_visual_style()` 直接赋值抛空引用错误；每次网络掉落都会触发一次（精英死亡一次掉 12 个）。
-  改为未入树时跳过，由 `_ready()` 补应用——顺带修正了 `assigned_peer_id` 分支在客户端失效的问题
-  （该 meta 在 `setup()` 之后才设置）。
+  改为未入树时跳过，由 `_ready()` 补应用。
+
+### 变更
+
+- **对象池停用节点复用**（`pool.gd`）：`release()` 早就一律 `queue_free()`，池化名存实亡，
+  而 `setup()` 仍在预实例化 40 发子弹 + 20 个命中特效且从不 `add_child`——这 60 个节点
+  既不在场景树里也永远不会被归还，整局白占内存。删除预分配与 `setup()`，`main.gd`
+  两处 `Pool.setup` 调用一并移除，`acquire`/`release`/`reset_all` 签名不变。
+  不在本轮恢复真池化：git 五次返工的教训是父节点归属与归还时序才是真正的成本。
+- **清理只写不读的死字段**：`powerup.gd` 的 `assigned_peer_id` / `_magnet_radius`
+  （三个生成路径都是 `add_child` → `setup` → `set_meta`，缓存归属必然读到空值）。
+- `boss.gd` 的 `BOSS_ULTIMATE_LASER_HP_INTERVAL` 注释写「15%」，实际常量是 0.25
+  （25 个百分点），与文档侧已校准的表述对齐。
 
 ### 新增
 
-- **联机回归探针** `tests/lan_probe.gd` + `tests/lan_probe.tscn`：
-  两个 headless 进程在本机回环跑真实 ENet，脚本化驱动真实 Boss 终局激光，28 项断言覆盖
-  「死亡 ≠ 断线」「P1/P2 槽位命名」「激光时序与尖端检测」「精英阻塞时 Boss 补发」。
-  探针本身的三个踩坑点（不能用 `change_scene_to_file`、`multiplayer_peer` 默认非空、
-  headless 无上限跑帧）已写进 `docs/architecture.md` §15。
+- **联机回归门禁 `tests/run_probe.sh`**：一条命令起双进程、收口退出码、
+  扫描 `SCRIPT ERROR` 与运行期引擎报错，全绿才 `exit 0`；已知噪音
+  （at-exit 泄漏 + 入局期 RPC 寻址）显式放行但打印计数。
+- **探针断言 28 → 36 项**（host 22 + client 14），新增覆盖：
+  远端玩家跟随 Host、本机玩家不被幽灵坐标覆盖、Host 幽灵被客户端驱动、
+  两端玩家节点数恒为 2、不得再挂引擎同步器、激光推进 3s + 持续 10s
+  全程对束外玩家零伤害。
+  `_check()` 现在统计通过/失败数，结尾打 `VERDICT SUMMARY` 并 `quit(1)`。
 
 ### 文档
 
+- **属性上限纠错**：`docs/architecture.md` 原写三个成长属性「单项上限 50」，
+  实际为 `shoot_level` 10 / `shoot_speed_level` 15 / `bullet_power_level` 50，
+  并补上 `power` 掉落满 50 后转 `heal(1)` 的行为。
+- `docs/architecture.md` 新增 §11.7 玩家位置同步改造、§11.8 RPC 寻址与入局期噪音、
+  §11.9 玩家节点生成时序，§12 性能表与文件树同步对象池现状，§15 补门禁判定标准
+  与探针的 5 个踩坑点。
+- `docs/Design_Decisions.md` 记录「不用引擎同步器」「权威必须递归设置」
+  「玩家生成双通道补发」「池化下线」「回归必须自动判成败」五条决策。
+- `README.md` / `agents.md` 同步门禁用法、断言数与多人模式约束（禁止再挂
+  `MultiplayerSynchronizer`）。
 - **项目定位全面校准**：仓库实际形态早已从「单机 3D 微剧情动作游戏」变为
   `Space Bullet Hell`（2D 俯视角 Roguelike 弹幕射击 + 2 人 LAN 联机），
   但 `README.md` / `agents.md` / `docs/Design_Decisions.md` / `docs/Development_Plan.md`
@@ -32,7 +74,7 @@
 - **`docs/architecture.md` 重写**：补入 `boss.gd`/`boss.tscn`、`scripts/player/` 四模块拆分、
   4 个联机 Autoload、`pool.gd`、`tests/`；删除仓库中不存在的
   `skill_cooldown_overlay.gd` / `laser_cooldown_overlay.gd`（实际合并为 `cooldown_overlay.gd`）；
-  更正主场景为 `title_screen.tscn`；更正成长公式（子弹上限 8→12、属性上限 15→50、
+  更正主场景为 `title_screen.tscn`；更正成长公式（子弹上限 8→12、
   护盾「每 10 击杀 1 层」→「8 秒自动充能」）；补入 Boss 三阶段与终局激光完整参数。
 - **Boss 终局激光参数纠错**：`Design_Decisions.md` / `Development_Plan.md` /
   `AI_HANDOFF_2026-05-12.md` 原写「血量首次降到 10% 触发一次、0.8 秒宽束推进」，
@@ -44,6 +86,11 @@
 ### 已知遗留
 
 - `backup_3d/` 是旧 3D 版本完整存档（340K），已废弃但仍在仓库内，未删除。
+- 客户端从大厅切到 `main.tscn` 期间，Host 已开始的广播会以 `Main` 路径寻址失败
+  并被丢弃（入局期噪音）。丢包由实体快照自愈兜住，根治需改为「先挂载主场景再 join」，
+  涉及大厅流程改造，暂不做。
+- `docs/architecture.md` §11.8 的噪音白名单与 `tests/run_probe.sh` 的 `KNOWN` 变量
+  需同步维护，新增引擎报错类型时要一并判断。
 
 ## [1.3.1] - 2026-05-12
 

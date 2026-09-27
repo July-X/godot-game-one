@@ -10,7 +10,7 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 - [设计决策](./docs/Design_Decisions.md)
 - [美术与音频管线](./docs/art_audio_pipeline.md)
 - [Harmony 插件契约](./docs/Harmony_Plugin_Contract.md)
-- [联机回归探针](./tests/lan_probe.gd)
+- [联机回归门禁](./tests/run_probe.sh)
 
 ## 目标
 
@@ -67,7 +67,8 @@ godot-game-one/
 │   ├── network_manager.gd      # Autoload，ENet 连接生命周期
 │   └── harmony_bridge.gd       # Autoload，鸿蒙近场发现桥接层
 ├── tests/
-│   ├── lan_probe.gd            # 双进程 headless 联机回归探针
+│   ├── run_probe.sh             # 联机回归门禁入口（起双进程 + 收口退出码 + 扫报错）
+│   ├── lan_probe.gd             # 双进程 headless 联机回归探针（36 项断言）
 │   └── lan_probe.tscn
 ├── docs/
 ├── backup_3d/                  # 旧 3D 版本存档（已废弃，勿参考）
@@ -117,9 +118,10 @@ godot-game-one/
 ### 联机
 - ✅ 2 人 Wi-Fi LAN 合作，Host 权威同步
 - ✅ 实体主同步包压缩为 5 字段 `PackedFloat32Array`，护盾/朝向拆独立包
+- ✅ 玩家位置由 `main.gd` 显式同步（4 字段 / 45Hz / 两端插值），不依赖引擎场景复制
 - ✅ 客户端漏怪自愈（未知 entity_id 限频请求快照）
 - ✅ Boss 阻塞兜底：精英在场时 Boss 触发挂起，精英死亡后补发
-- ✅ 双进程 headless 回归探针（`tests/lan_probe.gd`，28 项断言）
+- ✅ 双进程 headless 回归门禁（`tests/run_probe.sh`，36 项断言，一条命令判成败）
 
 ### 其他
 - ✅ HUD（血量/属性条/记分牌/排行榜/技能冷却/Boss 阶段条）
@@ -140,7 +142,13 @@ godot --headless --path . --quit
 # 主场景可运行（含 _ready / _process 链路）
 godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
-# 联机回归（两个终端，端口可换）
+# 联机回归门禁（推荐：一条命令，自动起双进程并判成败）
+tests/run_probe.sh 7788
+```
+
+手工跑探针（需要实时看日志时，两个终端）：
+
+```bash
 godot --headless --path . res://tests/lan_probe.tscn -- host 7788
 godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 ```

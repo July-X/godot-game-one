@@ -110,22 +110,38 @@
 - [x] 精英护盾视觉复核：禁用方形渐变纹理，只显示圆形光晕
 - [x] 移动端技能条改回设计视口右下锚点布局，避免 `viewport` 拉伸模式下被物理窗口坐标带出画布
 - [x] 新增主场景运行验证要求：HUD/移动端 UI 问题必须执行 `godot --headless --path . --scene res://scenes/main.tscn --quit-after 20`，不能只做项目加载验证
-- [x] 联机回归探针：新增 `tests/lan_probe.gd`（双进程 headless，28 项断言），覆盖 P1 被激光秒杀后 P2 存活、P1/P2 槽位命名、终局激光时序、精英阻塞 Boss 补发
+- [x] 联机回归门禁：`tests/run_probe.sh` + `tests/lan_probe.gd`（双进程 headless，36 项断言），一条命令自动判成败
+- [x] 玩家位置同步改走 `main.gd` 手工管线，移除 `player.tscn` 的 `MultiplayerSynchronizer`
+- [x] Host 侧 `_send_player_snapshot_to()`：peer 连上即补发完整玩家名单
+- [x] `set_multiplayer_authority` 改递归设置，同步器/节点权威归属修正
+- [x] `pool.gd` 停用名存实亡的池化，删除 60 个常驻孤儿节点预分配
 
 ## 联机回归验证（2026-09-27）
 
-新增 `tests/lan_probe.gd` + `tests/lan_probe.tscn`，用两个 headless 进程在本机回环跑真实 ENet：
+`tests/run_probe.sh` + `tests/lan_probe.gd`，两个 headless 进程在本机回环跑真实 ENet：
 
 ```bash
-godot --headless --path . res://tests/lan_probe.tscn -- host 7788
-godot --headless --path . res://tests/lan_probe.tscn -- client 7788
+tests/run_probe.sh 7788     # 全绿才 exit 0
 ```
 
-覆盖并已全部通过（两轮复现，0 脚本错误）：
+共 **36 项断言**（host 22 + client 14），覆盖并已全部通过（连续多轮复现）：
 
 - P1 被 Boss 终局激光内圈秒杀后，P2 会话存活 10 秒不掉线、不 Game Over、不回退单机
 - 记分牌 / 排行榜按 `P1`/`P2` 槽位显示，不暴露随机 ENet peer_id
 - 终局激光蓄力 120 物理帧（2.0s）、推进阶段仅尖端命中（开火后 32 帧才判定）
+- 束外玩家零伤害：推进 3s + 持续 10s 全程逐帧采样 P2 血量
 - 精英在场时 Boss 触发进入 `_pending_boss_level`，精英死亡后自动补发
+- 玩家同步归属：远端幽灵跟随 Host / 本机玩家不被幽灵坐标覆盖 / Host 幽灵被客户端驱动
+- 两端玩家节点数恒为 2，且不得再挂引擎 `MultiplayerSynchronizer`
 
-同时修复了两个由该验证暴露的真实缺陷（见 `CHANGELOG.md`）：`pool.gd` 空池取用崩溃、`powerup.gd` 入树前设置样式空引用。
+由该验证暴露并修复的真实缺陷（详见 `docs/architecture.md` §11.7 与 `CHANGELOG.md`）：
+
+- 玩家位置同步：客户端原本约 2/3 概率完全拿不到 Host 的玩家节点
+- 权威错位：Host 把 P2 幽灵坐标灌到客户端本机玩家上
+- `pool.gd` 空池取用崩溃、`powerup.gd` 入树前设置样式空引用
+- `pool.gd` 名存实亡的池化与 60 个常驻孤儿节点、`powerup.gd` 两个只写不读的死字段
+
+## 遗留待办
+
+- [ ] 子弹/命中特效的真对象池：需先补齐归还时的节点状态重置（速度 / 位置 / 计时 / 特效）
+- [ ] 入局期 RPC 寻址噪音根治：让客户端先挂载 `main.tscn` 再 join，而不是进大厅后等待切换

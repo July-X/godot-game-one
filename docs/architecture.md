@@ -39,7 +39,7 @@
 │   │   ├── enemy.tscn         # 普通敌人（3 种类型）
 │   │   ├── elite.tscn         # 精英怪（四阶段）
 │   │   ├── boss.tscn          # Boss（三阶段 + 终局激光）
-│   │   ├── bullet.tscn        # 子弹（通用，池化）
+│   │   ├── bullet.tscn        # 子弹（通用，取用走 pool.gd 入口）
 │   │   ├── asteroid.tscn      # 小行星
 │   │   ├── homing_missile.tscn # 追踪导弹
 │   │   ├── laser_bolt.tscn    # 激光弹
@@ -55,7 +55,7 @@
 │   ├── bgm_manager.gd         # Autoload，程序化 BGM
 │   ├── sprite_factory.gd      # Autoload，程序化贴图
 │   ├── leaderboard.gd         # Autoload，排行榜持久化
-│   ├── pool.gd                # Autoload，通用对象池
+│   ├── pool.gd                # Autoload，子弹/命中特效取用与回收入口（不做节点复用）
 │   ├── network_manager.gd     # Autoload，ENet 连接生命周期
 │   ├── hotspot_manager.gd     # Autoload，Wi-Fi 热点（调试回退）
 │   ├── network_discovery.gd   # Autoload，调试发现后端
@@ -66,8 +66,7 @@
 │   │   ├── motion_controller.gd    # 移动 / 边界反弹 / 动画
 │   │   ├── combat_controller.gd    # 射击 / 导弹 / 技能 / 拾取
 │   │   ├── feedback_controller.gd  # 外观 / 受击反馈 / 爆炸
-│   │   └── action_router.gd        # 输入分发
-│   ├── enemy.gd / elite.gd / boss.gd
+│   │   └── action_router.gd        # 输入分发│   ├── enemy.gd / elite.gd / boss.gd
 │   ├── bullet.gd / laser_bolt.gd / homing_missile.gd / asteroid.gd
 │   ├── powerup.gd / explosion.gd / hit_effect.gd / screen_shake.gd
 │   ├── laser_bolt.gd / lightning_line.gd   # 激光与闪电链绘制
@@ -96,7 +95,7 @@
 | `BGM` | `bgm_manager.gd` | 程序化 BGM 生成与循环 |
 | `SpriteFactory` | `sprite_factory.gd` | 程序化贴图生成与缓存 |
 | `Leaderboard` | `leaderboard.gd` | `ConfigFile` 排行榜持久化 |
-| `Pool` | `pool.gd` | 通用对象池（bullet / hit_effect） |
+| `Pool` | `pool.gd` | 子弹 / 命中特效的取用与回收入口，不做节点复用（见 §12） |
 | `NetworkManager` | `network_manager.gd` | ENet 连接生命周期，Host/Client 统一入口 |
 | `HotspotManager` | `hotspot_manager.gd` | Wi-Fi 热点（调试回退路径） |
 | `NetworkDiscovery` | `network_discovery.gd` | 调试发现后端 |
@@ -111,7 +110,7 @@
 |----------|------|------|
 | 进程 | `score`, `level`, `kills`, `total_kills`, `game_running` | 积分 / 等级 / 击杀 |
 | 生命 | `current_health`, `max_health`, `shield_layers` | 初始 50，上限 2000（`HEALTH_CAP`） |
-| 成长 | `shoot_level`, `shoot_speed_level`, `bullet_power_level` | 单项上限 **50** |
+| 成长 | `shoot_level`, `shoot_speed_level`, `bullet_power_level` | 道具路径上限各不相同，见下表 |
 | 冷却 | `skill_cooldown`(15s), `laser_cooldown`(10s) | 环形散射 / 激光 |
 | Boss 奖励 | `laser_cd_bonus`, `extra_bullet_count`, `extra_damage_bonus`, `move_speed_bonus`, `shield_max_bonus` | 击败 Boss 后永久生效 |
 | 节奏 | `elite_encounter_count`, `last_elite_threshold`, `boss_encounter_count`, `last_boss_level` | 精英 / Boss 出场控制 |
@@ -132,6 +131,17 @@
 | `laser_damage = 5 * 2^(level/10)` | `get_laser_damage()` | 每 10 级翻倍 |
 | `shield_max = (10 + bullet_power*2 + max_health*0.2) * 0.5 + shield_max_bonus` | `get_shield_max_hp()` | 护盾满值 |
 | `move_speed = 1.0 + move_speed_bonus` | `get_move_speed_multiplier()` | 移速倍率 |
+
+**成长属性上限**（三者各不相同，不要笼统写成"上限 50"）：
+
+| 属性 | 上限 | 来源 | 满值后行为 |
+|------|------|------|------------|
+| `shoot_level` | **10** | `spread` 掉落 | 继续吃掉落无收益 |
+| `shoot_speed_level` | **15** | `speed` 掉落 | 同上 |
+| `bullet_power_level` | **50** | `level_up()` 每次 +1、`power` 掉落 | `power` 掉落转为 `heal(1)` |
+
+（`shoot_level` 满 10 时扩散角已到下限 10°，发数在 6 发左右封顶；
+`shoot_speed_level` 满 15 时射击间隔触底 0.08s。）
 
 **触发节奏**：
 
@@ -398,7 +408,7 @@ ENet 分配的 Client peer_id 是随机 32 位数，**UI 任何位置都不得�
 | 事件 | 行为 |
 |------|------|
 | **玩家死亡** | 保留联机会话，只移除该玩家并切换敌人目标（`_refresh_primary_player_target`）。只有 P1/P2 全灭才 Game Over。**不得**断网、**不得**切单机 |
-| **玩家断线** | 清理网络实体 / 同步缓存 / 对象池 → `NetworkManager.disconnect_network()` → 提示固定停留 5 秒 → 异步重载为单人场景 |
+| **玩家断线** | 清理网络实体 / 同步缓存 / 在途子弹（`Pool.reset_all()`）→ `NetworkManager.disconnect_network()` → 提示固定停留 5 秒 → 异步重载为单人场景 |
 
 ### 11.6 Boss 生成兜底
 
@@ -406,6 +416,63 @@ Boss 触发时若精英仍在场，`_on_boss_spawn_requested` 只记录 `_pendin
 精英死亡后通过 `_consume_pending_boss_spawn()` 消费。
 `_is_elite_blocking_boss_spawn()` 与 `_has_active_boss()` 都会清理无效或
 `is_queued_for_deletion()` 的引用，避免旧引用永久阻塞 Boss 生成。
+
+### 11.7 玩家位置同步为什么不用 MultiplayerSynchronizer（2026-09-27 改造）
+
+`player.tscn` 曾经挂 `MultiplayerSynchronizer` 同步 `position` / `rotation`，
+现已移除，玩家位置改由 `main.gd` 显式同步：
+
+```
+Host  _batch_sync_players()   ── [pid, x, y, rot] × N ──▶  _rpc_sync_player_states()
+Client _rpc_report_player_state() ── [pid, x, y, rot] ──▶  Host _apply_remote_player_state()
+两端 _apply_player_interpolation()  目标点插值（alpha = delta * 18）
+```
+
+| 项 | 值 |
+|----|----|
+| 频率 | `ENTITY_SYNC_INTERVAL = 0.022`（约 45Hz，与敌人/子弹同一节拍） |
+| 载荷 | `PLAYER_SYNC_STRIDE = 4`：`peer_id, x, y, rotation` |
+| 可靠性 | `unreliable`（丢一包无所谓，22ms 后就有下一包） |
+| 方向 | 每个玩家节点只有**持有端**发送，对端只应用；本机节点永不接受远端坐标 |
+
+**移除原因**：引擎的场景复制（`SceneCacheInterface`）依赖"同步器节点路径能被解析到"，
+而本项目是每端各自 `change_scene_to_file("main.tscn")`，客户端挂载战斗场景
+必然晚于 Host 开始广播，于是引擎持续报
+
+```
+Node not found: "Main/1/MultiplayerSynchronizer" (relative to "/root")
+Failed to get path from RPC: Main
+Invalid packet received. Requested node was not found.
+```
+
+并**丢弃后续同步包**。实测后果：客户端约 2/3 概率完全拿不到 Host 的玩家节点
+（画面少一个人、位置不同步），且 `set_multiplayer_authority(peer_id)` 非递归时
+同步器权威停在默认的 1（Host），会把 P2 幽灵坐标灌到客户端本机玩家上。
+
+> 回归网：`tests/lan_probe.gd` 的 `c4`（远端幽灵跟随 Host）、
+> `c7`（本机玩家不被幽灵坐标覆盖）、`h7`（Host 幽灵被客户端驱动）、
+> `c5`/`h5`（两端玩家节点数恒为 2）、`h8`/`c13`（不得再挂引擎同步器）。
+
+### 11.8 RPC 寻址与入局期噪音
+
+`@rpc` 以**节点所在场景路径**寻址，本项目即 `Main`。客户端还停在大厅（或探针
+场景）时 `/root/Main` 不存在，Host 已经开始广播，引擎就会报找不到路径并丢包。
+这是既有设计的固有现象，丢掉的包由 `_request_entity_snapshot_from_host()`
+自愈机制补齐（`_rpc_sync_entity_positions` 见到未知实体 ID 时触发）。
+
+`tests/run_probe.sh` 显式放行这一类噪音，但会打印计数；数量暴涨说明同步链路
+真的退化了，应作为回归处理。
+
+### 11.9 玩家节点生成时序
+
+Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何客户端连接，
+广播进了虚空。因此：
+
+- `player_connected` 时调用 `_send_player_snapshot_to(peer_id)` 补发完整名单；
+- 客户端 `_ready()` 里的 `_request_player_sync()` 保留为兜底。
+
+两者都必要：只靠客户端请求时，请求可能早于 Host 建好 `_players` 到达并拿到
+空名单，客户端会永久缺一个远端幽灵节点。
 
 ---
 
@@ -415,12 +482,18 @@ Boss 触发时若精英仍在场，`_on_boss_spawn_requested` 只记录 `_pendin
 |--------|------|------|
 | 子弹贴图缓存 | `sprite_factory.gd` `_bullet_cache` | 同类型复用 |
 | 道具贴图缓存 | `sprite_factory.gd` `_powerup_cache` | 5 种道具只生成一次 |
-| 对象池 | `pool.gd` | bullet(40) / hit_effect(20) 预分配 |
+| 子弹取用入口 | `pool.gd` | **不做节点复用**（见下），只统一 acquire/release/reset_all |
 | 护盾防抖 | `player.gd` `_shield_dirty` | 同帧多次信号只重建一次 |
 | 护盾 GPU 绘制 | `shield_ring.gd` | `draw_arc()` 而非 CPU 像素循环 |
 | 道具纹理延迟 | `powerup.gd` `call_deferred("_apply_sprite")` | 不阻塞死亡帧 |
 | 客户端性能档 | `main.gd` `_apply_client_perf_profile()` | 非服务器端降级 |
 | 实体同步包压缩 | `main.gd` | 5 字段 `PackedFloat32Array` + 护盾/朝向独立包 |
+| 玩家位置同步 | `main.gd` `_batch_sync_players()` | 4 字段，45Hz，2 人仅 8 float |
+
+> `pool.gd` 现状：`release()` 一律 `queue_free()`，池化已下线。
+> 早期把节点挂在 Pool 下复用，五次返工（`3c8527b → c5e503c → be12daf →
+> 1bb5882 → 241f634`）都栽在"already has a parent"和归还时序上。
+> 恢复真池化前必须先补齐归还时的状态重置（速度 / 位置 / 计时 / 特效）。
 
 ---
 
@@ -477,10 +550,35 @@ godot --headless --path . --quit
 # 2. 主场景可运行（覆盖 _ready / _process 链路，--quit 不够）
 godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
-# 3. 联机回归探针（双进程，真实 ENet 回环，28 项断言）
+# 3. 联机回归门禁（推荐：自动起双进程、收口退出码、扫描引擎报错）
+tests/run_probe.sh 7788          # 全绿才 exit 0，耗时约 40~60 秒
+
+# 3'. 手工跑探针（需要看实时日志时）
 godot --headless --path . res://tests/lan_probe.tscn -- host 7788   &
 godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 ```
+
+`run_probe.sh` 判定失败的条件（任一命中即 `exit 1`）：
+
+| 条件 | 说明 |
+|------|------|
+| `host_rc` / `client_rc` 非 0 | 探针内部有断言失败（`_summarize()` 统计后 `quit(1)`） |
+| `failed_assert > 0` | 日志里出现 `pass=false` |
+| `script_errors > 0` | 出现 `SCRIPT ERROR` |
+| `engine_errors > 0` | 出现运行期 `ERROR:`（已排除 at-exit 泄漏噪音与 §11.8 的入局期寻址噪音） |
+
+已知噪音放行清单见 `tests/run_probe.sh` 的 `NOISE` / `KNOWN` 变量，
+两类噪音的计数都会打印，便于观察是否劣化。
+
+探针断言共 **36 项**（host 22 + client 14），覆盖：
+
+- 死亡 ≠ 断线：P1 被 Boss 终局激光内圈秒杀后，P2 会话存活、不回退单机
+- P1/P2 槽位命名：记分牌不暴露真实 ENet peer_id
+- 终局激光时序：蓄力 120 物理帧（2.0s）、推进阶段只检测尖端
+- 束外玩家零伤害：推进 3s + 持续 10s 全程逐帧采样 P2 血量
+- 精英在场时 Boss 触发进入 pending，杀精英后补发
+- 玩家同步归属：远端跟随 Host / 本机不被幽灵覆盖 / 幽灵被客户端驱动
+- 玩家节点数恒为 2，且不再挂引擎 MultiplayerSynchronizer
 
 探针注意事项：
 
@@ -491,3 +589,8 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
   `connection_failed` 信号。
 - headless 默认无上限跑帧，时序断言必须用 `Engine.get_physics_frames()` 计数，
   并在 `_ready()` 里设 `Engine.max_fps = 60` 让墙钟与游戏时间 1:1。
+- **先 `is_instance_valid()` 再 `as` 强转**：节点随时可能被 `queue_free()`，
+  顺序反了会每帧刷 `Trying to cast a freed object`（数千条/秒，会污染整轮结果）。
+- **两端收尾时间要算好**：Host 要等激光推进 3s + 持续 10s 跑完才做最后断言，
+  客户端必须在这段时间保持在线（客户端收尾 12 秒、Host 收尾 5 秒）。
+  否则 Host 会把 P2 判为掉线，连带 `session_alive` 与 `no_fallback` 一起失败。
