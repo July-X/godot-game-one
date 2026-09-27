@@ -43,9 +43,12 @@ var _players: Dictionary = {}
 var _next_entity_id: int = 1000
 var _entities: Dictionary = {}
 var _entity_target_positions: Dictionary = {}
+## { peer_id : 远端玩家节点的目标坐标 }，客户端插值用
+var _player_target_positions: Dictionary = {}
 var _despawned_entity_ids: Dictionary = {}
 var _entity_sync_timer: float = 0.0
 var _health_sync_timer: float = 0.0
+var _player_report_timer: float = 0.0
 var _last_entity_resync_request_msec: int = 0
 var _boss_reward_claimed_peers: Dictionary = {}
 const ENTITY_SYNC_INTERVAL: float = 0.022
@@ -53,6 +56,8 @@ const ENTITY_SYNC_STRIDE: int = 3
 const ENTITY_SHIELD_SYNC_STRIDE: int = 3
 const ENTITY_ROTATION_SYNC_STRIDE: int = 2
 const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
+## 玩家位置同步：[peer_id, x, y, rotation]，与实体同步同频（约 45Hz）
+const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
 var _pending_laser_spawns: Array = []
@@ -77,8 +82,6 @@ func _ready() -> void:
 	_spawn_mobile_controls()
 	_spawn_hud()
 	_start_bgm()
-	Pool.setup("bullet", _bullet_scene, 40)
-	Pool.setup("hit_effect", _hit_effect_scene, 20)
 	GameState.reset_game()
 	GameState.level_changed.connect(_on_level_up)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
@@ -335,6 +338,22 @@ func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
 func _on_multiplayer_player_connected(p_peer_id: int) -> void:
 	if multiplayer.is_server():
 		_spawn_networked_player(p_peer_id, true)
+		## Host 自己的玩家节点是在 main._ready() 里 announce 的，那时新 peer 还没连上，
+		## 广播进了虚空。新加入端只能靠主动请求补齐，而请求可能在 Host 建好
+		## _players 之前就到达（Host 刚进战斗场景就有人 join），此时拿到空名单，
+		## 客户端会永久缺一个远端幽灵节点（画面上少一个人、也少一份同步）。
+		## 所以这里在 peer 连上的瞬间主动补发一次完整名单。
+		_send_player_snapshot_to(p_peer_id)
+
+
+## Host → 指定 peer：补发当前全部玩家节点（生成 + 坐标）
+func _send_player_snapshot_to(peer_id: int) -> void:
+	if peer_id <= 0:
+		return
+	for pid: int in _players:
+		var player_node: Node2D = _players[pid]
+		if is_instance_valid(player_node):
+			_rpc_spawn_networked_player.rpc_id(peer_id, pid, player_node.position.x, player_node.position.y)
 
 
 ## 多人模式：peer 断线时清理其玩家节点
@@ -345,6 +364,7 @@ func _on_multiplayer_player_disconnected(p_peer_id: int) -> void:
 			node.queue_free()
 		_players.erase(p_peer_id)
 	_alive_players.erase(p_peer_id)
+	_player_target_positions.erase(p_peer_id)
 	if multiplayer.is_server() and not _alive_players.is_empty():
 		_fallback_to_single_player("队友已退出，切换为单人模式")
 	elif _alive_players.is_empty() and multiplayer.is_server():
@@ -387,6 +407,7 @@ func _clear_network_runtime_state() -> void:
 	_pending_bullet_spawns.clear()
 	_pending_laser_spawns.clear()
 	_entity_target_positions.clear()
+	_player_target_positions.clear()
 	_despawned_entity_ids.clear()
 	_boss_reward_claimed_peers.clear()
 	_entities.clear()
@@ -416,6 +437,7 @@ func _rpc_despawn_player(p_peer_id: int) -> void:
 		node.queue_free()
 	_players.erase(p_peer_id)
 	_alive_players.erase(p_peer_id)
+	_player_target_positions.erase(p_peer_id)
 	if _player != null and is_instance_valid(_player) and _player.name == str(p_peer_id):
 		_player = null
 	if was_local_player and not _alive_players.is_empty():
@@ -445,10 +467,20 @@ func _process(delta: float) -> void:
 			if _entity_sync_timer <= 0.0:
 				_entity_sync_timer = ENTITY_SYNC_INTERVAL
 				_batch_sync_entity_positions()
+				_batch_sync_players()
 			_health_sync_timer -= delta
 			if _health_sync_timer <= 0.0:
 				_health_sync_timer = 0.1
 				_batch_sync_entity_health()
+		elif _player != null and is_instance_valid(_player):
+			## 客户端只上报自己的坐标，由 Host 转发给其他端
+			_player_report_timer -= delta
+			if _player_report_timer <= 0.0:
+				_player_report_timer = ENTITY_SYNC_INTERVAL
+				_rpc_report_player_state.rpc_id(1, _player.peer_id,
+					_player.global_position.x, _player.global_position.y, _player.rotation)
+		## 客户端玩家的幽灵节点在 Host 侧也要插值
+		_apply_player_interpolation(delta)
 		_flush_bullet_spawns()
 		_flush_laser_spawns()
 
@@ -457,6 +489,7 @@ func _process(delta: float) -> void:
 		if _client_bg_frame_skip % 2 == 0:
 			_scroll_background(delta * 2.0)
 		_apply_entity_interpolation(delta)
+		_apply_player_interpolation(delta)
 		return
 	_scroll_background(delta)
 
@@ -540,6 +573,22 @@ func _apply_entity_interpolation(delta: float) -> void:
 			continue
 		var target: Vector2 = _entity_target_positions[eid]
 		node.global_position = node.global_position.lerp(target, alpha)
+
+
+## 远端玩家插值：45Hz 同步包 + 60fps 渲染，直接 snap 会有轻微顿挫
+## Host 和 Client 都要跑：Host 侧插值的是客户端玩家的幽灵节点
+func _apply_player_interpolation(delta: float) -> void:
+	var alpha: float = clampf(delta * 18.0, 0.0, 1.0)
+	for pid: int in _player_target_positions.keys():
+		if not _players.has(pid) or not is_instance_valid(_players[pid]):
+			continue
+		## 本机节点只由输入驱动，任何情况下都不接受远端坐标
+		if NetworkManager.is_online() and pid == multiplayer.get_unique_id():
+			continue
+		var pnode: Node2D = _players[pid] as Node2D
+		if pnode == null:
+			continue
+		pnode.global_position = pnode.global_position.lerp(_player_target_positions[pid], alpha)
 
 func _spawn_enemy() -> void:
 	var enemy = _enemy_scene.instantiate()
@@ -1206,10 +1255,7 @@ func _request_player_sync() -> void:
 	if not multiplayer.is_server():
 		return
 	var requester := multiplayer.get_remote_sender_id()
-	for peer_id: int in _players:
-		var player_node: Node2D = _players[peer_id]
-		if is_instance_valid(player_node):
-			_rpc_spawn_networked_player.rpc_id(requester, peer_id, player_node.position.x, player_node.position.y)
+	_send_player_snapshot_to(requester)
 
 ## Client -> Host：请求确保本机玩家节点存在（修复偶发漏生成）
 @rpc("any_peer", "reliable", "call_remote")
@@ -1657,6 +1703,70 @@ func _batch_sync_entity_positions() -> void:
 		_rpc_sync_entity_shields.rpc(shield_data)
 	if rotation_data.size() > 0:
 		_rpc_sync_entity_rotations.rpc(rotation_data)
+
+
+## 玩家位置同步 ────────────────────────────────────────────────
+##
+## 为什么不用 MultiplayerSynchronizer：引擎的场景复制（SceneCache）依赖
+## 「同步器节点路径能被解析到」，而本项目是**每端各自 change_scene 进
+## main.tscn**，客户端挂载战斗场景晚于 Host 开始广播，于是引擎会
+##   Node not found: "Main/1/MultiplayerSynchronizer" (relative to "/root")
+##   Failed to get path from RPC: Main / Invalid packet received
+## 并丢弃后续同步包 —— 表现为客户端间歇性丢失远端玩家节点与位置同步。
+## 玩家位置改走和敌人/子弹同一条手工管线，行为可预期、可插值、易回归。
+
+## Host：批量广播全部玩家节点坐标（含各端幽灵），与实体同步同频
+func _batch_sync_players() -> void:
+	var data := PackedFloat32Array()
+	for pid: int in _players:
+		var node = _players[pid]
+		if not is_instance_valid(node):
+			continue
+		data.append(pid as float)
+		data.append(node.global_position.x)
+		data.append(node.global_position.y)
+		data.append(float(node.rotation))
+	if data.size() > 0:
+		_rpc_sync_player_states.rpc(data)
+
+
+## Host → Client：应用远端玩家坐标
+@rpc("authority", "unreliable", "call_remote")
+func _rpc_sync_player_states(data: PackedFloat32Array) -> void:
+	var i := 0
+	while i + PLAYER_SYNC_STRIDE - 1 < data.size():
+		var pid := int(data[i])
+		var pos := Vector2(data[i + 1], data[i + 2])
+		var rot := data[i + 3]
+		i += PLAYER_SYNC_STRIDE
+		if NetworkManager.is_online() and pid == multiplayer.get_unique_id():
+			continue
+		_apply_remote_player_state(pid, pos, rot)
+
+
+## Client → Host：上报本机坐标，驱动 Host 上的幽灵节点
+@rpc("any_peer", "unreliable", "call_remote")
+func _rpc_report_player_state(p_peer_id: int, pos_x: float, pos_y: float, rot: float) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	if sender > 0 and p_peer_id != sender:
+		return
+	_apply_remote_player_state(p_peer_id, Vector2(pos_x, pos_y), rot)
+
+
+## 把远端坐标写入目标点 + 朝向；首次直接吸附，之后由 _apply_entity_interpolation 平滑
+func _apply_remote_player_state(p_peer_id: int, pos: Vector2, rot: float) -> void:
+	if not _players.has(p_peer_id) or not is_instance_valid(_players[p_peer_id]):
+		return
+	var node: Node2D = _players[p_peer_id] as Node2D
+	if node == null:
+		return
+	if node.get_meta("player_sync_inited", false) == false:
+		node.global_position = pos
+		node.set_meta("player_sync_inited", true)
+	_player_target_positions[p_peer_id] = pos
+	node.rotation = rot
 
 ## 子弹同步 ──────────────────────────────────────────────────
 

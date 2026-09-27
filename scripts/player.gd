@@ -40,7 +40,14 @@ func _ready() -> void:
 func _init_multiplayer() -> void:
 	if name.is_valid_int():
 		peer_id = name.to_int()
-	set_multiplayer_authority(peer_id)
+	## 必须递归设置：player.tscn 里的 MultiplayerSynchronizer 是子节点，
+	## 不递归的话它的权威会停在默认值 1（Host），造成两个方向都错位：
+	##   - Host 上 P2 幽灵的同步器权威=Host → Host 把幽灵坐标广播给客户端，
+	##     客户端本机 P2 被拽向幽灵位置（Host 幽灵不动，玩家像被橡皮筋拽住）
+	##   - 客户端本机 P2 的同步器权威=Host → 客户端不发送自己的位置，
+	##     Host 上的幽灵永远冻结在出生点
+	## 递归后：每个玩家节点只有自己的持有端发送坐标，对端只负责应用。
+	set_multiplayer_authority(peer_id, true)
 
 
 func _init_components() -> void:

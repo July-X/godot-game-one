@@ -7,7 +7,6 @@ var _lifetime: float = 10.0
 var _bob_timer: float = 0.0
 var entity_id: int = 0
 var _is_network_ghost: bool = false
-var assigned_peer_id: int = 0
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _glow: Sprite2D = $GlowSprite
@@ -37,7 +36,6 @@ var _magnet_speed: float = 320.0
 var _magnet_elapsed: float = 0.0
 var _magnet_requested: bool = false
 var _magnet_owner_peer_id: int = 0
-var _magnet_radius: float = 80.0
 
 func _physics_process(delta: float) -> void:
 	if NetworkManager.is_online() and _is_network_ghost:
@@ -288,6 +286,6 @@ func _setup_visual_style() -> void:
 			_sprite.modulate = Color(1.0, 0.9, 0.35, 1.0)
 			if _glow:
 				_glow.modulate = Color(1.0, 0.82, 0.18, 0.62)
-	if has_meta("assigned_peer_id"):
-		assigned_peer_id = int(get_meta("assigned_peer_id"))
-		_magnet_radius = 120.0
+	## 注意：这里**不要**把 assigned_peer_id meta 缓存成成员变量。
+	## 三个生成路径（enemy / elite / boss）都是 add_child() → setup() → set_meta()，
+	## 缓存会永远读到空值；归属判断一律直接读 meta（见 start_magnet）。

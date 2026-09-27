@@ -1,81 +1,46 @@
 extends Node
-## 通用对象池 — 预实例化并复用节点，避免 instantiate/queue_free GC 停顿
+## 子弹 / 命中特效的取用与回收入口（Autoload `Pool`）
+##
+## 现状（2026-09-27 校准）：**不做节点复用**，acquire 即 instantiate，
+## release 即 queue_free。
+##
+## 曾经实现过真正的池化（把节点挂在 Pool 下复用），但反复踩到同一类坑：
+## "already has a parent"、deferred remove_child 与 add_child 的竞争
+## （见 git 3c8527b → c5e503c → be12daf → 1bb5882 → 241f634 五次返工），
+## 最终选择"不复用"这条更简单可预期的路径：
+##   - 省掉池内节点的父节点归属问题
+##   - 省掉归还时的状态重置（速度 / 位置 / 计时 / 特效）——那才是池化真正的成本
+##   - reset_all 仍然是必需的：断线回退单机时要把在途子弹全部清掉
+##
+## 曾经还有一段"预实例化 40 发子弹 + 20 个命中特效"的死代码：节点既没有
+## add_child 进场景树，也永远不会被归还，整局白占内存，已删除。
+## 恢复真池化前，先看 docs/Development_Plan.md 的「对象池复用」条目。
 ##
 ## 用法:
-##   Pool.acquire("bullet", bullet_scene)  → 取用
-##   Pool.release(some_node)               → 归还
-##   Pool.setup("bullet", bullet_scene, 30) → 预分配
+##   Pool.acquire("bullet", bullet_scene)  → 取用（返回新节点）
+##   Pool.release(some_node)               → 回收
+##   Pool.reset_all()                      → 清空全部在途节点
 
-const DEFAULT_POOL_SIZE: int = 20
-const MAX_POOL_SIZE: int = 100
-
-## { type_name : [pooled_nodes] }
-var _pools: Dictionary = {}
-## { node_instance : type_name }
+## { node_instance : type_name }，只用于 reset_all 时批量回收
 var _active: Dictionary = {}
 
-## 配置某个类型的对象池初始大小
-func setup(type_name: String, scene: PackedScene, size: int = DEFAULT_POOL_SIZE) -> void:
-	if _pools.has(type_name):
-		return  # 已初始化
-	var arr: Array[Node] = []
-	for i in size:
-		var obj := scene.instantiate()
-		obj.set_process(false)
-		obj.set_physics_process(false)
-		obj.visible = false
-		obj.set_name("%s_pooled_%d" % [type_name, i])
-		arr.append(obj)
-	_pools[type_name] = arr
-
-## 从池中取用节点
-func acquire(type_name: String, scene: PackedScene) -> Node:
-	## 注意：这里必须用 has() 判断而不是 `_pools.get(type_name) == null`。
-	## 旧写法 `var pool: Array = _pools.get(type_name)` 在 key 不存在时会把
-	## null 赋给 Array 类型变量，Godot 4 直接抛运行时错误并中断本函数，
-	## acquire 返回 null，后续 add_child(null) / node.setup() 连锁报错。
-	## 触发路径：reset_all() 之后（断线回退单机 / 结算清理）继续开火。
-	if not _pools.has(type_name):
-		# 首次使用（或 reset_all 之后）延迟初始化
-		setup(type_name, scene)
-	var pool: Array = _pools.get(type_name, [])
-
-	var node: Node
-	if pool.is_empty():
-		node = scene.instantiate()
-	else:
-		node = pool.pop_back()
-		# 从 Pool 父节点移除（setup 时 add_child 到 Pool 下）
-		if node.get_parent() == self:
-			remove_child(node)
-
-	node.set_process(true)
-	node.set_physics_process(true)
-	node.visible = true
+## 取用节点。_scene 参数保留是为了兼容既有调用点（acquire 一律显式传场景），
+## 同时避免 UNUSED_PARAMETER 警告。
+func acquire(type_name: String, _scene: PackedScene) -> Node:
+	var node: Node = _scene.instantiate()
 	_active[node] = type_name
 	return node
 
-## 将节点归还池中
+## 回收单个节点
 func release(node: Node) -> void:
 	if node == null or not is_instance_valid(node):
 		return
-	var type_name: String = _active.get(node, "")
-	if type_name.is_empty():
-		# 不在池中管理的节点，直接释放
-		if node.is_inside_tree():
-			node.queue_free()
-		return
-
-	# 直接释放 — 不保留引用，pool 用完了会自动创建新节点
+	_active.erase(node)
 	node.queue_free()
 
+## 清空所有在途节点（断线回退单机 / 结算时调用）
 func reset_all() -> void:
 	for node in _active.keys():
 		if is_instance_valid(node):
 			node.queue_free()
 	_active.clear()
-	for arr in _pools.values():
-		for node in arr:
-			if is_instance_valid(node):
-				node.queue_free()
-	_pools.clear()
