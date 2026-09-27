@@ -58,7 +58,9 @@ const ENTITY_ROTATION_SYNC_STRIDE: int = 2
 const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
 ## 星空平铺贴图边长（像素）。必须与 star 落点避开边缘的规则配套：
 ## 贴图内不放跨界星星，滚动时按该边长取模循环即可无缝衔接。
-const STAR_FIELD_TILE: int = 256
+## 取 512 而非更小：256 的贴图在 1280 宽的屏幕上会横排重复 5 次，
+## 肉眼能直接看出网格状重复（实测截图确认）；512 只重复 2.5 次。
+const STAR_FIELD_TILE: int = 512
 ## 玩家位置同步：[peer_id, x, y, rotation]，与实体同步同频（约 45Hz）
 const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
@@ -197,11 +199,17 @@ func _create_parallax_background() -> void:
 	## 旧实现是 180+90+35 = 305 个节点、305 张各自独立的 2~12px 贴图，
 	## 每帧全部移动，既无法合批也吃满 draw call；实测在本机（AMD 5300M）
 	## 只有 1 个敌人 12 颗子弹时也只有 106 fps，够不到 120。
-	## 新实现每层 1 个节点 + 1 张 256×256 可平铺贴图，draw call 从 305 降到 3。
+	## 新实现每层 1 个节点 + 1 张 512×512 可平铺贴图，draw call 从 305 降到 3。
+	##
+	## 星星数量按**旧实现的实际密度**反推，而不是随手取值：
+	## 旧实现 305 颗铺在 1500×920 的活动区域 = 每 4525 px² 一颗。
+	## 512×512 贴图下对应 far=34 / mid=17 / near=7。
+	## （第一版按 256 贴图取 120/60/22，密度是原来的 14 倍，弹幕可读性
+	##   被背景吃掉——对弹幕射击来说这是比"看出贴图重复"严重得多的问题。）
 	var star_tiles: Array = [
-		_build_star_tile(120, 2, 2, 0.3, 0.7, false),
-		_build_star_tile(60, 3, 5, 0.5, 0.9, false),
-		_build_star_tile(22, 6, 12, 0.7, 1.0, true),
+		_build_star_tile(34, 2, 2, 0.3, 0.7, false),
+		_build_star_tile(17, 3, 5, 0.5, 0.9, false),
+		_build_star_tile(7, 6, 12, 0.7, 1.0, true),
 	]
 	var layer_defs: Array = [
 		{speed = 12.0, z = -10},
@@ -212,10 +220,11 @@ func _create_parallax_background() -> void:
 		var def: Dictionary = layer_defs[i]
 		var sprite := Sprite2D.new()
 		sprite.texture = star_tiles[i]
-		## 平铺需要纹理重复；region 大于一屏，滚动时露出下一圈实现无缝循环
+		## 平铺需要纹理重复；region 覆盖「一屏 + 一个贴图边长」，
+		## 滚动时露出的下一圈正好补上移出的部分
 		sprite.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 		sprite.region_enabled = true
-		sprite.region_rect = Rect2(0, 0, STAR_FIELD_TILE * 6, STAR_FIELD_TILE * 4)
+		sprite.region_rect = Rect2(0, 0, STAR_FIELD_TILE * 4, STAR_FIELD_TILE * 3)
 		sprite.centered = false
 		sprite.position = Vector2.ZERO
 		sprite.z_index = int(def.z)
