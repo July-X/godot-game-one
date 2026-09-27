@@ -118,11 +118,17 @@ func _update_draft_panel() -> void:
 	_draft_panel.visible = true
 	## 首次出现时才建卡片标签，之后只更新文字（避免每帧重建节点）
 	while _draft_card_labels.size() < cards.size():
+		var panel := PanelContainer.new()
 		var l := Label.new()
-		l.custom_minimum_size = Vector2(86, 150)
+		## 卡片宽度必须放得下最长的一行描述，否则三个卡片会互相重叠
+		panel.custom_minimum_size = Vector2(200, 96)
+		l.custom_minimum_size = Vector2(192, 88)
+		l.add_theme_font_size_override("font_size", 13)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_draft_row.add_child(l)
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		panel.add_child(l)
+		_draft_row.add_child(panel)
 		_draft_card_labels.append(l)
 	for i in range(_draft_card_labels.size()):
 		var label: Label = _draft_card_labels[i]

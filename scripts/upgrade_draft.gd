@@ -23,27 +23,27 @@ const CARDS: Array[Dictionary] = [
 	# ── 改变操作方式（构筑的核心）────────────────────────────
 	{
 		"id": "pierce", "name": "贯穿弹芯", "kind": "style",
-		"desc": "子弹额外贯穿 1 个敌人。\n需要贴近敌群输出。",
+		"desc": "子弹多贯穿 1 个敌人\n需要贴近敌群输出",
 		"max_stacks": 3,
 	},
 	{
 		"id": "splash", "name": "溅射弹头", "kind": "style",
-		"desc": "子弹命中时小范围爆炸。\n需要卡准密集敌群的位置。",
+		"desc": "命中小范围爆炸\n需要卡准敌群位置",
 		"max_stacks": 2,
 	},
 	{
 		"id": "homing", "name": "追踪回路", "kind": "style",
-		"desc": "子弹轻微追踪最近的敌人。\n站桩也能覆盖全场，但会打偏。",
+		"desc": "子弹轻微追踪\n站桩也能覆盖全场",
 		"max_stacks": 2,
 	},
 	{
 		"id": "ricochet", "name": "回弹弹皮", "kind": "style",
-		"desc": "子弹撞墙后不再反弹，改为沿敌群方向散射。",
+		"desc": "撞墙后改为散射\n改变走位节奏",
 		"max_stacks": 1,
 	},
 	{
 		"id": "graze_focus", "name": "擦弹专注", "kind": "style",
-		"desc": "擦弹判定半径 +8px，擦弹窗口 2s → 3s。\n奖励更早触发。",
+		"desc": "擦弹半径 +8px\n窗口 2s → 3s",
 		"max_stacks": 3,
 	},
 	# ── 数值（最多一半，与上面混合）──────────────────────────
@@ -64,12 +64,12 @@ const CARDS: Array[Dictionary] = [
 	},
 	{
 		"id": "vitality", "name": "强化装甲", "kind": "stat",
-		"desc": "生命上限 +20，并立即回复 20。",
+		"desc": "生命上限 +20\n并立即回复 20",
 		"max_stacks": 8,
 	},
 	{
 		"id": "shield", "name": "护盾电容", "kind": "stat",
-		"desc": "护盾充能间隔 8s → 6s。",
+		"desc": "充能间隔 8s → 6s",
 		"max_stacks": 2,
 	},
 ]
