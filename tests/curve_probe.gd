@@ -42,6 +42,7 @@ func _ready() -> void:
 	_check_card_pool_invariants()
 	_check_draft_distribution_varies()
 	_check_player_dict_key_type()
+	_check_evolutions_are_real()
 	print("%s VERDICT SUMMARY pass=%d failed=%d total=%d" % [
 		TAG, _passed, _failed, _passed + _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
@@ -226,3 +227,45 @@ func _check_player_dict_key_type() -> void:
 	_check("no_string_iteration_over_player_dict",
 		not src.contains("for key: String in _players.keys()"),
 		"_players 的 key 是 int，不能按 String 遍历")
+
+
+## 组合进化不变量：每条进化都必须真的改变某个数值，
+## 否则它只是卡面上的一句漂亮话，触发与不触发毫无区别。
+func _check_evolutions_are_real() -> void:
+	var bad: Array = []
+	for evo: Dictionary in GameState.EVOLUTIONS:
+		var req: Array = evo.get("requires", [])
+		if req.size() < 2:
+			bad.append("single_req:" + str(evo.get("id", "")))
+			continue
+		## 造一个"只满足前置、不含进化效果"的基线，再对比满足后的结果
+		GameState.reset_game()
+		for r: String in req:
+			GameState.apply_card(1, r)
+		## 再加一张无关卡，制造"多拿了一张"的干扰项
+		GameState.apply_card(1, "vitality")
+		var before: String = _card_effect_signature(1)
+		for r: String in req:
+			GameState.apply_card(1, r)
+		var after: String = _card_effect_signature(1)
+		if before == after:
+			bad.append("no_effect:" + str(evo.get("id", "")))
+	_check("evolutions_are_real", bad.is_empty(),
+		"issues=%s evolutions=%d" % [str(bad), GameState.EVOLUTIONS.size()])
+	GameState.reset_game()
+
+
+## 把构筑对子弹的实际影响拼成签名，用于比较"有没有变化"
+func _card_effect_signature(pid: int) -> String:
+	## 全部先转字符串再拼。踩过的坑：用 `x >= 0.0 and 1 or 0` 填 %d，
+	## 而 GDScript 的 and/or 返回 bool，于是报 "a number is required"，
+	## 签名函数直接返回空串 → 断言永远"通过"。**空转的断言比没有断言更危险**，
+	## 所以这里宁可啰嗦也不用布尔运算凑数。
+	return "|".join(PackedStringArray([
+		str(GameState.get_bullet_pierce(pid)),
+		str(GameState.get_bullet_splash(pid)),
+		str(GameState.get_bullet_homing(pid)),
+		"%.1f" % GameState.get_bullet_speed_bonus(pid),
+		"%.1f" % GameState.get_splash_radius(pid),
+		"%.1f" % GameState.get_graze_radius_bonus(pid),
+	]))

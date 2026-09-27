@@ -54,6 +54,10 @@ var _despawned_entity_ids: Dictionary = {}
 var _entity_sync_timer: float = 0.0
 var _health_sync_timer: float = 0.0
 var _player_report_timer: float = 0.0
+## 坐标上报计数（诊断用）：sent 在客户端统计，received 在 Host 统计
+var _player_report_received: int = 0
+var _player_report_sent: int = 0
+var _player_report_rejected: int = 0
 var _last_entity_resync_request_msec: int = 0
 var _boss_reward_claimed_peers: Dictionary = {}
 const ENTITY_SYNC_INTERVAL: float = 0.022
@@ -598,6 +602,7 @@ func _process(delta: float) -> void:
 			_player_report_timer -= delta
 			if _player_report_timer <= 0.0:
 				_player_report_timer = ENTITY_SYNC_INTERVAL
+				_player_report_sent += 1
 				_rpc_report_player_state.rpc_id(1, _player.peer_id,
 					_player.global_position.x, _player.global_position.y, _player.rotation)
 		## 客户端玩家的幽灵节点在 Host 侧也要插值
@@ -1949,10 +1954,26 @@ func _rpc_sync_player_states(data: PackedFloat32Array) -> void:
 func _rpc_report_player_state(p_peer_id: int, pos_x: float, pos_y: float, rot: float) -> void:
 	if not multiplayer.is_server():
 		return
+	_player_report_received += 1
 	var sender: int = multiplayer.get_remote_sender_id()
 	if sender > 0 and p_peer_id != sender:
+		_player_report_rejected += 1
+		if _player_report_rejected <= 3:
+			print("[SYNC] 上报被拒 p_peer_id=%d sender=%d" % [p_peer_id, sender])
 		return
 	_apply_remote_player_state(p_peer_id, Vector2(pos_x, pos_y), rot)
+
+
+## 收到过几次客户端坐标上报。联机探针靠它区分"客户端到底有没有在发"，
+## 用来判断失败是同步链路的 bug 还是探针自己的时序问题。
+func get_player_report_count() -> int:
+	return _player_report_received
+
+
+## 客户端侧发送计数。与 Host 的 received 对比即可区分
+## "客户端没发" 与 "发了但没到"。
+func get_player_report_sent() -> int:
+	return _player_report_sent
 
 
 ## 把远端坐标写入目标点 + 朝向；首次直接吸附，之后由 _apply_entity_interpolation 平滑

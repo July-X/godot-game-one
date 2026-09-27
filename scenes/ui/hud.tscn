@@ -102,6 +102,16 @@ theme_override_colors/font_color = Color(0.55, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 14
 text = ""
 
+[node name="EvolutionLabel" type="Label" parent="."]
+visible = false
+offset_left = 16.0
+offset_top = 286.0
+offset_right = 340.0
+offset_bottom = 310.0
+theme_override_colors/font_color = Color(1, 0.85, 0.45, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+
 [node name="DraftPanel" type="VBoxContainer" parent="."]
 visible = false
 anchors_preset = 5

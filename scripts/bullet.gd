@@ -57,7 +57,7 @@ func apply_owner_cards(pid: int) -> void:
 	if not _is_player_bullet:
 		return
 	_pierce_left = GameState.get_bullet_pierce(pid)
-	_splash_radius = 78.0 if GameState.get_bullet_splash(pid) else 0.0
+	_splash_radius = GameState.get_splash_radius(pid) if GameState.get_bullet_splash(pid) else 0.0
 	_homing_strength = 1.8 if GameState.get_bullet_homing(pid) else 0.0
 	_speed += GameState.get_bullet_speed_bonus(pid)
 

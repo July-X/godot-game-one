@@ -302,9 +302,12 @@ func _verify_sync_authority(client_id: int) -> void:
 		var ghost_pos: Vector2 = (_main._players[client_id] as Node2D).position
 		err = ghost_pos.distance_to(expected)
 		from_marker = ghost_pos.distance_to(SYNC_MARKER_GHOST_P2)
+	## reports 用来区分两种失败：客户端压根没上报（同步链路问题）
+	## vs 上报了但没应用（插值/权威问题）
+	var reports: int = _main.get_player_report_count() if _main.has_method("get_player_report_count") else -1
 	_check("h7.client_drives_own_ghost",
 		err >= 0.0 and err <= 64.0 and from_marker > SYNC_MARKER_TOLERANCE,
-		"err_to_client_pos=%.1f moved_from_marker=%.1f" % [err, from_marker])
+		"err_to_client_pos=%.1f moved_from_marker=%.1f reports=%d" % [err, from_marker, reports])
 	var auth_bad: Array = _nodes_with_engine_synchronizer()
 	_check("h8.no_engine_player_synchronizer", auth_bad.is_empty(),
 		"players_with_synchronizer=%s" % str(auth_bad))
@@ -500,11 +503,13 @@ func _client_scenario() -> void:
 	## 远端 P1 幽灵必须跟到 Host 挪动的标记点 —— 证明玩家位置同步仍然工作；
 	## 本机 P2 绝不能出现在 Host 幽灵的标记点 —— 证明同步器权威没有配反。
 	var followed: bool = await _wait_until(_cond_remote_followed, 8.0)
+	## local_player_valid 用来判断客户端的 _player 引用是否已就绪：
+	## 它是"客户端有没有在上报坐标"的前提，null 就永远不会发
 	_check("c4.remote_player_follows_host", followed,
-		"p1_ghost_at_marker=%s players=%s ghost_in_tree=%s ghost_is_node2d=%s" % [
+		"p1_ghost_at_marker=%s players=%s local_player_valid=%s reports_sent=%d" % [
 			str(_p1_followed), str(_main._players.keys()),
-			str(_main.get_node_or_null("1") != null),
-			str(is_instance_valid(_main._players[1]) if _main._players.has(1) else "no-key")])
+			str(_main._player != null and is_instance_valid(_main._player)),
+			_main.get_player_report_sent() if _main.has_method("get_player_report_sent") else -1])
 	_check("c5.exactly_two_player_nodes", _player_node_count() == 2,
 		"player_nodes=%d" % _player_node_count())
 

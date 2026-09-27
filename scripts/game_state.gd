@@ -761,19 +761,85 @@ func apply_card(peer_id: int, card_id: String) -> void:
 
 ## 子弹行为开关：这些是"改变操作方式"的卡生效的地方
 func get_bullet_pierce(peer_id: int = -1) -> int:
+	## 「贯穿弹芯 + 追踪回路」组合进化 → 追踪贯穿弹：
+	## 子弹边追踪边贯穿，是两种卡组合出的第三种玩法
+	if _has_evolution(EVOLUTION_PIERCE_HOMING, peer_id):
+		return get_card_count("pierce", peer_id) + 1
 	return get_card_count("pierce", peer_id)
 
 
 func get_bullet_splash(peer_id: int = -1) -> bool:
-	return get_card_count("splash", peer_id) > 0
+	return get_card_count("splash", peer_id) > 0 \
+		or _has_evolution(EVOLUTION_SPLASH_PIERCE, peer_id)
 
 
 func get_bullet_homing(peer_id: int = -1) -> bool:
-	return get_card_count("homing", peer_id) > 0
+	return get_card_count("homing", peer_id) > 0 \
+		or _has_evolution(EVOLUTION_PIERCE_HOMING, peer_id)
+
+
+func get_splash_radius(peer_id: int = -1) -> float:
+	## 「溅射 + 贯穿」组合进化 → 连锁爆破：溅射范围更大
+	if _has_evolution(EVOLUTION_SPLASH_PIERCE, peer_id):
+		return 112.0
+	return 78.0
 
 
 func get_bullet_speed_bonus(peer_id: int = -1) -> float:
-	return float(get_card_count("pierce", peer_id)) * 40.0
+	var bonus: float = float(get_card_count("pierce", peer_id)) * 40.0
+	## 「擦弹专注 + 速射」组合进化 → 弹幕共振：擦弹满层时额外加速
+	if _has_evolution(EVOLUTION_GRAZE_FIRERATE, peer_id):
+		bonus += get_graze_stacks() * 18.0
+	return bonus
+
+
+## ── 组合进化 ────────────────────────────────────────────────
+##
+## 组合进化是复玩引擎：10 张卡能组合出 10+ 种体验，
+## 而"各拿各的"只能得到 10 种。触发条件是**持有两张指定风格卡**，
+## 满足后自动生效、不占卡位、也不需要玩家额外操作。
+const EVOLUTION_PIERCE_HOMING: String = "pierce_homing"
+const EVOLUTION_SPLASH_PIERCE: String = "splash_pierce"
+const EVOLUTION_GRAZE_FIRERATE: String = "graze_firerate"
+
+const EVOLUTIONS: Array[Dictionary] = [
+	{
+		"id": EVOLUTION_PIERCE_HOMING, "name": "追踪贯穿弹",
+		"requires": ["pierce", "homing"],
+		"desc": "贯穿 +1，子弹边追踪边贯穿",
+	},
+	{
+		"id": EVOLUTION_SPLASH_PIERCE, "name": "连锁爆破",
+		"requires": ["splash", "pierce"],
+		"desc": "溅射范围 78 → 112px",
+	},
+	{
+		"id": EVOLUTION_GRAZE_FIRERATE, "name": "弹幕共振",
+		"requires": ["graze_focus", "firerate"],
+		"desc": "每层擦弹额外 +18 弹速",
+	},
+]
+
+
+func _has_evolution(evo_id: String, peer_id: int = -1) -> bool:
+	for evo: Dictionary in EVOLUTIONS:
+		if str(evo.id) != evo_id:
+			continue
+		var owned: Dictionary = get_card_stacks(peer_id)
+		for req: String in evo.requires:
+			if int(owned.get(req, 0)) <= 0:
+				return false
+		return true
+	return false
+
+
+## 当前已激活的进化（供 HUD 显示）
+func get_active_evolutions(peer_id: int = -1) -> Array:
+	var out: Array = []
+	for evo: Dictionary in EVOLUTIONS:
+		if _has_evolution(str(evo.id), peer_id):
+			out.append(evo)
+	return out
 
 
 ## 擦弹强化：判定半径与窗口

@@ -11,6 +11,7 @@ extends CanvasLayer
 @onready var _draft_panel: VBoxContainer = $DraftPanel
 @onready var _draft_title: Label = $DraftPanel/DraftTitle
 @onready var _draft_row: HBoxContainer = $DraftPanel/CardRow
+@onready var _evolution_label: Label = $EvolutionLabel
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _fps_label: Label = $FpsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -96,6 +97,7 @@ func _process(_delta: float) -> void:
 	_refresh_powerup_display_if_needed()
 	_update_graze_display()
 	_update_draft_panel()
+	_update_evolution_display()
 	_update_fps(_delta)
 
 
@@ -144,6 +146,22 @@ func _update_draft_panel() -> void:
 		else:
 			label.visible = false
 	_draft_title.text = "升级！按 1 / 2 / 3 选择  (%.0f 秒)" % float(draft.get("left", 0.0))
+
+
+## 已激活的组合进化提示。玩家看不到自己解锁了什么，
+## 组合进化就只是"数值莫名变强"，构筑感建立不起来。
+func _update_evolution_display() -> void:
+	if _evolution_label == null:
+		return
+	var evos: Array = GameState.get_active_evolutions(_local_peer_id())
+	if evos.is_empty():
+		_evolution_label.visible = false
+		return
+	_evolution_label.visible = true
+	var names: Array = []
+	for evo: Dictionary in evos:
+		names.append(str(evo.get("name", "")))
+	_evolution_label.text = "进化：%s" % " · ".join(PackedStringArray(names))
 
 
 func _local_peer_id() -> int:
