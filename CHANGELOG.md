@@ -1,5 +1,50 @@
 # 更新日志
 
+## [未发布] - 2026-09-27
+
+### 修复
+
+- **`pool.gd` 空池取用崩溃**：原 `acquire()` 写 `var pool: Array = _pools.get(type_name)`，
+  当该类型尚未 `setup()` 时会把 `null` 赋给 `Array` 类型变量，Godot 4 直接抛运行时错误并中断函数，
+  导致 `acquire()` 返回 `null`，随后 `add_child(null)` 与 `node.setup()` 连锁报错。
+  实际触发路径：`Pool.reset_all()`（断线回退单机 / 结算清理）之后旧场景还会继续开火约 5 秒，
+  这段时间内每帧喷错误。改为先 `_pools.has()` 判断并按需惰性 `setup()`，再用带默认值的 `get()`。
+- **`powerup.gd` 入树前访问 `@onready` 节点**：联机同步链路在 `add_child()` **之前**调用
+  `setup()`（见 `main.gd::_rpc_spawn_powerup`），此时 `@onready var _sprite` 仍为 `null`，
+  `_setup_visual_style()` 直接赋值抛空引用错误；每次网络掉落都会触发一次（精英死亡一次掉 12 个）。
+  改为未入树时跳过，由 `_ready()` 补应用——顺带修正了 `assigned_peer_id` 分支在客户端失效的问题
+  （该 meta 在 `setup()` 之后才设置）。
+
+### 新增
+
+- **联机回归探针** `tests/lan_probe.gd` + `tests/lan_probe.tscn`：
+  两个 headless 进程在本机回环跑真实 ENet，脚本化驱动真实 Boss 终局激光，28 项断言覆盖
+  「死亡 ≠ 断线」「P1/P2 槽位命名」「激光时序与尖端检测」「精英阻塞时 Boss 补发」。
+  探针本身的三个踩坑点（不能用 `change_scene_to_file`、`multiplayer_peer` 默认非空、
+  headless 无上限跑帧）已写进 `docs/architecture.md` §15。
+
+### 文档
+
+- **项目定位全面校准**：仓库实际形态早已从「单机 3D 微剧情动作游戏」变为
+  `Space Bullet Hell`（2D 俯视角 Roguelike 弹幕射击 + 2 人 LAN 联机），
+  但 `README.md` / `agents.md` / `docs/Design_Decisions.md` / `docs/Development_Plan.md`
+  / `docs/art_audio_pipeline.md` 仍停留在旧 3D 叙事版本，已全部对齐代码现状。
+- **`docs/architecture.md` 重写**：补入 `boss.gd`/`boss.tscn`、`scripts/player/` 四模块拆分、
+  4 个联机 Autoload、`pool.gd`、`tests/`；删除仓库中不存在的
+  `skill_cooldown_overlay.gd` / `laser_cooldown_overlay.gd`（实际合并为 `cooldown_overlay.gd`）；
+  更正主场景为 `title_screen.tscn`；更正成长公式（子弹上限 8→12、属性上限 15→50、
+  护盾「每 10 击杀 1 层」→「8 秒自动充能」）；补入 Boss 三阶段与终局激光完整参数。
+- **Boss 终局激光参数纠错**：`Design_Decisions.md` / `Development_Plan.md` /
+  `AI_HANDOFF_2026-05-12.md` 原写「血量首次降到 10% 触发一次、0.8 秒宽束推进」，
+  实际实现是「每损失 25 个百分点血量触发一次、2s 蓄力 / 3s 尖端推进 / 10s 持续束，
+  内圈秒杀外圈 10HP/s」。三处已更正并标注修正记录。
+- **精英 / Boss 触发条件纠错**：`architecture.md` 原写「每 20 击杀触发精英（total_kills % 30 == 0）」
+  自相矛盾且过时；实际为精英 `total_kills % 20 == 0`、Boss `level % 5 == 0`。
+
+### 已知遗留
+
+- `backup_3d/` 是旧 3D 版本完整存档（340K），已废弃但仍在仓库内，未删除。
+
 ## [1.3.1] - 2026-05-12
 
 ### 新增

@@ -1,32 +1,51 @@
 # Godot Game One - AI 开发指令
 
 > 生成时间：2026-05-02  
-> 最后更新：2026-05-02（Phase 2 完成）
-> 目标模型：deepseek-v4-flash / Codex / 任意 AI Agent  
+> 最后更新：**2026-09-27（项目形态已变更，全文重写）**  
+> 目标模型：任意 AI Agent  
 > 项目路径：`/Users/zhongxingxing/2026/code/godot-game-one`
+
+> ⚠️ **重要**：本文件原为「单机 3D 微剧情游戏」版本（2026-05-02）。
+> 项目此后已转型为 **`Space Bullet Hell`（2D 俯视角 Roguelike 弹幕射击 + 2 人 LAN 联机）**，
+> 原文的 Phase 1-4、走廊关卡、剧情触发器等描述**全部作废**。
+> 当前有效文档：
+> - 代码结构 → `docs/architecture.md`
+> - 设计意图 → `docs/Design_Decisions.md`
+> - 开发顺序 → `docs/Development_Plan.md`
+> - Agent 工作规则 → `agents.md`
 
 ---
 
 ## 一、项目概述
 
-**类型**：单机 3D 微剧情游戏（Godot 4.x + GDScript）  
-**基调**：短篇科幻救援故事，NES/Contra 风格复古动作，3D 实现  
-**目标时长**：1 小时以内  
-**当前阶段**：Phase 2 完成，待进入 Phase 3
+**类型**：2D 俯视角 Roguelike 弹幕射击（Godot 4.6 + GDScript）  
+**基调**：星际空战，街机高对比，美术与音频全部程序化生成  
+**联机**：2 人本地合作（P1 房主 / P2 加入），Wi-Fi LAN + 鸿蒙近场发现，ENet 战斗同步  
+**主场景**：`scenes/ui/title_screen.tscn` → `scenes/main.tscn`
 
 **核心循环**：
-1. 简报 → 2. 穿越敌占走廊 → 3. 与敌人战斗 → 4. 到达终点 → 5. 逃脱
+1. 鼠标惯性移动、自动射击 → 2. 击杀升级 → 3. 每 20 击杀精英战 →
+4. 每 5 级 Boss 战 → 5. 拾取强化 → 6. 死亡结算
 
 **操作**：
-- 移动：`ui_left` / `ui_right` / `ui_up` / `ui_down`
-- 跳跃/取消：`ui_cancel`
-- 射击/确认：`ui_accept`
+- 移动：鼠标移动（移动端为左侧摇杆）
+- 射击：自动
+- 技能 1（环形散射）：`Space` / △ 按钮
+- 技能 2（激光）：`Q` / ○ 按钮
+
+**验证**：
+```bash
+godot --headless --path . --quit
+godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
+godot --headless --path . res://tests/lan_probe.tscn -- host 7788   # 联机回归
+godot --headless --path . res://tests/lan_probe.tscn -- client 7788
+```
 
 ---
 
-## 二、当前完成状态
+## 二（以下为 2026-05-02 旧版内容，仅作历史存档）
 
-### ✅ Phase 1 已完成
+### Phase 1 已完成
 - [x] 玩家移动、跳跃、射击
 - [x] 敌人巡逻、追击、触碰伤害、死亡
 - [x] 基础关卡（地面、墙壁、出生点、出口、剧情触发器）
