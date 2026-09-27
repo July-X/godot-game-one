@@ -31,6 +31,7 @@ NetworkManager="*res://scripts/network_manager.gd"
 HotspotManager="*res://scripts/hotspot_manager.gd"
 NetworkDiscovery="*res://scripts/network_discovery.gd"
 HarmonyBridge="*res://scripts/harmony_bridge.gd"
+UpgradeDraft="*res://scripts/upgrade_draft.gd"
 
 [display]
 

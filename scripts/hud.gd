@@ -8,6 +8,9 @@ extends CanvasLayer
 @onready var _player_scores_label: Label = $PlayerScoresLabel
 @onready var _powerup_display: VBoxContainer = $PowerupDisplay
 @onready var _graze_label: Label = $GrazeLabel
+@onready var _draft_panel: VBoxContainer = $DraftPanel
+@onready var _draft_title: Label = $DraftPanel/DraftTitle
+@onready var _draft_row: HBoxContainer = $DraftPanel/CardRow
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _fps_label: Label = $FpsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -92,7 +95,56 @@ func _process(_delta: float) -> void:
 	_update_cooldowns()
 	_refresh_powerup_display_if_needed()
 	_update_graze_display()
+	_update_draft_panel()
 	_update_fps(_delta)
+
+
+## ── 升级三选一面板 ──────────────────────────────────────
+##
+## 面板不暂停游戏、不锁定鼠标：玩家在选卡时仍然可以走位。
+## 这是本作的设计要求（"全自动射击 + 只用鼠标走位"），
+## 所以选卡用 1/2/3 键而不是点击。
+var _draft_card_labels: Array[Label] = []
+
+func _update_draft_panel() -> void:
+	if _draft_panel == null:
+		return
+	var my_pid: int = _local_peer_id()
+	if not UpgradeDraft.has_draft(my_pid):
+		_draft_panel.visible = false
+		return
+	var draft: Dictionary = UpgradeDraft.get_draft(my_pid)
+	var cards: Array = draft.get("cards", [])
+	_draft_panel.visible = true
+	## 首次出现时才建卡片标签，之后只更新文字（避免每帧重建节点）
+	while _draft_card_labels.size() < cards.size():
+		var l := Label.new()
+		l.custom_minimum_size = Vector2(86, 150)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_draft_row.add_child(l)
+		_draft_card_labels.append(l)
+	for i in range(_draft_card_labels.size()):
+		var label: Label = _draft_card_labels[i]
+		if i < cards.size():
+			var card: Dictionary = UpgradeDraft.card_by_id(str(cards[i]))
+			label.visible = true
+			## 风格卡（金色）与数值卡（青色）用颜色区分：
+			## 改变操作方式的卡才是构筑的主体，要一眼能挑出来
+			var tint: Color = Color(0.55, 0.9, 1.0, 1.0) if str(card.get("kind", "stat")) == "style" \
+				else Color(0.85, 0.85, 0.9, 1.0)
+			label.add_theme_color_override("font_color", tint)
+			label.text = "[%d]\n%s\n\n%s" % [i + 1, str(card.get("name", "")), str(card.get("desc", ""))]
+		else:
+			label.visible = false
+	_draft_title.text = "升级！按 1 / 2 / 3 选择  (%.0f 秒)" % float(draft.get("left", 0.0))
+
+
+func _local_peer_id() -> int:
+	if NetworkManager.is_online() and multiplayer != null \
+			and multiplayer.has_multiplayer_peer():
+		return multiplayer.get_unique_id()
+	return 1
 
 
 ## 擦弹层数指示。**必须有这个提示**：擦弹是"主动贴着子弹飞"的机制，

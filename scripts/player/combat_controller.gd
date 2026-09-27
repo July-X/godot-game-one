@@ -58,6 +58,10 @@ func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, lev
 	var bullet := Pool.acquire("bullet", _bullet_scene)
 	get_tree().current_scene.add_child(bullet)
 	bullet.setup(pos, angle, damage, is_player, level, speed, owner_peer)
+	## 把持有者的构筑（贯穿/溅射/追踪/弹速）灌进子弹。
+	## 必须在 setup 之后：setup 会把 pierce/splash/homing 重置为默认值。
+	if is_player:
+		bullet.apply_owner_cards(owner_peer if owner_peer > 0 else _player.peer_id)
 
 
 ## ── 普攻 ────────────────────────────────────────────

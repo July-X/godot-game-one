@@ -102,6 +102,36 @@ theme_override_colors/font_color = Color(0.55, 0.9, 1, 1)
 theme_override_font_sizes/font_size = 14
 text = ""
 
+[node name="DraftPanel" type="VBoxContainer" parent="."]
+visible = false
+anchors_preset = 1
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -300.0
+offset_top = 120.0
+offset_right = -16.0
+offset_bottom = 340.0
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="DraftTitle" type="Label" parent="DraftPanel"]
+theme_override_colors/font_color = Color(1, 0.92, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+text = "升级！按 1 / 2 / 3 选择"
+horizontal_alignment = 1
+
+[node name="CardRow" type="HBoxContainer" parent="DraftPanel"]
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="DraftHint" type="Label" parent="DraftPanel"]
+theme_override_colors/font_color = Color(0.7, 0.7, 0.8, 1)
+theme_override_font_sizes/font_size = 12
+text = "选卡不影响走位 · 10 秒未选自动取第一张"
+horizontal_alignment = 1
+
 [node name="ControlsLabel" type="Label" parent="."]
 anchors_preset = 1
 anchor_left = 1.0

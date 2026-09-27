@@ -192,12 +192,14 @@ func _compute_shield_max_hp() -> int:
 	return maxi(1, int((10 + bp * 2 + int(mhp * 0.2)) * 0.5) + bonus)
 
 func _update_shield_recharge(delta: float) -> void:
+	## 充能间隔可被「护盾电容」卡缩短，所以每帧从 GameState 读而不是缓存常量
+	var interval: float = GameState.get_shield_interval(peer_id)
 	if GameState.get_shield_layers(peer_id) > 0:
-		_shield_recharge_timer = SHIELD_RECHARGE_INTERVAL
+		_shield_recharge_timer = interval
 		return
 	_shield_recharge_timer -= delta
 	if _shield_recharge_timer <= 0.0:
-		_shield_recharge_timer = SHIELD_RECHARGE_INTERVAL
+		_shield_recharge_timer = interval
 		var max_shield := _compute_shield_max_hp()
 		GameState.set_shield_layers(peer_id, max_shield)
 

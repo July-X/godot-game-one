@@ -1378,9 +1378,46 @@ func _restart_on_touch() -> void:
 func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
 		_player.on_level_up()
+	## 升级改为三选一：给每个存活玩家各抽 3 张卡。
+	## 联机时各端各抽各的，不做共享卡池协商——独立抽取保证两端不会
+	## 因为抢同一张卡而卡住选择（共享池的社交玩法留给 v2）。
+	for pid: int in _alive_peer_ids():
+		UpgradeDraft.open_draft(pid)
+
+
+func _alive_peer_ids() -> Array[int]:
+	var out: Array[int] = []
+	## 注意：_players 的 key 是 int（peer_id），不是字符串。
+	## 写成 `for key: String` 在单机下不报错（_players 为空、循环体不执行），
+	## 只在联机真正有玩家时才抛类型错误——必须按 Variant 遍历再转。
+	for key: Variant in _players.keys():
+		var pid: int = int(key)
+		if _alive_players.has(pid):
+			out.append(pid)
+	if out.is_empty() and _player != null and is_instance_valid(_player):
+		out.append(int(_player.get("peer_id")))
+	return out
 
 
 func _input(event: InputEvent) -> void:
+	## 选卡用 1/2/3 键而不是鼠标点击：进入战斗后鼠标被捕获用于走位，
+	## 用鼠标选卡会打断操作，而"选卡时不能停下手"是本作的设计要求。
+	if event is InputEventKey and event.pressed and not event.echo:
+		var my_pid: int = -1
+		if NetworkManager.is_online() and multiplayer != null \
+				and multiplayer.has_multiplayer_peer():
+			my_pid = multiplayer.get_unique_id()
+		elif _player != null and is_instance_valid(_player):
+			my_pid = int(_player.get("peer_id"))
+		if my_pid > 0 and UpgradeDraft.has_draft(my_pid):
+			match event.keycode:
+				KEY_1, KEY_KP_1:
+					UpgradeDraft.choose_card(my_pid, 0)
+				KEY_2, KEY_KP_2:
+					UpgradeDraft.choose_card(my_pid, 1)
+				KEY_3, KEY_KP_3:
+					UpgradeDraft.choose_card(my_pid, 2)
+
 	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
 		if OS.has_feature("android") or OS.has_feature("ios"):
 			_restart()

@@ -84,6 +84,9 @@ func _new_player_state() -> Dictionary:
 		"extra_damage_bonus": 0,
 		"move_speed_bonus": 0.0,
 		"shield_max_bonus": 0,
+		## 构筑状态：卡牌层数与护盾充能间隔
+		"card_stacks": {},
+		"shield_interval": 8.0,
 	}
 
 func _alive_peer_ids() -> Array[int]:
@@ -409,7 +412,9 @@ func level_up() -> void:
 		if not bool(s.get("is_alive", true)):
 			_player_states[key] = s
 			continue
-		s.bullet_power_level = min(int(s.bullet_power_level) + 1, 50)
+		## 升级改为发"三选一"：不再无脑 +1 威力。
+		## 原来的固定收益是"Roguelike 但没有 Roguelike 味"的根因之一——
+		## 玩家没有决策，也就没有 build。数值兜底在 upgrade_draft 抽不到卡时生效。
 		s.current_health = min(int(s.current_health) + 1, int(s.max_health))
 		_player_states[key] = s
 	_sync_local_view()
@@ -696,7 +701,6 @@ func get_graze_stacks() -> int:
 		return 0
 	return _graze_stacks
 
-
 ## HUD / 联机同步用的标量，0~1
 func get_graze_ratio() -> float:
 	return get_graze_fire_rate_bonus() / (GRAZE_MAX_STACKS * GRAZE_STACK_BONUS)
@@ -706,6 +710,85 @@ func reset_graze() -> void:
 	_graze_stacks = 0
 	_graze_since_stack = 0
 	_graze_last_msec = 0
+
+
+## ── 升级卡（构筑）───────────────────────────────────────────
+##
+## 每个 peer 独立持有卡牌层数。联机时两端各抽各的，避免抢卡冲突。
+
+func get_card_stacks(peer_id: int = -1) -> Dictionary:
+	var s := _state(peer_id)
+	var raw: Variant = s.get("card_stacks", {})
+	return raw if raw is Dictionary else {}
+
+
+func get_card_stacks_for(pid: int) -> Dictionary:
+	var s := _state(pid)
+	var raw: Variant = s.get("card_stacks", {})
+	return raw if raw is Dictionary else {}
+
+
+func get_card_count(card_id: String, peer_id: int = -1) -> int:
+	return int(get_card_stacks(peer_id).get(card_id, 0))
+
+
+## 应用一张卡。数值卡改属性，风格卡改行为开关——
+## 行为开关由 get_bullet_style_* 系列读取，combat_controller 与 bullet 用它们。
+func apply_card(peer_id: int, card_id: String) -> void:
+	var pid: int = peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	var stacks: Dictionary = get_card_stacks_for(pid)
+	stacks[card_id] = int(stacks.get(card_id, 0)) + 1
+	s.card_stacks = stacks
+	match card_id:
+		"power":
+			s.bullet_power_level = mini(int(s.bullet_power_level) + 3, 50)
+		"firerate":
+			s.shoot_speed_level = mini(int(s.shoot_speed_level) + 2, 15)
+		"spread":
+			s.shoot_level = mini(int(s.shoot_level) + 2, 10)
+		"vitality":
+			s.max_health = mini(int(s.max_health) + 20, HEALTH_CAP)
+			s.current_health = mini(int(s.current_health) + 20, int(s.max_health))
+		"shield":
+			s.shield_interval = maxf(float(s.get("shield_interval", 8.0)) - 2.0, 3.0)
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
+		health_changed.emit(current_health, max_health)
+	_mark_dirty()
+
+
+## 子弹行为开关：这些是"改变操作方式"的卡生效的地方
+func get_bullet_pierce(peer_id: int = -1) -> int:
+	return get_card_count("pierce", peer_id)
+
+
+func get_bullet_splash(peer_id: int = -1) -> bool:
+	return get_card_count("splash", peer_id) > 0
+
+
+func get_bullet_homing(peer_id: int = -1) -> bool:
+	return get_card_count("homing", peer_id) > 0
+
+
+func get_bullet_speed_bonus(peer_id: int = -1) -> float:
+	return float(get_card_count("pierce", peer_id)) * 40.0
+
+
+## 擦弹强化：判定半径与窗口
+func get_graze_radius_bonus(peer_id: int = -1) -> float:
+	return float(get_card_count("graze_focus", peer_id)) * 8.0
+
+
+func get_graze_window_msec(peer_id: int = -1) -> int:
+	return GRAZE_WINDOW_MSEC + get_card_count("graze_focus", peer_id) * 1000
+
+
+## 护盾充能间隔（毫秒级改为秒）
+func get_shield_interval(peer_id: int = -1) -> float:
+	var s := _state(peer_id)
+	return maxf(float(s.get("shield_interval", 8.0)), 3.0)
 
 func get_bullet_damage(peer_id: int = -1) -> int:
 	var s := _state(peer_id)

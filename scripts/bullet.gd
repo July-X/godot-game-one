@@ -10,6 +10,12 @@ var _is_player_bullet: bool = true
 var _lifetime: float = 4.0
 var _has_bounced: bool = false
 var _level: int = 1
+## 构筑：贯穿剩余次数。0 = 普通子弹（一击即消），>0 = 还能再打穿 N 个目标。
+## 记录已命中的目标是为了避免同一颗子弹在同一帧对同一个敌人反复结算伤害。
+var _pierce_left: int = 0
+var _pierced: Array = []
+var _splash_radius: float = 0.0
+var _homing_strength: float = 0.0
 var _pooled: bool = false
 var _is_network_ghost: bool = false
 var owner_peer_id: int = -1
@@ -36,9 +42,55 @@ func reset() -> void:
 	_lifetime = 4.0
 	_is_network_ghost = false
 	owner_peer_id = -1
+	_pierce_left = 0
+	_pierced.clear()
+	_splash_radius = 0.0
+	_homing_strength = 0.0
 	remove_from_group("player_bullets")
 	remove_from_group("enemy_bullets")
 	_sprite.modulate = Color(1, 1, 1, 1)
+
+
+## 从持有者的构筑读取行为开关。每颗子弹生成时取一次，之后不再查——
+## 子弹可能存活好几秒，构筑在这期间不会变，查了也没用。
+func apply_owner_cards(pid: int) -> void:
+	if not _is_player_bullet:
+		return
+	_pierce_left = GameState.get_bullet_pierce(pid)
+	_splash_radius = 78.0 if GameState.get_bullet_splash(pid) else 0.0
+	_homing_strength = 1.8 if GameState.get_bullet_homing(pid) else 0.0
+	_speed += GameState.get_bullet_speed_bonus(pid)
+
+
+## 命中一个敌人。返回 true 表示子弹应该被消耗掉。
+##
+## 贯穿不依赖 Area2D 的 monitoring 开关：area_entered 只在"进入"时触发一次，
+## 子弹停在敌人身上不会重复上报，靠 _pierced 去重就够了。
+## 额外去重 monitoring 反而有风险（关了忘开 / 开了忘关）。
+func _resolve_hit(target: Node) -> bool:
+	if _pierced.has(target):
+		return false
+	_pierced.append(target)
+	if _splash_radius > 0.0:
+		_splash_damage(get_tree().get_nodes_in_group("enemies"))
+	if _pierce_left > 0:
+		_pierce_left -= 1
+		return false
+	return true
+
+
+## 溅射：对半径内的其他敌人造成一半伤害。直接伤害已在调用方结算过。
+func _splash_damage(enemies: Array) -> void:
+	var origin: Vector2 = global_position
+	for e: Node in enemies:
+		if not is_instance_valid(e) or not e.has_method("take_damage"):
+			continue
+		if e is Node2D and (e as Node2D).global_position.distance_to(origin) <= _splash_radius:
+			e.take_damage(_damage * 0.5, owner_peer_id)
+			var fx := Pool.acquire("hit_effect", _hit_effect_scene)
+			get_tree().current_scene.add_child(fx)
+			fx.global_position = (e as Node2D).global_position
+			fx.start()
 
 func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0, owner_id: int = -1) -> void:
 	global_position = pos
@@ -74,7 +126,31 @@ func _apply_bullet_appearance() -> void:
 		_sprite.texture = SpriteFactory.create_bullet_sprite(false, 1)
 		_sprite.scale = Vector2(0.67, 0.67)
 
+
+## 「追踪回路」卡的转向：朝最近敌人缓慢修正方向。
+## 强度刻意做得很低（1.8 rad/s）——卡面写的是"轻微追踪"，
+## 追踪太强就变成自动瞄准，玩家不需要走位了，构筑反而破坏手感。
+func _steer_to_nearest_enemy(delta: float) -> void:
+	var best: Node2D = null
+	var best_d: float = 420.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e) or not (e is Node2D):
+			continue
+		if _pierced.has(e):
+			continue
+		var d: float = global_position.distance_to((e as Node2D).global_position)
+		if d < best_d:
+			best_d = d
+			best = e as Node2D
+	if best == null:
+		return
+	var want: Vector2 = global_position.direction_to(best.global_position)
+	_direction = _direction.lerp(want, clampf(_homing_strength * delta, 0.0, 1.0)).normalized()
+	rotation = _direction.angle() + PI * 0.5
+
 func _physics_process(delta: float) -> void:
+	if _homing_strength > 0.0:
+		_steer_to_nearest_enemy(delta)
 	global_position += _direction * _speed * delta
 	_lifetime -= delta
 
@@ -130,7 +206,8 @@ func _on_body_entered(body: Node2D) -> void:
 			else:
 				body.take_damage(_damage, owner_peer_id)
 				_spawn_hit()
-				_recycle()
+				if _resolve_hit(body):
+					_recycle()
 	else:
 		if body.is_in_group("player") and body.has_method("take_damage"):
 			## 多人：Client 端玩家中弹 → 报告 Host
@@ -167,9 +244,11 @@ func _on_area_entered(area: Area2D) -> void:
 				_spawn_hit()
 				_recycle()
 			else:
-				area.get_parent().take_damage(_damage, owner_peer_id)
+				var enemy := area.get_parent()
+				enemy.take_damage(_damage, owner_peer_id)
 				_spawn_hit()
-				_recycle()
+				if _resolve_hit(enemy):
+					_recycle()
 
 func _spawn_hit() -> void:
 	## 日常命中的反馈：极轻的震屏 + 命中音。

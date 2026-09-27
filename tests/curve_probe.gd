@@ -39,6 +39,9 @@ func _ready() -> void:
 	_check_curve_grows_at_all()
 	_check_hitstop_restores_time_scale()
 	_check_spawn_density_bounded()
+	_check_card_pool_invariants()
+	_check_draft_distribution_varies()
+	_check_player_dict_key_type()
 	print("%s VERDICT SUMMARY pass=%d failed=%d total=%d" % [
 		TAG, _passed, _failed, _passed + _failed])
 	get_tree().quit(1 if _failed > 0 else 0)
@@ -143,3 +146,83 @@ func _check_spawn_density_bounded() -> void:
 		"min_interval=%.2f (需 >=0.40)" % min_interval)
 	_check("enemy_screen_cap", cap > 0 and cap <= 30,
 		"cap=%d (需 1~30)" % cap)
+
+
+## 升级卡池的不变量。
+## 这些是"构筑系统还在正常运转"的底线，坏了不会报错、只会让游戏变得没劲：
+##   - 风格卡（改变操作方式）必须至少占一半，否则构筑退化成纯数值堆叠，
+##     就回到了"三个属性都是 DPS 乘法项"的老问题
+##   - 数值卡必须有层数上限，否则满级后抽到就毫无意义
+##   - 每张卡都要能被 GameState.apply_card 认识（漏一张 = 抽到了不生效）
+func _check_card_pool_invariants() -> void:
+	var draft_script: GDScript = load("res://scripts/upgrade_draft.gd")
+	if draft_script == null:
+		_check("card_pool_loaded", false, "无法加载 upgrade_draft.gd")
+		return
+	var cards: Array = draft_script.CARDS
+	var style_count: int = 0
+	var bad: Array = []
+	var ids: Dictionary = {}
+	for card: Dictionary in cards:
+		var cid: String = str(card.get("id", ""))
+		if cid.is_empty():
+			bad.append("missing_id")
+			continue
+		if ids.has(cid):
+			bad.append("dup:" + cid)
+		ids[cid] = true
+		if str(card.get("kind", "")) == "style":
+			style_count += 1
+		if int(card.get("max_stacks", 0)) <= 0:
+			bad.append("no_cap:" + cid)
+		if str(card.get("name", "")).is_empty() or str(card.get("desc", "")).is_empty():
+			bad.append("no_text:" + cid)
+	_check("card_pool_wellformed", bad.is_empty(), "issues=%s" % str(bad))
+	var half: int = int(ceil(float(cards.size()) * 0.5))
+	_check("card_pool_has_style_cards", style_count >= half,
+		"style=%d 需要 >=%d（共 %d 张）" % [style_count, half, cards.size()])
+
+	## apply_card 必须认识卡池里的每一张 id
+	var unknown: Array = []
+	for card: Dictionary in cards:
+		var cid: String = str(card.get("id", ""))
+		GameState.reset_game()
+		GameState.apply_card(1, cid)
+		if int(GameState.get_card_count(cid, 1)) != 1:
+			unknown.append(cid)
+	_check("every_card_applies", unknown.is_empty(), "unapplied=%s" % str(unknown))
+	GameState.reset_game()
+
+
+## 抽卡分布必须真正随机。
+## 历史 bug：部分 Fisher-Yates 写成从下标 DRAFT_POOL_SIZE 开始洗，
+## 前 3 个元素永不参与交换，于是每次抽卡都返回 pool[0..2] 原样输出，
+## 玩家连续 12 级看到完全相同的三张卡。这个 bug 不会报错、不会崩，
+## 只会让构筑系统静默失效——所以必须由门禁守住。
+func _check_draft_distribution_varies() -> void:
+	var draft_script: GDScript = load("res://scripts/upgrade_draft.gd")
+	if draft_script == null:
+		_check("draft_rng_varies", false, "无法加载 upgrade_draft.gd")
+		return
+	var seen: Dictionary = {}
+	for i in range(40):
+		var cards: Array = draft_script.new().open_draft(1)
+		if cards.size() >= 3:
+			seen["|".join(PackedStringArray(cards))] = true
+	_check("draft_rng_varies", seen.size() >= 10,
+		"40 次抽卡得到 %d 种不同组合（需 >=10）" % seen.size())
+
+
+## 类型契约：_players 的 key 是 int（peer_id），不是 String。
+## 写成 `for key: String in _players.keys()` 会在联机运行时抛类型错误，
+## 但单机下 _players 恒为空、循环体不执行，所以**单机永远测不出来**——
+## 只能由双进程联机门禁抓到。这类"只有联机才暴露"的bug 要在
+## 联机门禁里长期保留脚本错误扫描。
+func _check_player_dict_key_type() -> void:
+	var main_script: GDScript = _main
+	if main_script == null:
+		return
+	var src: String = String(main_script.source_code) if "source_code" in main_script else ""
+	_check("no_string_iteration_over_player_dict",
+		not src.contains("for key: String in _players.keys()"),
+		"_players 的 key 是 int，不能按 String 遍历")
