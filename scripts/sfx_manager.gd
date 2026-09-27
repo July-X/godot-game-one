@@ -15,6 +15,8 @@ var _stream_explosion: AudioStreamWAV
 ## 命中确认音按强度分档生成：轻微命中用高频短促"叮"，强度高时降低音高、
 ## 拉长尾巴，听感上就是"这一下更重"。比播放同一个音再调音量更有质感。
 var _hit_streams: Array[AudioStreamWAV] = []
+## 擦弹 tick 音：单个高频短音，靠 pitch_scale 变化
+var _graze_stream: AudioStreamWAV = null
 ## 连击计数：连续命中时逐步升调，中断后回落。极低成本却最能放大"我打中了"的感觉。
 var _combo: int = 0
 var _combo_decay_left: float = 0.0
@@ -38,6 +40,7 @@ func _ready() -> void:
 	]
 	for spec in hit_specs:
 		_hit_streams.append(_generate_tone(float(spec.freq), float(spec.dur), float(spec.vol)))
+	_graze_stream = _generate_tone(2400.0, 0.03, 0.16)
 	for i in _pool_size:
 		var player := AudioStreamPlayer.new()
 		add_child(player)
@@ -142,6 +145,15 @@ func play_ui_select() -> void:
 
 func play_explosion() -> void:
 	_play_stream(_stream_explosion, _players)
+
+
+## 擦弹 tick：音高随层数上升，形成"越擦越亮"的连续反馈。
+## 用短促高频的正弦（不是扫频），因为它要密集触发、需要和射击音区分开。
+func play_graze_tick(stacks: int) -> void:
+	if _graze_stream == null:
+		return
+	var pitch: float = pow(COMBO_PITCH_RATIO, float(clampi(stacks, 0, 16)))
+	_play_stream(_graze_stream, _players, pitch)
 
 
 ## 命中确认音。intensity 0~1 决定档位，并按连击数整体升调。

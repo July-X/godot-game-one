@@ -23,6 +23,7 @@ var _combat: Node
 var _feedback: Node
 
 var _pickup_area: Area2D
+var _graze_area: Area2D = null
 var _shield_container: Node2D
 var ShieldRing = preload("res://scripts/shield_ring.gd")
 var _shield_dirty: bool = false
@@ -65,6 +66,47 @@ func _init_components() -> void:
 
 	_pickup_area = $PickupArea
 	_shield_container = $ShieldContainer
+	_init_graze()
+
+
+## 擦弹判定：GrazeArea 是一个半径 34px 的检测环，
+## 比玩家本体判定点（12px）大得多，所以"进了环但没被击中"就是擦弹。
+## 关键实现细节：**每颗子弹只计一次**——Area2D 的 area_entered 只在进入时
+## 触发一次，子弹如果一直贴在环内移动不会重复计数，所以这里不需要额外去重表。
+func _init_graze() -> void:
+	_graze_area = $GrazeArea as Area2D
+	if _graze_area == null:
+		return
+	if not _graze_area.area_entered.is_connected(_on_graze_area_entered):
+		_graze_area.area_entered.connect(_on_graze_area_entered)
+
+
+func _on_graze_area_entered(area: Area2D) -> void:
+	## 只算敌方子弹：我方子弹也从同一层穿过，会被一并检测到
+	if area.get("_is_player_bullet") == true:
+		return
+	## 联机下擦弹必须由"自己那一端"结算再同步，不能两端各算一份，
+	## 否则同一个擦弹会被记两次、层数翻倍
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if peer_id != multiplayer.get_unique_id():
+			return
+	GameState.add_graze(Time.get_ticks_msec())
+	SFX.play_graze_tick(GameState.get_graze_stacks())
+	_flash_grazed_bullet(area)
+	var scene := get_tree().current_scene
+	if scene != null and scene.has_method("emit_hit_feedback"):
+		## 擦弹只给极轻的震屏：它发生得很频繁，重了会毁掉弹幕可读性
+		scene.emit_hit_feedback(0.02, 0.0, false)
+
+
+## 被擦到的子弹闪一下白，给玩家"碰到了"的瞬时确认
+func _flash_grazed_bullet(area: Area2D) -> void:
+	var sprite := area.get_node_or_null("Sprite2D") as Sprite2D
+	if sprite == null:
+		return
+	sprite.modulate = Color(2.2, 2.2, 2.2, 1.0)
+	var tween := create_tween()
+	tween.tween_property(sprite, "modulate", Color(1, 1, 1, 1), 0.12)
 
 
 func _add_component(name_prefix: String, script_path: String) -> Node:

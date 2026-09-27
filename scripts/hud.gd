@@ -7,6 +7,7 @@ extends CanvasLayer
 @onready var _hp_num: Label = $HealthBar/HPNum
 @onready var _player_scores_label: Label = $PlayerScoresLabel
 @onready var _powerup_display: VBoxContainer = $PowerupDisplay
+@onready var _graze_label: Label = $GrazeLabel
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _fps_label: Label = $FpsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -90,7 +91,23 @@ func _process(_delta: float) -> void:
 	_refresh_score_if_needed()
 	_update_cooldowns()
 	_refresh_powerup_display_if_needed()
+	_update_graze_display()
 	_update_fps(_delta)
+
+
+## 擦弹层数指示。**必须有这个提示**：擦弹是"主动贴着子弹飞"的机制，
+## 玩家不知道它存在、也看不到收益，就永远不会去尝试。
+## 层数归零时隐藏而不是显示 0，避免常驻一行没用的字。
+func _update_graze_display() -> void:
+	if _graze_label == null:
+		return
+	var stacks: int = GameState.get_graze_stacks()
+	if stacks <= 0:
+		_graze_label.visible = false
+		return
+	_graze_label.visible = true
+	var bonus: int = int(round(GameState.get_graze_fire_rate_bonus() * 100.0))
+	_graze_label.text = "擦弹 ×%d  射速 +%d%%" % [stacks, bonus]
 
 
 ## ── 动态技能条 ──────────────────────────────────────────────

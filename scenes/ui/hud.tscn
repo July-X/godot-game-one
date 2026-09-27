@@ -93,6 +93,15 @@ offset_left = 16.0
 offset_top = 156.0
 theme_override_constants/separation = 4
 
+[node name="GrazeLabel" type="Label" parent="."]
+offset_left = 16.0
+offset_top = 258.0
+offset_right = 300.0
+offset_bottom = 282.0
+theme_override_colors/font_color = Color(0.55, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+
 [node name="ControlsLabel" type="Label" parent="."]
 anchors_preset = 1
 anchor_left = 1.0

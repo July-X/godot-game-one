@@ -313,6 +313,7 @@ func reset_game() -> void:
 	last_elite_threshold = 0
 	elite_encounter_count = 0
 	post_elite_multiplier = 1.0
+	reset_graze()
 	boss_encounter_count = 0
 	last_boss_level = 0
 	_player_states.clear()
@@ -618,7 +619,70 @@ func get_bullet_count(peer_id: int = -1) -> int:
 
 func get_shoot_cooldown(peer_id: int = -1) -> float:
 	var s := _state(peer_id)
-	return max(0.27 - int(s.shoot_speed_level) * 0.018, 0.08)
+	var base: float = max(0.27 - int(s.shoot_speed_level) * 0.018, 0.08)
+	## 擦弹奖励直接乘在射击间隔上：CD 越短射速越高，
+	## 这是唯一能让"主动贴近弹幕"转化为收益的通路（见 Design_Decisions）
+	return base * (1.0 - get_graze_fire_rate_bonus())
+
+
+## ── 擦弹（Graze）───────────────────────────────────────────────
+##
+## 弹幕射击的标志性机制：让"贴着子弹飞"变成值得追求的操作。
+## 关键设计取舍：**擦弹让玩家更安全，而不是更危险**。
+## 奖励绑定"主动接近危险"后，画面会更好看、死亡率反而更低——
+## 因为玩家有了主动去浪的理由，而不是被动等着挨打。
+
+## 擦弹层数、最近一次擦弹的时刻（毫秒）、以及距下一层的累计次数
+var _graze_stacks: int = 0
+var _graze_last_msec: int = 0
+var _graze_since_stack: int = 0
+
+## 每层提供的射速加成
+const GRAZE_STACK_BONUS: float = 0.04
+const GRAZE_MAX_STACKS: int = 10
+## 升 1 层需要的累计擦弹次数
+const GRAZE_THRESHOLD: int = 3
+## 超过这个时间没有新擦弹，层数全部作废。
+## 2 秒的取法：短于典型弹幕间隔（逼玩家持续贴弹），
+## 长于一次走位往返（不至于一个失误就清零）
+const GRAZE_WINDOW_MSEC: int = 2000
+
+
+## 记录一次擦弹。每 GRAZE_THRESHOLD 次累计擦弹升 1 层。
+func add_graze(now_msec: int) -> int:
+	_graze_last_msec = now_msec
+	if _graze_since_stack < GRAZE_THRESHOLD - 1:
+		_graze_since_stack += 1
+		return _graze_stacks
+	_graze_since_stack = 0
+	_graze_stacks = mini(_graze_stacks + 1, GRAZE_MAX_STACKS)
+	return _graze_stacks
+
+
+## 当前射速加成 0~0.4。超时会自动归零（惰性判定，无需每帧维护）
+func get_graze_fire_rate_bonus() -> float:
+	if _graze_stacks <= 0:
+		return 0.0
+	if Time.get_ticks_msec() - _graze_last_msec > GRAZE_WINDOW_MSEC:
+		return 0.0
+	return float(_graze_stacks) * GRAZE_STACK_BONUS
+
+
+func get_graze_stacks() -> int:
+	if Time.get_ticks_msec() - _graze_last_msec > GRAZE_WINDOW_MSEC:
+		return 0
+	return _graze_stacks
+
+
+## HUD / 联机同步用的标量，0~1
+func get_graze_ratio() -> float:
+	return get_graze_fire_rate_bonus() / (GRAZE_MAX_STACKS * GRAZE_STACK_BONUS)
+
+
+func reset_graze() -> void:
+	_graze_stacks = 0
+	_graze_since_stack = 0
+	_graze_last_msec = 0
 
 func get_bullet_damage(peer_id: int = -1) -> int:
 	var s := _state(peer_id)
