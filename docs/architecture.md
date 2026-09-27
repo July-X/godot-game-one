@@ -623,6 +623,9 @@ tests/run_probe.sh 7788          # 全绿才 exit 0，耗时约 40~60 秒
 # 3'. 手工跑探针（需要看实时日志时）
 godot --headless --path . res://tests/lan_probe.tscn -- host 7788   &
 godot --headless --path . res://tests/lan_probe.tscn -- client 7788
+
+# 4. 难度曲线门禁（改任何难度数值后必跑，headless 单进程，几秒出结果）
+godot --headless --path . res://tests/curve_probe.tscn
 ```
 
 `run_probe.sh` 判定失败的条件（任一命中即 `exit 1`）：
@@ -636,6 +639,23 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 
 已知噪音放行清单见 `tests/run_probe.sh` 的 `NOISE` / `KNOWN` 变量，
 两类噪音的计数都会打印，便于观察是否劣化。
+
+### 16.1 难度曲线门禁
+
+`tests/curve_probe.gd`（headless 单进程，不需要 ENet）直接 `load("res://scripts/main.gd")`
+调用 `compute_enemy_speed()` / `compute_post_elite_multiplier()`，断言：
+
+| 断言 | 含义 |
+|------|------|
+| `cap_is_80_percent` | 玩家极速 260 → 敌速上限恰好 208 |
+| `enemy_speed_never_exceeds_cap` | 1~60 级 × 3 种敌人的速度都不超过 208 |
+| `speed_monotonic` | 封顶后允许持平，但不能越往后越慢 |
+| `post_elite_multiplier_capped` | 精英乘区不超过 2.2 |
+| `curve_grows` | L60 速度 > L1 的 2 倍，防止曲线被改成死水 |
+
+> 这道门禁存在的理由：难度墙在 2026-09-27 之前已经悄悄长了一年，
+> 12 级就超过玩家速度，而当时没有任何测试能发现——所有测试都在测联机与手感，
+> 没人测过数值曲线本身。
 
 探针断言共 **36 项**（host 22 + client 14），覆盖：
 

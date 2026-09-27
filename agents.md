@@ -98,6 +98,15 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 `run_probe.sh` 还会额外把 `SCRIPT ERROR` 和运行期 `ERROR:` 计入失败。
 当前共 36 项断言（host 22 + client 14）。
 
+**改任何难度数值后必须跑难度曲线门禁**（防止难度墙悄悄长回来）：
+
+```bash
+godot --headless --path . res://tests/curve_probe.tscn
+```
+
+断言 1~60 级敌速恒不超过玩家极速的 80%、速度随等级单调不减、
+精英乘区不超过封顶值、曲线确实在增长，共 5 项，失败时非零退出。
+
 涉及 `hud.gd` / 场景结构的改动，还必须额外跑主场景运行验证
 （`--quit` 不覆盖 `_ready` / `_process` 链路）：
 

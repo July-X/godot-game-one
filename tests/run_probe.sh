@@ -19,7 +19,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"
 HOST_LOG="$LOG_DIR/host.log"
 CLIENT_LOG="$LOG_DIR/client.log"
-trap 'rm -rf "$LOG_DIR"' EXIT
+# 只有通过时才清日志；失败要留下现场，否则那句"日志保留"是假的
+KEEP_LOGS=0
+cleanup() { [ "$KEEP_LOGS" = "0" ] && rm -rf "$LOG_DIR"; }
+trap cleanup EXIT
 
 GODOT="${GODOT:-godot}"
 
@@ -56,8 +59,10 @@ NOISE='were leaked at exit|RIDs of type|ObjectDB instances leaked|resources stil
 # 放行它们，但计数打出来，数量暴涨说明同步链路真的退化了。
 KNOWN='Node not found: "Main"|Failed to get path from RPC: Main|Invalid packet received|Parameter "node" is null'
 ENGINE_ERRORS=$(cat "$HOST_LOG" "$CLIENT_LOG" | grep "^ERROR: " | grep -vE "$NOISE" || true)
-ENGINE_REAL=$(printf '%s\n' "$ENGINE_ERRORS" | grep -vcE "$KNOWN" || true)
-ENGINE_KNOWN=$(printf '%s\n' "$ENGINE_ERRORS" | grep -cE "$KNOWN" || true)
+# 注意用 printf '%s'（不加换行）：空字符串配 '%s\n' 会产生一个空行，
+# 被 grep -c 误计成 1 次错误，导致日志完全干净时反而报 FAIL。
+ENGINE_REAL=$(printf '%s' "$ENGINE_ERRORS" | grep -vcE "$KNOWN" || true)
+ENGINE_KNOWN=$(printf '%s' "$ENGINE_ERRORS" | grep -cE "$KNOWN" || true)
 
 echo "--- GATE ---"
 echo "host_rc=$HOST_RC client_rc=$CLIENT_RC failed_assert=$FAILED_ASSERT script_errors=$SCRIPT_ERRORS engine_errors=$ENGINE_REAL known_join_noise=$ENGINE_KNOWN"
@@ -69,10 +74,10 @@ if [ "$HOST_RC" -ne 0 ] || [ "$CLIENT_RC" -ne 0 ] \
 		printf '%s\n' "$ENGINE_ERRORS" | grep -vE "$KNOWN" | head -20
 		cat "$HOST_LOG" "$CLIENT_LOG" | grep -A 2 "SCRIPT ERROR" | head -20
 	fi
+	KEEP_LOGS=1
 	echo "[probe] FAIL（日志保留在 $LOG_DIR）"
 	exit 1
 fi
 
 echo "[probe] PASS"
-rm -rf "$LOG_DIR"
 exit 0

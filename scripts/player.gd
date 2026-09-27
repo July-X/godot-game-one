@@ -119,6 +119,13 @@ func _physics_process(delta: float) -> void:
 	_combat.update(delta)
 	_feedback.update(delta)
 
+
+## 本机理论极速（px/s）。敌速上限要按它来算，
+## 所以对外暴露一个访问口，避免 main.gd 里写死常量后与 move_speed 脱钩。
+func get_max_move_speed() -> float:
+	return _motion.move_speed if _motion != null else 0.0
+
+
 func _is_multiplayer_session_active() -> bool:
 	if not multiplayer.has_multiplayer_peer() or multiplayer.multiplayer_peer == null:
 		return false

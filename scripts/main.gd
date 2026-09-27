@@ -61,6 +61,24 @@ const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
 ## 取 512 而非更小：256 的贴图在 1280 宽的屏幕上会横排重复 5 次，
 ## 肉眼能直接看出网格状重复（实测截图确认）；512 只重复 2.5 次。
 const STAR_FIELD_TILE: int = 512
+## 玩家极速兜底值（motion_controller.move_speed 默认 260）。
+## 正常情况走 player.get_max_move_speed()，这里只作为玩家节点尚未就绪时的回退。
+const PLAYER_MOVE_SPEED_FALLBACK: float = 260.0
+## 敌人移动速度上限 = 玩家极速的 80%。
+## 弹幕可读性是弹幕射击的第一支柱：玩家唯一的规避手段是走位，
+## 敌人一旦快过玩家，玩家就既追不上也躲不开，画面必然糊成一片。
+## 原公式 12 级就让 type2 达到 277 px/s（玩家 260）、30 级 1716 px/s。
+const ENEMY_SPEED_MAX_RATIO: float = 0.8
+const ENEMY_SPEED_MIN: float = 40.0
+## 敌速随等级的成长斜率（原为 level*6，太陡）
+const ENEMY_SPEED_PER_LEVEL: float = 3.0
+const ENEMY_SPEED_PER_TYPE: float = 8.0
+## 敌速只吃一点点精英乘区：速度是可读性，血量才是成长感
+const ENEMY_SPEED_ELITE_STEP: float = 0.01
+const ENEMY_SPEED_ELITE_MAX: float = 1.3
+## 精英乘区封顶（原为 1 + 场次*0.05 无上限，20 级已 3.85、40 级 11.7）
+const POST_ELITE_MULT_STEP: float = 0.02
+const POST_ELITE_MULT_MAX: float = 2.2
 ## 玩家位置同步：[peer_id, x, y, rotation]，与实体同步同频（约 45Hz）
 const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
@@ -609,6 +627,35 @@ func _apply_player_interpolation(delta: float) -> void:
 			continue
 		pnode.global_position = pnode.global_position.lerp(_player_target_positions[pid], alpha)
 
+
+## 敌速上限：优先取本机玩家的真实极速，玩家节点没就绪时用兜底常量。
+## 做成访问口而不是常量，是为了让"玩家改速度"和"敌速上限"不会各改各的。
+func _enemy_speed_cap() -> float:
+	if _player != null and is_instance_valid(_player) and _player.has_method("get_max_move_speed"):
+		var spd: float = float(_player.get_max_move_speed())
+		if spd > 0.0:
+			return spd * ENEMY_SPEED_MAX_RATIO
+	return PLAYER_MOVE_SPEED_FALLBACK * ENEMY_SPEED_MAX_RATIO
+
+
+## 敌人移动速度。设计意图见 docs/Design_Decisions.md「敌速与精英乘区拆开」：
+## 速度是可读性属性，不吃满精英乘区，且硬性夹在玩家极速的 80% 以内。
+## 做成 static 是为了让 tests/curve_probe.gd 能脱离场景直接回归这条曲线。
+static func compute_enemy_speed(level: int, enemy_type: int,
+		elite_count: int, speed_cap: float) -> float:
+	var base: float = 40.0 + float(level) * ENEMY_SPEED_PER_LEVEL \
+		+ float(enemy_type) * ENEMY_SPEED_PER_TYPE
+	var speed_mult: float = minf(1.0 + float(elite_count) * ENEMY_SPEED_ELITE_STEP,
+		ENEMY_SPEED_ELITE_MAX)
+	return clampf(base * speed_mult, ENEMY_SPEED_MIN, speed_cap)
+
+
+## 精英乘区：只该影响血量与开火频率，且必须有上限。
+## 原公式 1 + 场次*0.05 无上限，精英每 20 击杀出一次、累计击杀随等级平方增长，
+## 于是这个乘区是指数的：20 级 3.85、40 级 11.7。
+static func compute_post_elite_multiplier(elite_count: int) -> float:
+	return minf(1.0 + float(elite_count) * POST_ELITE_MULT_STEP, POST_ELITE_MULT_MAX)
+
 func _spawn_enemy() -> void:
 	var enemy = _enemy_scene.instantiate()
 	var side := randi() % 4
@@ -624,7 +671,8 @@ func _spawn_enemy() -> void:
 	enemy.enemy_type = enemy_type
 	var mult: float = GameState.post_elite_multiplier
 	enemy.health = int((1 + GameState.level / 2 + enemy_type) * mult)
-	enemy.move_speed = (40.0 + GameState.level * 6.0 + enemy_type * 10.0) * mult
+	enemy.move_speed = compute_enemy_speed(GameState.level, enemy_type,
+		GameState.elite_encounter_count, _enemy_speed_cap())
 	enemy.shoot_cooldown = max((2.0 - GameState.level * 0.12) / mult, 0.4)
 	enemy.drop_chance = 0.20 + enemy_type * 0.12
 	if _player and is_instance_valid(_player):
@@ -832,7 +880,7 @@ func _on_elite_died() -> void:
 		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 			_rpc_despawn_entity.rpc(eid)
 	_elite = null
-	GameState.post_elite_multiplier = 1.0 + GameState.elite_encounter_count * 0.05
+	GameState.post_elite_multiplier = compute_post_elite_multiplier(GameState.elite_encounter_count)
 	if _pending_boss_level > 0 and GameState.game_running:
 		call_deferred("_consume_pending_boss_spawn")
 
