@@ -21,6 +21,15 @@ var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 var _move_angle: float = 0.0
 var _wobble_timer: float = 0.0
 
+## 射击节奏三段式
+## WARN：开火前的蓄力预告，0.45s 足够玩家看清"是谁、从哪、来什么"
+## RECOVER：开火后的恢复期，0.8s 内不再开火，是玩家的输出窗口
+const WARN_DURATION: float = 0.45
+const RECOVER_DURATION: float = 0.8
+var _warn_left: float = 0.0
+var _recover_left: float = 0.0
+var _warn_tween: Tween = null
+
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _health_bar: ProgressBar = $HealthBar
 
@@ -72,18 +81,59 @@ func _physics_process(delta: float) -> void:
 		var angle: float = global_position.angle_to_point(_target.global_position) + PI * 0.5
 		rotation = angle
 
-	## 射击
+	## 射击：三段式节奏（蓄力 → 释放 → 恢复）
+	##
+	## 原来只有"冷却到了就开火"，玩家看到弹幕时已经来不及反应了——
+	## 弹幕射击的第四要素是**可预期节奏**，不是每件事都偷袭玩家。
+	## 蓄力阶段用变红 + 缩放给明确预告，恢复阶段是玩家安全输出窗口。
 	_shoot_timer -= delta
 	if _shoot_timer <= 0.0 and _target and is_instance_valid(_target):
 		_shoot()
 		var cd: float = shoot_cooldown
 		if enemy_type == 0:
 			cd *= 2.0
-		_shoot_timer = cd + randf_range(-0.3, 0.3)
+		_shoot_timer = cd + randf_range(-0.3, 0.3) + WARN_DURATION + RECOVER_DURATION
+		_warn_left = WARN_DURATION
+		_recover_left = RECOVER_DURATION
+		_set_warning_visual(true)
+	elif _recover_left > 0.0:
+		## 恢复段：不再开火，视觉上明确告诉玩家"现在是安全的"
+		_recover_left -= delta
+		if _recover_left <= 0.0:
+			_set_recover_visual(false)
+	if _warn_left > 0.0:
+		_warn_left -= delta
+		if _warn_left <= 0.0:
+			_set_warning_visual(false)
 
 	## 更新血条
 	if _health_bar:
 		_health_bar.value = health
+
+
+## 蓄力预警视觉：整体变红并轻微放大。放大而不是闪烁，是因为闪烁在
+## 高密度弹幕下会变成噪点，放大是"这个敌人要出招了"的可读信号。
+func _set_warning_visual(on: bool) -> void:
+	if _sprite == null:
+		return
+	if on:
+		_warn_tween = create_tween()
+		_warn_tween.set_loops(6)
+		_warn_tween.tween_property(_sprite, "scale", Vector2(1.18, 1.18), 0.12)
+		_warn_tween.tween_property(_sprite, "scale", Vector2(1.0, 1.0), 0.12)
+		_sprite.modulate = Color(1.8, 0.55, 0.5, 1.0)
+	else:
+		if _warn_tween != null and _warn_tween.is_valid():
+			_warn_tween.kill()
+		_warn_tween = null
+		_sprite.modulate = Color(1, 1, 1, 1)
+
+
+## 恢复段视觉：变暗，明确表达"这个敌人暂时不会开火"
+func _set_recover_visual(on: bool) -> void:
+	if _sprite == null or _sprite.modulate.r > 1.5:
+		return
+	_sprite.modulate = Color(0.62, 0.68, 0.85, 1.0) if on else Color(1, 1, 1, 1)
 
 func _move_chase(delta: float) -> void:
 	if _target and is_instance_valid(_target):
