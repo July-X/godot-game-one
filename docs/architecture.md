@@ -476,10 +476,62 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 
 ---
 
-## 12. 性能优化措施
+## 12. 帧率与渲染后端
+
+### 12.1 三档频率的分工
+
+| 项 | 值 | 理由 |
+|----|----|------|
+| 渲染帧率上限 | `application/run/max_fps = 120` | 保留 vsync，实际帧率 = min(120, 显示器刷新率) |
+| 物理频率 | `physics/common/physics_ticks_per_second = 60` | 弹幕游戏的判定与手感基准不随渲染帧率变化；联机探针的时序断言按 60Hz 物理帧计数 |
+| 物理插值 | `physics/common/physics_interpolation = true` | 渲染 120 / 物理 60 时补中间帧，消除整块跳动 |
+
+**高速抛射物显式关闭插值**：`bullet.gd` / `laser_bolt.gd` / `homing_missile.gd`
+在 `_ready()` 里设 `physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF`。
+子弹一个物理帧位移可达 10px，插值会让渲染位置落在两个物理帧之间，
+与命中判定错开半帧（视觉上像"打偏"）。
+
+**本项目所有运动/计时都是秒或 delta 驱动的**（鼠标惯性 `1.5 * delta`、
+受击闪烁 `_invincible_timer` 秒、爆炸 `FRAME_INTERVAL` 秒、屏幕震动
+`_duration` 秒），所以提高渲染帧率不会改变任何手感数值。
+
+### 12.2 渲染后端：GL Compatibility（2026-09-27 切换）
+
+`rendering/renderer/rendering_method = "gl_compatibility"`（移动端同）。
+
+同一战斗场景实测（AMD Radeon Pro 5300M，macOS）：
+
+| 后端 | 帧率 | 平均帧耗时 |
+|------|------|-----------|
+| Forward+（Vulkan / MoltenVK） | 102 fps | 9.80 ms |
+| **GL Compatibility** | **276 fps** | **3.62 ms** |
+
+瓶颈在 macOS 的 Vulkan 路径而不是游戏逻辑——把渲染分辨率减半帧率几乎不变
+（114.6 → 112.8 fps），已排除填充率瓶颈。本项目是纯 2D CanvasItem 绘制，
+无着色器、无 GPU/CPU 粒子系统，Compatibility 后端功能上完全够用。
+
+> 注意：换后端后需要重新验证视觉表现（移动端导出同样受益）。
+> 若未来引入 3D 或需要某些 Compatibility 不支持的效果，再评估切回 Forward+。
+
+### 12.3 星空平铺化
+
+`main.gd::_create_parallax_background()` 的三层星空从「每颗星一个 Sprite2D」
+改为「每层一张 256×256 可平铺贴图 + 一个 Sprite2D」：
+
+- 旧：180 + 90 + 35 = **305 个节点、305 张独立贴图**，每帧全部移动，无法合批
+- 新：**3 个节点、3 张贴图**，draw call 从 305 降到 3
+
+滚动用 `STAR_FIELD_TILE` 取模循环实现无缝衔接（贴图内不放跨界星星）。
+`_apply_client_perf_profile()` 原本靠删掉一半节点给加入端减负，现在改为
+调暗贴图，nebula / planet 仍按节点减半。
+
+## 13. 性能优化措施
 
 | 优化项 | 位置 | 说明 |
 |--------|------|------|
+| 星空平铺贴图 | `main.gd` `_build_star_tile()` | 305 节点 → 3 节点 |
+| 渲染后端 | `project.godot` | GL Compatibility，比 Forward+ 快 2.7 倍 |
+| 物理插值 | `project.godot` | 120fps 渲染下补中间帧 |
 | 子弹贴图缓存 | `sprite_factory.gd` `_bullet_cache` | 同类型复用 |
 | 道具贴图缓存 | `sprite_factory.gd` `_powerup_cache` | 5 种道具只生成一次 |
 | 子弹取用入口 | `pool.gd` | **不做节点复用**（见下），只统一 acquire/release/reset_all |
@@ -497,7 +549,7 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 
 ---
 
-## 13. 数据流图
+## 14. 数据流图
 
 ```
               ┌────────────────────────────────┐
@@ -528,7 +580,7 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 
 ---
 
-## 14. 键位映射
+## 15. 键位映射
 
 | 键位 | PC | 移动端 |
 |------|-----|--------|
@@ -541,7 +593,7 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 
 ---
 
-## 15. 验证
+## 16. 验证
 
 ```bash
 # 1. 项目可加载

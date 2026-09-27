@@ -17,6 +17,8 @@ var _state: int = MissileState.SEARCH
 var _dying_timer: float = 0.15
 
 func _ready() -> void:
+	## 与 bullet.gd 同理：导弹速度高且会突然转向，关插值避免半帧错位
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_to_group("player_bullets")
 	connect("body_entered", _on_body_entered)
 	connect("area_entered", _on_area_entered)

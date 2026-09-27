@@ -17,6 +17,8 @@ const HOMING_ANGLE: float = 0.6
 const HOMING_SPEED: float = 4.0
 
 func _ready() -> void:
+	## 与 bullet.gd 同理：高速抛射物关物理插值，避免渲染位置与命中判定错开半帧
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_to_group("player_bullets")
 	connect("body_entered", _on_body_entered)
 

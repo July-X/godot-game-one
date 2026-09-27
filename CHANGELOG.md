@@ -2,6 +2,28 @@
 
 ## [未发布] - 2026-09-27
 
+### 性能
+
+- **渲染后端切到 GL Compatibility**（`project.godot`）：同一战斗场景实测
+  Forward+（Vulkan/MoltenVK）**102 fps / 9.80ms** vs Compatibility
+  **276 fps / 3.62ms**，快 2.7 倍。瓶颈在 macOS 的 Vulkan 路径而非游戏逻辑
+  ——把渲染分辨率减半帧率几乎不变（114.6 → 112.8 fps），已排除填充率瓶颈。
+  本项目是纯 2D CanvasItem 绘制，无着色器、无粒子系统，Compatibility 功能够用，
+  移动端同样受益。
+- **星空从 305 个节点压到 3 个**（`main.gd::_build_star_tile()`）：三层视差星空
+  原本是「每颗星一个 Sprite2D」共 305 个节点、305 张各自独立的 2~12px 贴图，
+  每帧全部移动、无法合批。改为每层一张 256×256 可平铺贴图，draw call 305 → 3，
+  单这一项把帧率从 106 抬到约 120。`_apply_client_perf_profile()` 相应从
+  「删掉一半节点」改为「调暗贴图」。
+- **帧率上限 120 + 物理插值**：`run/max_fps=120`（保留 vsync）、
+  `physics/common/physics_interpolation=true`。物理保持 60Hz——弹幕游戏的判定
+  与手感基准不随渲染帧率变化，联机探针的时序断言也按 60Hz 物理帧计数。
+  高速抛射物（`bullet.gd` / `laser_bolt.gd` / `homing_missile.gd`）显式关闭插值，
+  避免渲染位置与命中判定错开半帧。
+- 已确认本项目所有运动与计时均为秒 / delta 驱动（鼠标惯性 `1.5 * delta`、
+  受击闪烁、爆炸 `FRAME_INTERVAL`、屏幕震动 `_duration`），
+  因此提高渲染帧率不会改变任何手感数值。
+
 ### 修复
 
 - **客户端间歇性丢失远端玩家**（本轮最严重，由回归探针暴露）：

@@ -14,6 +14,10 @@ config/name="Space Bullet Hell"
 run/main_scene="res://scenes/ui/title_screen.tscn"
 config/features=PackedStringArray("4.6")
 config/icon="res://assets/sprites/ui/icon.png"
+; 帧率上限 120。保留 vsync（默认），因此实际帧率 = 显示器刷新率与 120 的较小值。
+; 物理仍是 60Hz（见 physics/common/physics_ticks_per_second），
+; 渲染 120fps 下由 physics_interpolation 补中间帧。
+run/max_fps=120
 
 [autoload]
 
@@ -40,8 +44,24 @@ window/stretch/mode="viewport"
 2d/default_layer_2="enemies"
 2d/default_layer_3="player"
 2d/default_layer_4="enemy_bullets"
+; 物理保持 60Hz：弹幕游戏的判定与手感基准不随渲染帧率变化，
+; 联机探针的时序断言也按 60Hz 物理帧计数（tests/lan_probe.gd）。
+common/physics_ticks_per_second=60
+; 开启物理插值：渲染 120fps / 物理 60Hz 时，节点位置在两个物理帧之间
+; 补出中间位置，消除"整块跳动"。高速抛射物与瞬时生成节点在各自脚本里
+; 显式关闭插值（见 bullet.gd / laser_bolt.gd / homing_missile.gd 等）。
+common/physics_interpolation=true
 
 [rendering]
+; 渲染后端用 GL Compatibility 而不是 Forward+(Vulkan)。
+; 实测本机（AMD Radeon Pro 5300M / macOS MoltenVK）同一个战斗场景：
+;   Forward+  102 fps / 9.80 ms
+;   Compatibility 276 fps / 3.62 ms
+; 瓶颈在 macOS 的 Vulkan 路径而非游戏逻辑（分辨率减半帧率不变，已排除填充率）。
+; 本项目是纯 2D CanvasItem 绘制，无着色器、无粒子系统，Compatibility 完全够用，
+; 移动端同理。详见 docs/architecture.md §渲染后端。
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
 
 textures/canvas_textures/default_texture_filter=0
 textures/vram_compression/import_etc2_astc=true

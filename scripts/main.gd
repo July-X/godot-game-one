@@ -56,6 +56,9 @@ const ENTITY_SYNC_STRIDE: int = 3
 const ENTITY_SHIELD_SYNC_STRIDE: int = 3
 const ENTITY_ROTATION_SYNC_STRIDE: int = 2
 const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
+## 星空平铺贴图边长（像素）。必须与 star 落点避开边缘的规则配套：
+## 贴图内不放跨界星星，滚动时按该边长取模循环即可无缝衔接。
+const STAR_FIELD_TILE: int = 256
 ## 玩家位置同步：[peer_id, x, y, rotation]，与实体同步同频（约 45Hz）
 const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
@@ -150,70 +153,75 @@ func _debug_log_variant_assets() -> void:
 
 	print("[variants] boss=", boss_count, " player=", player_count)
 
+## 生成一张可无缝平铺的星空贴图。
+## count 是这块贴图里的星星数量，size_min/size_max 是单颗像素直径，
+## bright_min/bright_max 是亮度范围，colored=true 时给近景星加色相变化。
+static func _build_star_tile(count: int, size_min: int, size_max: int,
+		bright_min: float, bright_max: float, colored: bool) -> ImageTexture:
+	var img := Image.create(STAR_FIELD_TILE, STAR_FIELD_TILE, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for i in range(count):
+		var size: int = randi_range(size_min, size_max)
+		var b: float = randf_range(bright_min, bright_max)
+		var tint := Color(b, b * 0.88, b * randf_range(0.85, 1.25), 1.0)
+		if colored:
+			match randi() % 5:
+				0: tint = Color(b, b * 0.9, b, 1.0)
+				1: tint = Color(b, b * 0.7, b * 0.6, 1.0)
+				2: tint = Color(b * 0.5, b * 0.8, b, 1.0)
+				3: tint = Color(b * 0.85, b * 0.7, b * 0.7, 1.0)
+				_: tint = Color(b * 0.7, b * 0.8, b, 1.0)
+		## 贴图边缘的星星会平铺时在接缝处重复，因此避开边缘一格
+		var ox: int = randi_range(1, STAR_FIELD_TILE - size - 1)
+		var oy: int = randi_range(1, STAR_FIELD_TILE - size - 1)
+		var half: float = float(size) / 2.0
+		var centre: float = float(size) * 0.5
+		for y in range(size):
+			for x in range(size):
+				var dx: float = float(x) - centre
+				var dy: float = float(y) - centre
+				var d: float = sqrt(dx * dx + dy * dy)
+				if d >= half:
+					continue
+				## 近景大星带柔和衰减，远景小星保持硬边像素感
+				var a: float = 1.0 if size <= 3 else 1.0 - (d / half) * (d / half)
+				img.set_pixel(ox + x, oy + y, Color(tint.r, tint.g, tint.b, a))
+	return ImageTexture.create_from_image(img)
+
 func _create_parallax_background() -> void:
 	if _bg_color:
 		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
 		_bg_color.z_index = -100
 
-	var far_layer := {nodes = [], speed = 12.0}
-	for i in range(180):
-		var star := Sprite2D.new()
-		var b: float = randf_range(0.3, 0.7)
-		var blue_tint: float = randf_range(0.8, 1.3)
-		var img := Image.create(2, 2, false, Image.FORMAT_RGBA8)
-		img.fill(Color(b, b * 0.85, b * blue_tint, randf_range(0.3, 0.8)))
-		star.texture = ImageTexture.create_from_image(img)
-		star.position = Vector2(randf_range(0, 1500), randf_range(-100, 820))
-		star.z_index = -10
-		add_child(star)
-		far_layer.nodes.append(star)
-	_bg_layers.append(far_layer)
+	## 星空从「每颗星一个 Sprite2D」改为「每层一张平铺贴图」。
+	## 旧实现是 180+90+35 = 305 个节点、305 张各自独立的 2~12px 贴图，
+	## 每帧全部移动，既无法合批也吃满 draw call；实测在本机（AMD 5300M）
+	## 只有 1 个敌人 12 颗子弹时也只有 106 fps，够不到 120。
+	## 新实现每层 1 个节点 + 1 张 256×256 可平铺贴图，draw call 从 305 降到 3。
+	var star_tiles: Array = [
+		_build_star_tile(120, 2, 2, 0.3, 0.7, false),
+		_build_star_tile(60, 3, 5, 0.5, 0.9, false),
+		_build_star_tile(22, 6, 12, 0.7, 1.0, true),
+	]
+	var layer_defs: Array = [
+		{speed = 12.0, z = -10},
+		{speed = 24.0, z = -9},
+		{speed = 40.0, z = -8},
+	]
+	for i in range(layer_defs.size()):
+		var def: Dictionary = layer_defs[i]
+		var sprite := Sprite2D.new()
+		sprite.texture = star_tiles[i]
+		## 平铺需要纹理重复；region 大于一屏，滚动时露出下一圈实现无缝循环
+		sprite.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+		sprite.region_enabled = true
+		sprite.region_rect = Rect2(0, 0, STAR_FIELD_TILE * 6, STAR_FIELD_TILE * 4)
+		sprite.centered = false
+		sprite.position = Vector2.ZERO
+		sprite.z_index = int(def.z)
+		add_child(sprite)
+		_bg_layers.append({nodes = [sprite], speed = float(def.speed)})
 
-	var mid_layer := {nodes = [], speed = 24.0}
-	for i in range(90):
-		var star := Sprite2D.new()
-		var b: float = randf_range(0.5, 0.9)
-		var blue_tint: float = randf_range(0.85, 1.2)
-		var size: int = randi_range(3, 5)
-		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-		for y in range(size):
-			for x in range(size):
-				var d: float = sqrt(float(x - size * 0.5) * float(x - size * 0.5) + float(y - size * 0.5) * float(y - size * 0.5))
-				if d < float(size) / 2.0:
-					img.set_pixel(x, y, Color(b, b * 0.9, b * blue_tint, 1.0))
-		star.texture = ImageTexture.create_from_image(img)
-		star.position = Vector2(randf_range(0, 1500), randf_range(-100, 820))
-		star.z_index = -9
-		add_child(star)
-		mid_layer.nodes.append(star)
-	_bg_layers.append(mid_layer)
-
-	var near_layer := {nodes = [], speed = 40.0}
-	for i in range(35):
-		var star := Sprite2D.new()
-		var b: float = randf_range(0.7, 1.0)
-		var size: int = randi_range(6, 12)
-		var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
-		var col: Color
-		match randi() % 5:
-			0: col = Color(b, b * 0.9, b, 1.0)
-			1: col = Color(b, b * 0.7, b * 0.6, 1.0)
-			2: col = Color(b * 0.5, b * 0.8, b, 1.0)
-			3: col = Color(b, b * 0.85, b * 0.7, 1.0)
-			_: col = Color(b * 0.7, b * 0.8, b, 1.0)
-		var cx2: int = size / 2
-		for y in range(size):
-			for x in range(size):
-				var d: float = sqrt(float(x - cx2) * float(x - cx2) + float(y - cx2) * float(y - cx2))
-				if d < float(size) / 2.0:
-					var t: float = d / (float(size) / 2.0)
-					img.set_pixel(x, y, Color(col.r, col.g, col.b, 1.0 - t * t))
-		star.texture = ImageTexture.create_from_image(img)
-		star.position = Vector2(randf_range(0, 1500), randf_range(-100, 820))
-		star.z_index = -8
-		add_child(star)
-		near_layer.nodes.append(star)
-	_bg_layers.append(near_layer)
 
 	for i in range(8):
 		var nebula := Sprite2D.new()
@@ -517,10 +525,14 @@ func _scroll_background(delta: float) -> void:
 	for layer in _bg_layers:
 		var spd: float = layer.speed
 		for node in layer.nodes:
+			## 平铺贴图：整层只有一个节点，按贴图边长取模滚动即可无缝循环，
+			## 不再需要逐颗星越界后随机重置坐标。
 			node.position.y += delta * spd
-			if node.position.y > 800:
-				node.position.y = -60
-				node.position.x = randf_range(0, 1280)
+			if node.position.y > STAR_FIELD_TILE:
+				node.position.y -= STAR_FIELD_TILE
+			node.position.x += delta * spd * 0.15
+			if node.position.x > STAR_FIELD_TILE:
+				node.position.x -= STAR_FIELD_TILE
 
 	for neb in _nebulas:
 		neb.position.y += delta * 2.5
@@ -537,17 +549,15 @@ func _scroll_background(delta: float) -> void:
 			pl.position.x = randf_range(100, 1180)
 
 func _apply_client_perf_profile() -> void:
-	## 加入端降低背景层渲染负担，优先保障同屏战斗帧率。
+	## 加入端降低背景渲染负担，优先保障同屏战斗帧率。
+	## 星空现在每层只有一个节点，不能再按节点删一半，改为把贴图调暗
+	## （视觉上就是星星变少/变暗），nebula / planet 仍按节点减半。
 	for layer in _bg_layers:
 		var nodes: Array = layer.nodes
-		for i in range(nodes.size() - 1, -1, -1):
-			if i % 2 == 0:
-				continue
-			var n: Node = nodes[i]
-			if is_instance_valid(n):
-				n.queue_free()
-			nodes.remove_at(i)
-		layer.nodes = nodes
+		for n in nodes:
+			var node: Node2D = n as Node2D
+			if node != null and is_instance_valid(node):
+				node.modulate = Color(0.72, 0.72, 0.8, 1.0)
 	for i in range(_nebulas.size() - 1, -1, -1):
 		if i % 2 == 0:
 			continue

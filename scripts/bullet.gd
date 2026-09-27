@@ -17,6 +17,10 @@ var owner_peer_id: int = -1
 @onready var _sprite: Sprite2D = $Sprite2D
 
 func _ready() -> void:
+	## 子弹速度可达数百 px/s，物理 60Hz 时单个物理帧位移接近 10px。
+	## 开物理插值后引擎会在两个物理帧之间补位置，对高速抛射物而言
+	## 命中判定与渲染位置会错开半帧（视觉上像"打偏"），因此显式关闭。
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	if not is_connected("body_entered", _on_body_entered):
 		body_entered.connect(_on_body_entered)
 	if not is_connected("area_entered", _on_area_entered):
