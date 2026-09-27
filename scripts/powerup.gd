@@ -19,7 +19,11 @@ func _ready() -> void:
 func setup(type: String) -> void:
 	_type = type
 	call_deferred("_apply_sprite")
-	_setup_visual_style()
+	## 联机同步链路在 add_child() 之前就调用 setup()（见 main.gd::_rpc_spawn_powerup），
+	## 此时 @onready var _sprite 仍是 null，直接访问会抛运行时错误。
+	## 未入树时跳过：_ready() 会带着正确的 _type 与 assigned_peer_id 再应用一次样式。
+	if is_inside_tree():
+		_setup_visual_style()
 
 func get_powerup_type() -> String:
 	return _type

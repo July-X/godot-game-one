@@ -30,11 +30,15 @@ func setup(type_name: String, scene: PackedScene, size: int = DEFAULT_POOL_SIZE)
 
 ## 从池中取用节点
 func acquire(type_name: String, scene: PackedScene) -> Node:
-	var pool: Array = _pools.get(type_name)
-	if pool == null:
-		# 首次使用，延迟初始化
+	## 注意：这里必须用 has() 判断而不是 `_pools.get(type_name) == null`。
+	## 旧写法 `var pool: Array = _pools.get(type_name)` 在 key 不存在时会把
+	## null 赋给 Array 类型变量，Godot 4 直接抛运行时错误并中断本函数，
+	## acquire 返回 null，后续 add_child(null) / node.setup() 连锁报错。
+	## 触发路径：reset_all() 之后（断线回退单机 / 结算清理）继续开火。
+	if not _pools.has(type_name):
+		# 首次使用（或 reset_all 之后）延迟初始化
 		setup(type_name, scene)
-		pool = _pools[type_name]
+	var pool: Array = _pools.get(type_name, [])
 
 	var node: Node
 	if pool.is_empty():
