@@ -383,6 +383,8 @@ func _verify_ultimate_laser(client_id: int) -> void:
 	_boss.set_target(p1)
 	await _wait_seconds(0.5)
 
+	## 探针验的是「真死亡 ≠ 断线」，要绕过 2 人合作的倒地救援路径
+	_main.rescue_enabled = false
 	## 掉 30 个百分点血量（> BOSS_ULTIMATE_LASER_HP_INTERVAL 的 25 个百分点）触发终局激光
 	var max_hp: float = _boss._max_health
 	_boss.apply_network_health(max_hp * 0.70, max_hp)

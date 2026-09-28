@@ -107,6 +107,9 @@ const SHAKE_ELITE_DEATH: float = 0.55
 const SHAKE_BOSS_PHASE: float = 0.40
 const SHAKE_EXPLOSION: float = 0.60
 const SHAKE_LASER_CHARGE: float = 0.50
+## 救援：按住 E 持续 REVIVE_HOLD_SECONDS 才算完成，必须有代价
+const REVIVE_RADIUS: float = 60.0
+var _revive_hold_active: bool = false
 var _hitstop_left: float = 0.0
 var _hitstop_target: float = 1.0
 var _hitstop_last_usec: int = 0
@@ -486,6 +489,11 @@ func _on_multiplayer_server_disconnected() -> void:
 
 ## 多人模式：某玩家死亡回调
 func _on_networked_player_died(p_peer_id: int) -> void:
+	## 2 人合作：队友还活着时不直接 despawn，而是进入倒地状态等救援。
+	## 原来"一个人失误 → 变成旁观者看着队友打"是合作体验最大的坑。
+	## 单机、以及全员阵亡时仍走原来的直接结束流程。
+	if _try_go_downed(p_peer_id):
+		return
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_despawn_player.rpc(p_peer_id)
 	_rpc_despawn_player(p_peer_id)
@@ -496,6 +504,144 @@ func _on_networked_player_died(p_peer_id: int) -> void:
 		_finish_multiplayer_game_over(GameState.score, GameState.level)
 	else:
 		_refresh_primary_player_target()
+
+
+## ── 倒地与救援 ────────────────────────────────────────────
+
+## 本机玩家请求救援最近的倒地队友
+func _request_revive_nearest_downed() -> void:
+	if not NetworkManager.is_online():
+		return
+	if _player == null or not is_instance_valid(_player) or _player.is_downed:
+		return
+	var best_pid: int = -1
+	var best_d: float = REVIVE_RADIUS
+	for pid: Variant in _players.keys():
+		var node: Node = _players[pid]
+		if node == null or not is_instance_valid(node) or not node.is_downed:
+			continue
+		var d: float = _player.global_position.distance_to((node as Node2D).global_position)
+		if d <= best_d:
+			best_d = d
+			best_pid = int(pid)
+	if best_pid < 0:
+		return
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		_rpc_request_revive.rpc_id(1, best_pid)
+		return
+	var target: Node = _players[best_pid]
+	if is_instance_valid(target) and target.has_method("update_revive_hold"):
+		target.update_revive_hold(true, 0.0)
+		_revive_hold_active = true
+
+##
+## 只有 Host 决定是否倒地，避免两端各自判断导致不同步。
+
+## 倒地救援总开关。联机回归探针测的是「真死亡 ≠ 断线」这条不变量，
+## 需要绕过倒地；真实对局保持开启。
+var rescue_enabled: bool = true
+
+
+func _try_go_downed(p_peer_id: int) -> bool:
+	if not rescue_enabled:
+		return false
+	if not NetworkManager.is_online() or not multiplayer.is_server():
+		return false
+	if _alive_players.size() < 2:
+		return false
+	var node: Node = _players.get(p_peer_id)
+	if node == null or not is_instance_valid(node) or not node.has_method("go_downed"):
+		return false
+	## 倒地者仍留在 _players 里（位置要继续同步给队友看），
+	## 但要退出可被选中的主目标，否则敌人会去打一个不能还手的人
+	node.go_downed()
+	_alive_players.erase(p_peer_id)
+	_rpc_set_downed.rpc(p_peer_id)
+	_refresh_primary_player_target()
+	_show_death_marquee_text("队友已坠毁！靠近并按住 E 救援")
+	return true
+
+
+## Host → Client：同步倒地状态
+@rpc("authority", "reliable", "call_remote")
+func _rpc_set_downed(p_peer_id: int) -> void:
+	if not _players.has(p_peer_id):
+		return
+	var node: Node = _players[p_peer_id]
+	if is_instance_valid(node) and node.has_method("go_downed"):
+		node.go_downed()
+	_alive_players.erase(p_peer_id)
+	_refresh_primary_player_target()
+
+
+## Host 每帧：推进倒地者的流血与救援按住进度
+func _tick_downed_rescue(delta: float) -> void:
+	if not NetworkManager.is_online() or not multiplayer.is_server():
+		return
+	## 遍历 _players 时必须先取 Variant 再判有效性、直接用 `var node: Node = _players[pid]`
+	## 会在节点已被 queue_free 时抛"assign invalid previously freed instance"——
+	## 因为类型转换发生在 is_instance_valid 检查**之前**。
+	## 同时对 keys 取快照：循环体内 _do_revive 会触发信号回调，可能改动字典。
+	for pid: Variant in _players.keys().duplicate():
+		var raw: Variant = _players.get(pid)
+		if not is_instance_valid(raw):
+			continue
+		var node := raw as Node
+		if node == null or not node.has_method("update_revive_hold"):
+			continue
+		if not node.is_downed:
+			continue
+		node.update_revive_hold(_is_someone_reviving(node), delta)
+		if node.get_revive_ratio() >= 1.0:
+			_do_revive(int(pid), node)
+
+
+## 本机玩家是否在救援范围内且按住了救援键
+func _is_someone_reviving(downed_node: Node) -> bool:
+	if not _revive_hold_active:
+		return false
+	if _player == null or not is_instance_valid(_player) or _player.is_downed:
+		return false
+	return _player.global_position.distance_to(downed_node.global_position) <= REVIVE_RADIUS
+
+
+func _do_revive(pid: int, node: Node) -> void:
+	if not node.has_method("complete_revive") or not node.complete_revive():
+		return
+	_alive_players[pid] = true
+	_rpc_revive_done.rpc(pid)
+	_refresh_primary_player_target()
+	_show_death_marquee_text("救援成功！")
+
+
+## Client → Host：本地玩家想救援，Host 校验距离与倒计时后裁决
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_request_revive(target_pid: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender: int = multiplayer.get_remote_sender_id()
+	if sender <= 0 or not _players.has(target_pid):
+		return
+	var target: Node = _players[target_pid]
+	var rescuer: Node = _players.get(sender)
+	if not is_instance_valid(target) or not is_instance_valid(rescuer):
+		return
+	if not target.is_downed:
+		return
+	if rescuer.global_position.distance_to(target.global_position) > REVIVE_RADIUS:
+		return
+	_do_revive(target_pid, target)
+
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_revive_done(p_peer_id: int) -> void:
+	if not _players.has(p_peer_id):
+		return
+	var node: Node = _players[p_peer_id]
+	if is_instance_valid(node) and node.has_method("complete_revive"):
+		node.complete_revive()
+	_alive_players[p_peer_id] = true
+	_refresh_primary_player_target()
 
 func _fallback_to_single_player(message: String = "") -> void:
 	if _fallback_in_progress:
@@ -581,6 +727,7 @@ func _spawn_mobile_controls() -> void:
 
 func _process(delta: float) -> void:
 	_tick_hitstop()
+	_tick_downed_rescue(delta)
 	if not GameState.game_running:
 		return
 	_update_boss_hud()
@@ -1405,6 +1552,14 @@ func _alive_peer_ids() -> Array[int]:
 
 
 func _input(event: InputEvent) -> void:
+	## 救援键：按住 E。客户端按下的瞬间向 Host 发一次请求，
+	## 之后的按住进度由 Host 依据距离推进（避免两端各自判定）。
+	if event is InputEventKey and (event.keycode == KEY_E or event.keycode == KEY_F):
+		if event is InputEventKey:
+			_revive_hold_active = event.pressed
+			if event.pressed and not event.echo:
+				_request_revive_nearest_downed()
+
 	## 选卡用 1/2/3 键而不是鼠标点击：进入战斗后鼠标被捕获用于走位，
 	## 用鼠标选卡会打断操作，而"选卡时不能停下手"是本作的设计要求。
 	if event is InputEventKey and event.pressed and not event.echo:

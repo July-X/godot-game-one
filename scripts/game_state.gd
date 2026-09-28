@@ -923,6 +923,31 @@ func get_all_player_scores() -> Dictionary:
 func is_player_alive(peer_id: int = -1) -> bool:
 	return bool(_state(peer_id).get("is_alive", true))
 
+
+## 救援成功：回血到比例、给护盾、清除死亡标记。
+## 只由 Host 调用（救援的距离与时长校验都在 Host 侧），
+## Client 收到的是 Host 下发的状态，不要本地自结算。
+func revive_player(peer_id: int, health_ratio: float = 0.5,
+		invincible_seconds: float = 3.0, shield_layers: int = 1) -> void:
+	var pid: int = peer_id if peer_id > 0 else _local_peer_id()
+	var s := _state(pid)
+	var mhp: int = maxi(1, int(s.get("max_health", START_HEALTH)))
+	s.is_alive = true
+	s.current_health = maxi(1, int(float(mhp) * health_ratio))
+	s.shield_layers = maxi(int(s.get("shield_layers", 0)), shield_layers)
+	s.downed = false
+	_player_states[_peer_key(pid)] = s
+	if _is_local_peer(pid):
+		_sync_local_view()
+		health_changed.emit(current_health, max_health)
+		_emit_shield_changed_for_peer(pid)
+	_mark_dirty()
+
+
+## 是否处于倒地（被救前）状态
+func is_player_downed(peer_id: int = -1) -> bool:
+	return bool(_state(peer_id).get("downed", false))
+
 func get_alive_player_ids() -> Array[int]:
 	return _alive_peer_ids()
 

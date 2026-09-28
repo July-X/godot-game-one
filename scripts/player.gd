@@ -8,6 +8,89 @@
 extends CharacterBody2D
 
 signal died
+signal downed_changed(is_downed: bool)
+signal revive_progress_changed(ratio: float)
+
+## ── 倒地 / 救援（2 人合作）────────────────────────────────
+##
+## 原来阵亡 = 节点直接 despawn，人变成无载具旁观者直到队友也死。
+## 这是合作体验最大的坑：一个人失误，整局就变成"看别人打"。
+## 现在联机下一次死亡进入倒地状态，队友可以救援。
+##
+## 参数（见 Design_Decisions「倒地与救援」）：
+##   倒地期间：不能射击、移速 30%、每 2 秒流失 10% 最大生命
+##   救援：靠近 60px 内**按住 1.2 秒**——这个数字是关键，
+##        必须有代价，否则合作退化成"走过去按一下键"
+const DOWNED_BLEED_INTERVAL: float = 2.0
+const DOWNED_BLEED_RATIO: float = 0.10
+const DOWNED_MAX_SECONDS: float = 20.0
+const REVIVE_HOLD_SECONDS: float = 1.2
+const REVIVE_RADIUS: float = 60.0
+const REVIVE_HEALTH_RATIO: float = 0.5
+const DOWNED_MOVE_MULTIPLIER: float = 0.3
+
+var is_downed: bool = false
+var _downed_left: float = DOWNED_MAX_SECONDS
+var _downed_bleed_timer: float = DOWNED_BLEED_INTERVAL
+var _revive_hold: float = 0.0
+
+
+func get_downed_time_left() -> float:
+	return _downed_left if is_downed else 0.0
+
+
+func get_revive_ratio() -> float:
+	return clampf(_revive_hold / REVIVE_HOLD_SECONDS, 0.0, 1.0)
+
+
+## 进入倒地。联机且队友仍在时才会走到这里。
+func go_downed() -> void:
+	if is_downed:
+		return
+	is_downed = true
+	_downed_left = DOWNED_MAX_SECONDS
+	_downed_bleed_timer = DOWNED_BLEED_INTERVAL
+	_revive_hold = 0.0
+	## 倒地时清空无敌帧，否则会带着 1 秒无敌显得"倒地还能挨打免疫"，
+	## 队友靠近时被弹幕连累会非常挫败
+	_invincible_timer = 0.0
+	set_process(true)
+	downed_changed.emit(true)
+	revive_progress_changed.emit(0.0)
+
+
+## 队友按住救援键满 1.2 秒后调用。Host 权威校验。
+func complete_revive() -> bool:
+	if not is_downed:
+		return false
+	is_downed = false
+	_downed_left = 0.0
+	_revive_hold = 0.0
+	GameState.revive_player(peer_id, REVIVE_HEALTH_RATIO, 3.0, 1)
+	## 救回来给 3 秒无敌，避免刚站起来就被同一波弹幕带走
+	_invincible_timer = 3.0
+	downed_changed.emit(false)
+	revive_progress_changed.emit(0.0)
+	return true
+
+
+## 倒地期间的推进：流血倒计时 + 救援按住进度
+func _tick_downed(delta: float) -> void:
+	_downed_left -= delta
+	_downed_bleed_timer -= delta
+	if _downed_bleed_timer <= 0.0:
+		_downed_bleed_timer = DOWNED_BLEED_INTERVAL
+		var mhp: int = maxi(1, GameState.get_max_health(peer_id))
+		GameState.take_damage(maxi(1, int(float(mhp) * DOWNED_BLEED_RATIO)), peer_id)
+
+
+## 由 Host 每帧调用：判断是否有人在救援本机
+func update_revive_hold(helping: bool, delta: float) -> void:
+	if not is_downed:
+		return
+	var target: float = REVIVE_HOLD_SECONDS if helping else 0.0
+	_revive_hold = move_toward(_revive_hold, target, delta)
+	revive_progress_changed.emit(get_revive_ratio())
 
 @export var move_speed: float = 260.0
 @export var friction: float = 500.0
@@ -157,6 +240,16 @@ func _physics_process(delta: float) -> void:
 	if mp_active and not locally_controlled:
 		return
 
+	if is_downed:
+		## 倒地：Host 权威推进流血倒计时；其他端只读同步状态，不自行计时
+		if not mp_active or multiplayer.is_server():
+			_tick_downed(delta)
+		## 倒地仍能挪动（移速 30%），但不能射击——不能动的救援目标没有博弈
+		_motion.update(delta, GameState.get_move_speed_multiplier()
+			* DOWNED_MOVE_MULTIPLIER, get_viewport_rect().size)
+		_feedback.update(delta)
+		return
+
 	_motion.update(delta, GameState.get_move_speed_multiplier(), get_viewport_rect().size)
 	_combat.update(delta)
 	_feedback.update(delta)
@@ -218,6 +311,10 @@ func request_action(action: String) -> void:
 
 func take_damage(amount: float = 1.0) -> void:
 	if _invincible_timer > 0:
+		return
+	## 已倒地：不再重复触发死亡流程，只吃流血伤害
+	if is_downed:
+		GameState.take_damage(maxi(1, int(round(amount))), peer_id)
 		return
 	var actual_damage: int = _normalize_incoming_damage(amount)
 	if actual_damage <= 0:
