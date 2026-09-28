@@ -4,6 +4,7 @@ const Palette = preload("res://scripts/palette.gd")
 
 @onready var _score_label: Label = $ScoreLabel
 @onready var _level_label: Label = $LevelLabel
+@onready var _phase_label: Label = $PhaseLabel
 @onready var _health_bar: ProgressBar = $HealthBar
 @onready var _hp_num: Label = $HealthBar/HPNum
 @onready var _player_scores_label: Label = $PlayerScoresLabel
@@ -626,6 +627,18 @@ func _refresh_score_if_needed() -> void:
 
 func _update_level(level: int) -> void:
 	_level_label.text = "等级 %d" % level
+
+
+## 关卡乐句读数：当前拍名 + 章节号 + 本拍进度。
+##
+## 这行字存在的唯一理由是**让玩家知道自己在哪一拍**——
+## 弹幕射击的乐趣来自"熬过浪峰、等来退潮"的预期感，
+## 而预期感需要一个可见的进度来源。它是纯显示，不参与任何战斗逻辑。
+func set_wave_phase(text: String, color: Color) -> void:
+	if _phase_label == null:
+		return
+	_phase_label.text = text
+	_phase_label.add_theme_color_override("font_color", color)
 
 func _update_player_scores(scores: Dictionary, total_score: int) -> void:
 	if _player_scores_label == null:

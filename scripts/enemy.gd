@@ -8,6 +8,13 @@ signal enemy_died
 @export var shoot_cooldown: float = 2.0
 @export var drop_chance: float = 0.20
 
+## 章节主题的敌弹速度倍率（wave_director.gd CHAPTER_THEMES）。
+##
+## 为什么要做成字段而不是在 `_shoot_*` 里读全局：生成包必须带着它走，
+## 否则联机两端弹幕速度不一致，擦弹和走位预案全部失效（见 main.gd `_rpc_spawn_enemy`）。
+## 默认 1.0 = 原始三档速度，不受主题影响。
+var bullet_speed_mult: float = 1.0
+
 var entity_id: int = 0
 
 func get_entity_id() -> int:
@@ -206,14 +213,17 @@ func _shoot() -> void:
 		2: _shoot_circle()
 
 func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float, color: Color) -> void:
+	## 章节主题在这里生效：三档速度分层是"可读性"的基线，
+	## 主题只在这个基线上做整体微调，不改变快慢对比关系（对比才是玩家判威胁的依据）。
 	var bullet := Pool.acquire("bullet", _bullet_scene)
 	get_tree().current_scene.add_child(bullet)
-	bullet.setup(pos, angle, damage, false, 1, speed)
+	var final_speed: float = speed * bullet_speed_mult
+	bullet.setup(pos, angle, damage, false, 1, final_speed)
 	bullet.modulate = color
 	if NetworkManager.is_online():
 		var scene := get_tree().current_scene
 		if scene and scene.has_method("register_bullet_spawn"):
-			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
+			scene.register_bullet_spawn(pos, angle, damage, false, 1, final_speed, color)
 
 ## 敌弹速度分层。原来的三种攻击全部固定 780 px/s，等于只有一种速度——
 ## 玩家无法通过"躲得开/躲不开"来区分威胁，只能靠颜色猜。

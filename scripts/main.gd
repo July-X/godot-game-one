@@ -10,6 +10,7 @@ var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _laser_scene = preload("res://scenes/entities/laser_bolt.tscn")
 var _boss_ultimate_laser_visual_script = preload("res://scripts/boss_ultimate_laser_visual.gd")
+var _wave_director_script = preload("res://scripts/wave_director.gd")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
@@ -28,14 +29,19 @@ var _boss: Node2D = null
 ## 会互相覆盖而不是叠加。旧路径 powerup.gd 仍用 screen_shake 场景，由
 ## _spawn_shake 转发到这里。
 var _camera_shake: Node = null
+## 波次编排器：接管全部杂兵投放（阵型 / 节奏 / 章节主题）。
+## Host 权威运行；单机同样运行。客户端不调用，出怪仍走 _rpc_spawn_enemy 广播，
+## 所以联机不新增任何同步包（见 docs/architecture.md §12）。
+var _wave_director: Node = null
+var _last_wave_phase_text: String = ""
 var _boss_variant_cycle: Array[int] = []
 var _boss_variant_last: int = 0
 var _current_boss_variant_id: int = 0
 var _boss_fight_active: bool = false
 var _pending_boss_level: int = 0
 var _last_boss_hud_phase: String = ""
-var _enemy_spawn_timer: float = 0.0
-var _difficulty_timer: float = 0.0
+## 旧的 `_enemy_spawn_timer` / `_difficulty_timer`（间隔刷怪 + 8 秒脉冲）已删除，
+## 杂兵投放改由 `_wave_director` 的乐句节拍统一负责。
 var _asteroid_timer: float = 0.0
 var _bg_layers: Array[Dictionary] = []
 var _nebulas: Array[Node2D] = []
@@ -168,6 +174,13 @@ func emit_hit_feedback(intensity: float, hitstop_seconds: float = 0.0,
 
 func _ready() -> void:
 	_hitstop_last_usec = Time.get_ticks_usec()
+	_wave_director = _wave_director_script.new()
+	_wave_director.name = "WaveDirector"
+	_wave_director.phase_changed.connect(_on_wave_phase_changed)
+	add_child(_wave_director)
+	## 显式复位：预置开局预算，让第一波阵型在 ~1.6 秒后就进场，
+	## 而不是等预算从 0 攒满 3 点（约 3.4 秒空屏）。
+	_wave_director.reset()
 	_camera_shake = _camera_shake_script.new()
 	_camera_shake.name = "CameraShake"
 	add_child(_camera_shake)
@@ -784,25 +797,63 @@ func _process(delta: float) -> void:
 		_spawn_asteroid()
 		_asteroid_timer = randf_range(2.0, 5.0)
 
-	_enemy_spawn_timer -= delta
-	if _enemy_spawn_timer <= 0:
-		_enemy_spawn_timer = max(1.2 - GameState.level * 0.06, ENEMY_SPAWN_MIN_INTERVAL)
-		_spawn_enemy_if_below_cap()
-
-	_difficulty_timer += delta
-	if _difficulty_timer > 8.0:
-		_difficulty_timer = 0.0
-		_spawn_enemy_if_below_cap()
+	_tick_wave_director(delta)
 
 
-## 同屏敌人数上限。原实现只在固定 8 秒一次的"难度脉冲"里无条件加怪，
-## 叠加高频刷怪后同屏数量只增不减，后期会糊成一片——弹幕一旦互相重叠，
-## 可读性就没了，所以必须硬性封顶。
-## 20 的取法：1280×720 下仍留得出躲避空间，同时精英/Boss 场另有独立通道。
-func _spawn_enemy_if_below_cap() -> void:
-	if get_tree().get_nodes_in_group("enemies").size() >= ENEMY_SCREEN_CAP:
+## 波次编排器推进。Host 权威（单机等价于 Host），客户端不跑。
+##
+## 改造前这里是两个定时器：`max(1.2 - level*0.06, 0.45)` 秒一只 + 每 8 秒补一只。
+## 问题不是"慢"，而是**没有形状**：同屏压力是一条恒定直线，
+## 而且四通道（刷怪间隔 / 开火 CD / 敌速 / 同屏上限）在 L13~L56 全部走完增长并触顶，
+## 35 个等级里玩家的"压力感"几乎不变，只剩敌血在涨。
+## 编排器加的是一条**正交维度**：同样的平均强度，排出"起拍→涨潮→浪峰→退潮"的乐句。
+## 章节平均速率恒等于旧版速率（tests/wave_probe.gd 门禁），所以这不是加难度，是加节奏。
+func _tick_wave_director(delta: float) -> void:
+	if _wave_director == null or not is_instance_valid(_wave_director):
 		return
-	_spawn_enemy()
+	## 联机时只有 Host 推进波次时钟。出怪点照旧走 _rpc_spawn_enemy 广播给客户端，
+	## 因此两端看到的波次天然一致，不引入新的同步字段。
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
+	var alive: int = get_tree().get_nodes_in_group("enemies").size()
+	var orders: Array = _wave_director.advance(delta, GameState.level, alive,
+		get_viewport_rect().size, ENEMY_SCREEN_CAP)
+	for order: Dictionary in orders:
+		_spawn_enemy_at(int(order["type"]), order["pos"])
+	_refresh_wave_phase_hud()
+
+
+## 每帧刷新乐句读数。刻意按"变化才重写"处理：
+## Label 文本每帧重设会触发重排，1280×720 下 HUD 已经在满负荷边缘，
+## 而这一行文本一个关卡周期只变 100 次（进度取整）。
+func _refresh_wave_phase_hud() -> void:
+	if _hud == null or not _hud.has_method("set_wave_phase"):
+		return
+	var text: String = _wave_director.phase_readout(GameState.level)
+	if text == _last_wave_phase_text:
+		return
+	_last_wave_phase_text = text
+	_hud.set_wave_phase(text, _wave_director.current_phase_color())
+
+
+## 乐句换拍提示。
+##
+## 只在"浪峰"和"退潮"播报：这两拍是玩家需要知道边界的两拍。
+## 起拍/涨潮每次都弹会变成噪音，而玩家在退潮时最该知道的是
+## "接下来的 16 秒是安全的，可以专心清场和读弹道"。
+func _on_wave_phase_changed(phase_index: int, phase_name: String) -> void:
+	if _hud == null or not _hud.has_method("show_center_banner"):
+		return
+	match phase_index:
+		_wave_director_script.PHASE_CREST:
+			_show_elite_warning_style_banner("浪峰来袭", Color(1.0, 0.42, 0.28, 1.0))
+		_wave_director_script.PHASE_LULL:
+			_show_elite_warning_style_banner("退潮 · 喘息窗口", Color(0.50, 1.0, 0.70, 1.0))
+
+
+func _show_elite_warning_style_banner(text: String, color: Color) -> void:
+	if _hud and _hud.has_method("show_center_banner"):
+		_hud.show_center_banner(text, 1.4, color)
 
 func _scroll_background(delta: float) -> void:
 	for layer in _bg_layers:
@@ -912,24 +963,27 @@ static func compute_enemy_speed(level: int, enemy_type: int,
 static func compute_post_elite_multiplier(elite_count: int) -> float:
 	return minf(1.0 + float(elite_count) * POST_ELITE_MULT_STEP, POST_ELITE_MULT_MAX)
 
-func _spawn_enemy() -> void:
+## 在指定位置生成指定类型的杂兵。位置与类型全部由波次编排器决定，
+## 这里只负责把"章节主题"叠加到基础数值上。
+##
+## 章节主题（wave_director.gd CHAPTER_THEMES）改的是**怎么躲**而不是"躲不躲得过"：
+## 弹速变快的同时敌人变脆、开火变密，玩家的最优应对从"站桩输出"变成
+## "贴脸抢输出窗口"。手感因此一章一换，而难度总量没变。
+func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> void:
 	var enemy = _enemy_scene.instantiate()
-	var side := randi() % 4
-	var pos := Vector2.ZERO
-	var screen := get_viewport_rect().size
-	match side:
-		0: pos = Vector2(randf_range(0, screen.x), -30)
-		1: pos = Vector2(randf_range(0, screen.x), screen.y + 30)
-		2: pos = Vector2(-30, randf_range(0, screen.y))
-		3: pos = Vector2(screen.x + 30, randf_range(0, screen.y))
 	enemy.position = pos
-	var enemy_type: int = randi() % 3
 	enemy.enemy_type = enemy_type
 	var mult: float = GameState.post_elite_multiplier
-	enemy.health = int((1 + GameState.level / 2 + enemy_type) * mult)
+	var theme: Dictionary = _wave_director.theme_for_chapter(
+		_wave_director.chapter_for_level(GameState.level))
+	var theme_health: float = float(theme.get("enemy_health", 1.0))
+	var theme_fire: float = float(theme.get("fire_rate", 1.0))
+	var theme_bullet: float = float(theme.get("bullet_speed", 1.0))
+	enemy.health = maxi(1, int(float(int(1 + GameState.level / 2 + enemy_type) * mult) * theme_health))
+	enemy.bullet_speed_mult = theme_bullet
 	enemy.move_speed = compute_enemy_speed(GameState.level, enemy_type,
 		GameState.elite_encounter_count, _enemy_speed_cap())
-	enemy.shoot_cooldown = max((2.0 - GameState.level * 0.12) / mult, 0.4)
+	enemy.shoot_cooldown = max((2.0 - GameState.level * 0.12) / (mult * theme_fire), 0.4)
 	enemy.drop_chance = 0.20 + enemy_type * 0.12
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
@@ -940,7 +994,9 @@ func _spawn_enemy() -> void:
 		enemy.entity_id = eid
 		_entities[eid] = enemy
 		enemy.enemy_died.connect(_on_network_enemy_died.bind(eid))
-		_rpc_spawn_enemy.rpc(eid, enemy_type, pos.x, pos.y, enemy.health, enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, mult)
+		_rpc_spawn_enemy.rpc(eid, enemy_type, pos.x, pos.y, enemy.health,
+			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, mult,
+			enemy.bullet_speed_mult)
 	add_child(enemy)
 
 func _on_enemy_died() -> void:
@@ -1755,12 +1811,18 @@ func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node) -> void:
 				float(node.get("move_speed")),
 				float(node.get("shoot_cooldown")),
 				float(node.get("drop_chance")),
-				1.0
+				1.0,
+				float(node.get("bullet_speed_mult"))
 			)
 
 ## Host → Client：生成敌人幽灵副本
+##
+## `bullet_mult` 是章节主题的敌弹速度倍率（wave_director.gd CHAPTER_THEMES）。
+## 它必须跟着生成包一起走：客户端的敌人是幽灵，不跑 AI 也不开火，
+## 但**弹速是纯渲染参数**——不同步的话两端看到的弹幕速度不一样，
+## 玩家的擦弹判断和走位预案会直接失效。
 @rpc("authority", "reliable", "call_remote")
-func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int, spd: float, cd: float, drop: float, mult: float) -> void:
+func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int, spd: float, cd: float, drop: float, mult: float, bullet_mult: float) -> void:
 	if not NetworkManager.is_online():
 		return
 	if _despawned_entity_ids.has(eid):
@@ -1779,6 +1841,7 @@ func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int,
 	enemy.move_speed = spd
 	enemy.shoot_cooldown = cd
 	enemy.drop_chance = drop
+	enemy.bullet_speed_mult = bullet_mult
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	_entities[eid] = enemy

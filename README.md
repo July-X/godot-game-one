@@ -8,9 +8,12 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 - [架构设计](./docs/architecture.md) ← 代码结构的唯一权威
 - [开发计划](./docs/Development_Plan.md)
 - [设计决策](./docs/Design_Decisions.md)
+- [关卡设计方案](./docs/level_design_proposal.md) ← 乐句节奏 / 阵型 / 章节主题
 - [美术与音频管线](./docs/art_audio_pipeline.md)
 - [Harmony 插件契约](./docs/Harmony_Plugin_Contract.md)
+- [弹幕射击可玩性调研](./docs/research_bullet_hell_fun_2026-09-27.md)
 - [联机回归门禁](./tests/run_probe.sh)
+- [波次编排门禁](./tests/wave_probe.tscn)
 
 ## 目标
 
@@ -31,12 +34,16 @@ scenes/ui/title_screen.tscn   ← 项目主场景
 ## 核心循环
 
 1. 鼠标移动控制飞机（带惯性衰减），自动射击
-2. 击杀敌人 → 积分 + 升级（`10 + level*5` 击杀升一级）
-3. 每 20 击杀触发一次精英战（护盾四阶段）
-4. 每 5 级触发一次 Boss 战（三阶段 + 终局究极激光炮）
-5. 拾取掉落物（扩散 / 速射 / 威力 / 治疗 / 炸弹 / 核心）
-6. Boss 死亡 → Host 权威发放持久强化
-7. 死亡结算
+2. 击杀敌人 → 积分 + 升级（`10 + level*5` 击杀升一级，每级三选一卡）
+3. **关卡是一段 4 拍乐句**：起拍 → 涨潮 → 浪峰 → 退潮，各 16 秒，敌人以**阵型**成组进场
+   （一字横排 / 两侧夹击 / V 字合围 / 弧线弹幕环 / 纵列 / 蜂群），详见 [关卡设计方案](./docs/level_design_proposal.md)
+4. 每 `20 + level*2` 击杀触发一次精英战（护盾四阶段）
+5. 每 5 级触发一次 Boss 战（三阶段 + 终局究极激光炮）；每 5 级同时切换一次**章节主题**
+   （压制 / 超载 / 蜂群 / 离子风暴，弹速与敌人韧性此消彼长）
+6. 拾取掉落物（扩散 / 速射 / 威力 / 治疗 / 炸弹 / 核心）
+7. 贴着敌弹飞行可**擦弹**叠射速；`Shift` 闪避
+8. Boss 死亡 → Host 权威发放持久强化
+9. 死亡结算（联机时先倒地，可由队友长按 1.2 秒救援）
 
 ## 操作
 

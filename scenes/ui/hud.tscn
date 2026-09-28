@@ -56,6 +56,13 @@ theme_override_colors/font_color = Color(0.6, 0.75, 1.0, 1)
 theme_override_font_sizes/font_size = 17
 text = "等级 1"
 
+[node name="PhaseLabel" type="Label" parent="."]
+offset_left = 130.0
+offset_top = 44.0
+theme_override_colors/font_color = Color(0.55, 0.85, 1.0, 1)
+theme_override_font_sizes/font_size = 14
+text = ""
+
 [node name="PlayerScoresLabel" type="Label" parent="."]
 offset_left = 16.0
 offset_top = 60.0

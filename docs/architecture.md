@@ -78,7 +78,10 @@
 │   ├── hud.gd / title_screen.gd / lobby.gd / mobile_controls.gd
 ├── tests/
 │   ├── lan_probe.gd           # 双进程 headless 联机回归探针
-│   └── lan_probe.tscn
+│   ├── lan_probe.tscn
+│   ├── curve_probe.gd         # 难度曲线门禁（数值不越界）
+│   ├── wave_probe.gd          # 波次编排门禁（节奏形状不塌陷）
+│   ├── curve_probe.tscn / wave_probe.tscn
 ├── docs/
 ├── backup_3d/                 # 旧 3D 版本存档（已废弃）
 └── CHANGELOG.md
@@ -145,7 +148,8 @@
 
 **触发节奏**：
 
-- 精英：`total_kills % 20 == 0` 且未等于 `last_elite_threshold`（`add_kill()`）
+- 精英：`total_kills - last_elite_threshold >= 20 + level*2`（累计计数，不用取模，
+  因为阈值随等级跳变时取模会整段错过）
 - Boss：`level % 5 == 0` 且未等于 `last_boss_level`（`level_up()`）
 
 ---
@@ -235,7 +239,11 @@ main._process(delta)
 | 1 — 散射者 | 蛇形移动 | 3 发散弹 | 伤害系数 0.5，绿色散射 |
 | 2 — 环绕者 | 轨道环绕 | 6 发圆形 | 伤害系数 0.3，紫色圆形弹幕 |
 
-死亡掉落：`drop_chance = 0.20`，类型为 `spread` / `speed` / `power` / `heal` / `bomb`。
+死亡掉落：`drop_chance = 0.20 + type*0.12`，类型为 `spread` / `speed` / `power` / `heal` / `bomb`。
+
+`bullet_speed_mult` 是**章节主题**叠加在弹速上的倍率（`wave_director.gd CHAPTER_THEMES`）。
+它必须随 `_rpc_spawn_enemy` 一起同步到客户端：客户端敌人是幽灵（不跑 AI、不开火），
+但弹速是纯渲染参数，不同步的话两端弹幕速度不同，擦弹判断直接失效。
 
 ---
 
@@ -626,6 +634,9 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 
 # 4. 难度曲线门禁（改任何难度数值后必跑，headless 单进程，几秒出结果）
 godot --headless --path . res://tests/curve_probe.tscn
+
+# 5. 波次编排门禁（改 wave_director.gd / 阵型 / 章节主题后必跑）
+godot --headless --path . res://tests/wave_probe.tscn
 ```
 
 `run_probe.sh` 判定失败的条件（任一命中即 `exit 1`）：
@@ -681,3 +692,59 @@ godot --headless --path . res://tests/curve_probe.tscn
 - **两端收尾时间要算好**：Host 要等激光推进 3s + 持续 10s 跑完才做最后断言，
   客户端必须在这段时间保持在线（客户端收尾 12 秒、Host 收尾 5 秒）。
   否则 Host 会把 P2 判为掉线，连带 `session_alive` 与 `no_fallback` 一起失败。
+
+### 16.3 波次编排门禁
+
+`tests/wave_probe.gd`（headless 单进程，不需要 ENet）直接 `load("res://scripts/wave_director.gd")`，
+断言 **25 项**节奏不变量。与 §16.1 的曲线门禁互不重叠：
+
+| 断言 | 含义 |
+|------|------|
+| `rhythm_baseline_matches_main` | 编排器里的旧版刷怪常量与 `main.gd` 一致（防校准基准漂移） |
+| `phase_shape_normalized` | `PHASE_SHAPE` 四数和恰好 = 拍数 |
+| `chapter_mean_matches_legacy` | 1~60 级章节平均速率 ≡ 旧版速率（误差 <0.5%） |
+| `crest_over_lull_is_strong` | 峰谷比 ≥ 3.0（张弛没塌） |
+| `lull_is_a_real_breather` / `crest_is_a_real_peak` / `surge_is_elevated` / `setup_is_around_baseline` | 四拍各自的绝对高度 |
+| `phases_are_distinct` | 四拍形状互不相同 |
+| `mean_rate_monotonic` | 平均速率随等级单调不减 |
+| `formation_size_in_range` / `formation_interval_in_range` | 阵型规模 2~8、退潮恒 1；间隔 1~5 秒 |
+| `throughput_supports_rate` | 闸门撑得住设计速率（否则预算被饿死） |
+| `spawn_points_offscreen` | 6 阵型 × 8 规模 × 12 种子，逐点校验出生点在屏外 |
+| `screen_cap_respected` / `director_actually_spawns` | 10 分钟模拟不破同屏上限、确实在出怪 |
+| `formations_do_not_repeat_back_to_back` | 阵型不背靠背重复（按**排期**统计，不按出场） |
+| `chapter_theme_in_range` / `chapter_matches_boss_cadence` | 主题倍率安全、章节号与 Boss 每 5 级对齐 |
+| `lull_is_a_trickle_not_a_void` / `lull_trickle_rate_matches_design` | 退潮是涓流而非空屏 |
+
+两类门禁为什么必须分开：有人为了让浪峰更刺激而调大 `PHASE_SHAPE` 时，
+`curve_probe` 会全绿（速度没越界），但整局难度已经悄悄涨了——
+只有 `chapter_mean_matches_legacy` 能抓住。
+
+---
+
+## 17. 关卡编排（`wave_director.gd`）
+
+改造前 `main.gd` 用两个定时器随机刷怪（`max(1.2 - 0.06L, 0.45)` 秒 1 只 + 每 8 秒补 1 只），
+敌人类型 `randi()%3`、出生点四边随机。问题不是慢，而是**没有形状**：
+同屏压力是一条恒定直线，且四条压力通道在 L13~L56 全部触顶（见 `docs/level_design_proposal.md`）。
+
+现由 `scripts/wave_director.gd` 接管全部杂兵投放：
+
+| 概念 | 取值 |
+|------|------|
+| 乐句 | 4 拍 × 16 秒 = 64 秒一章：`起拍 / 涨潮 / 浪峰 / 退潮` |
+| 形状倍率 | `[0.910, 1.254, 1.486, 0.350]`，和恰好为 4（章节平均 ≡ 旧版速率） |
+| 威胁速率 | `threat_rate(level, phase) = legacy_rate(level) × PHASE_SHAPE[phase]` |
+| 阵型 | `line` / `column` / `vee` / `pincer` / `ring` / `swarm`，按拍限定词表 |
+| 阵型规模 | `clamp(3 + level/3, 3, 8)`，退潮恒 1 |
+| 章节主题 | 压制 / 超载 / 蜂群 / 离子风暴，每 5 级换一个 |
+
+**运行模型**：编排器按 `threat_rate` 累积"威胁预算"，攒够一次阵型的规模就排期投放；
+`FORMATION_INTERVAL` 只是闸门，防止预算积压后一次性倒出一大坨。
+阵型内部按 `FORMATION_STAGGER = 0.12s` 错峰，出生点全部在屏幕外 `SPAWN_MARGIN = 44px`。
+
+**接入点**：`main.gd` 的 `_tick_wave_director()`（在 `_process` 中，精英/Boss 在场时提前 return）
+→ 取出 orders → `_spawn_enemy_at(type, pos)` → 叠加章节主题 → 生成 / `_rpc_spawn_enemy`。
+
+**联机**：编排器**只在 Host 权威运行**（客户端 `_tick_wave_director` 直接 return），
+出怪点照旧走既有 `_rpc_spawn_enemy` 广播，因此两端看到的波次天然一致，
+**不新增同步包**（只有 `bullet_speed_mult` 一个新字段挂在已有生成包里）。
