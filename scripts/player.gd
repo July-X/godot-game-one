@@ -250,9 +250,40 @@ func _physics_process(delta: float) -> void:
 		_feedback.update(delta)
 		return
 
+	## 闪避：Shift 触发，位移 + 无敌帧同时给
+	_consume_dash()
 	_motion.update(delta, GameState.get_move_speed_multiplier(), get_viewport_rect().size)
+	if _motion.is_dashing():
+		## 冲刺期间强制无敌，且盖过受击后的 1 秒无敌计时
+		_invincible_timer = maxf(_invincible_timer, 0.05)
 	_combat.update(delta)
 	_feedback.update(delta)
+
+
+## 把 ActionRouter 排队的 dash 动作转成实际闪避
+func _consume_dash() -> void:
+	for action: String in _action_router.consume_actions():
+		if action != "dash":
+			_action_router.request_action(action)
+			continue
+		if is_downed:
+			continue
+		if _motion.try_dash():
+			SFX.play_dash()
+			_feedback.trigger_dash()
+
+
+## 闪避是否处于无敌帧（受击判定要放行）
+func is_dash_invincible() -> bool:
+	return _motion.is_dashing()
+
+
+func can_dash() -> bool:
+	return _motion.can_dash()
+
+
+func get_dash_cooldown_ratio() -> float:
+	return _motion.get_dash_cooldown_ratio()
 
 
 ## 本机理论极速（px/s）。敌速上限要按它来算，
@@ -310,7 +341,7 @@ func request_action(action: String) -> void:
 
 
 func take_damage(amount: float = 1.0) -> void:
-	if _invincible_timer > 0:
+	if _invincible_timer > 0 or _motion.is_dashing():
 		return
 	## 已倒地：不再重复触发死亡流程，只吃流血伤害
 	if is_downed:

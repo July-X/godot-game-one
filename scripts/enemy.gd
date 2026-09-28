@@ -29,6 +29,8 @@ const RECOVER_DURATION: float = 0.8
 var _warn_left: float = 0.0
 var _recover_left: float = 0.0
 var _warn_tween: Tween = null
+## 预警弹道方向（世界坐标单位向量）
+var _warn_dir: Vector2 = Vector2.ZERO
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _health_bar: ProgressBar = $HealthBar
@@ -93,9 +95,13 @@ func _physics_process(delta: float) -> void:
 		if enemy_type == 0:
 			cd *= 2.0
 		_shoot_timer = cd + randf_range(-0.3, 0.3) + WARN_DURATION + RECOVER_DURATION
+		## 预警方向取"即将开火"那一刻的瞄准方向，之后不再更新：
+		## 蓄力期间敌人还会移动，线如果跟着抖就变成噪点，反而更难读
+		_warn_dir = global_position.direction_to(_target.global_position)
 		_warn_left = WARN_DURATION
 		_recover_left = RECOVER_DURATION
 		_set_warning_visual(true)
+		queue_redraw()
 	elif _recover_left > 0.0:
 		## 恢复段：不再开火，视觉上明确告诉玩家"现在是安全的"
 		_recover_left -= delta
@@ -105,10 +111,32 @@ func _physics_process(delta: float) -> void:
 		_warn_left -= delta
 		if _warn_left <= 0.0:
 			_set_warning_visual(false)
+			queue_redraw()
 
 	## 更新血条
 	if _health_bar:
 		_health_bar.value = health
+
+
+## 绘制弹道预告线。
+##
+## 这是弹幕射击可读性最大的单一来源：玩家不需要"猜"敌人要往哪打，
+## 顺着线就知道该往哪躲。原来的"变红+放大"只能说明"它要出招了"，
+## 但没说"往哪出招"——而躲避方向才是玩家真正需要的信息。
+func _draw() -> void:
+	if _warn_left <= 0.0 or _warn_dir.length() < 0.01:
+		return
+	var screen: Vector2 = get_viewport_rect().size
+	## 线画到屏幕边缘为止，不画到无穷远（那样会变成一条贯穿全屏的亮线）
+	var to_edge: float = 2000.0
+	if absf(_warn_dir.x) > 0.01:
+		to_edge = minf(to_edge, (screen.x if _warn_dir.x > 0.0 else screen.x) / absf(_warn_dir.x))
+	if absf(_warn_dir.y) > 0.01:
+		to_edge = minf(to_edge, (screen.y if _warn_dir.y > 0.0 else screen.y) / absf(_warn_dir.y))
+	## 蓄力过半才逐渐显现，避免"一直有根线"变成背景噪声
+	var t: float = 1.0 - _warn_left / WARN_DURATION
+	var alpha: float = clampf((t - 0.25) / 0.75, 0.0, 1.0) * 0.55
+	draw_line(Vector2.ZERO, _warn_dir * to_edge, Color(1.0, 0.35, 0.3, alpha), 2.0)
 
 
 ## 蓄力预警视觉：整体变红并轻微放大。放大而不是闪烁，是因为闪烁在

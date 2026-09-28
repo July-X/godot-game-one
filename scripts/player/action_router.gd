@@ -27,3 +27,5 @@ func handle_keyboard_event(event: InputEvent) -> void:
 			request_action("skill")
 		KEY_Q:
 			request_action("laser")
+		KEY_SHIFT:
+			request_action("dash")

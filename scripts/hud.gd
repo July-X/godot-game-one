@@ -12,6 +12,7 @@ extends CanvasLayer
 @onready var _draft_title: Label = $DraftPanel/DraftTitle
 @onready var _draft_row: HBoxContainer = $DraftPanel/CardRow
 @onready var _evolution_label: Label = $EvolutionLabel
+@onready var _dash_label: Label = $DashLabel
 @onready var _downed_label: Label = $DownedLabel
 @onready var _revive_bar: ProgressBar = $ReviveBar
 @onready var _controls_label: Label = $ControlsLabel
@@ -101,7 +102,33 @@ func _process(_delta: float) -> void:
 	_update_draft_panel()
 	_update_evolution_display()
 	_update_downed_display()
+	_update_dash_display()
 	_update_fps(_delta)
+
+
+## 闪避冷却提示
+##
+## 闪避有 1.1 秒 CD，玩家很容易在冷却里还去按。必须把"能不能闪"直接显示出来，
+## 否则失败反馈是"按了没反应"，会被理解成游戏卡了。
+func _update_dash_display() -> void:
+	if _dash_label == null:
+		return
+	var scene := get_tree().current_scene
+	if scene == null or not scene.has_method("_player"):
+		_dash_label.visible = false
+		return
+	var pl: Node = scene.get("_player")
+	if pl == null or not is_instance_valid(pl) or not pl.has_method("can_dash"):
+		_dash_label.visible = false
+		return
+	var ready: bool = pl.can_dash()
+	_dash_label.visible = true
+	if ready:
+		_dash_label.text = "闪避就绪（Shift）"
+		_dash_label.add_theme_color_override("font_color", Color(0.6, 0.95, 1.0, 1.0))
+	else:
+		_dash_label.text = "闪避冷却 %.1fs" % (1.1 - pl.get_dash_cooldown_ratio() * 1.1)
+		_dash_label.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7, 1.0))
 
 
 ## 倒地 / 救援 HUD

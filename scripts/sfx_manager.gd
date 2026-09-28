@@ -17,6 +17,8 @@ var _stream_explosion: AudioStreamWAV
 var _hit_streams: Array[AudioStreamWAV] = []
 ## 擦弹 tick 音：单个高频短音，靠 pitch_scale 变化
 var _graze_stream: AudioStreamWAV = null
+## 闪避音效：下行扫频，听感上是一声呼
+var _stream_dash: AudioStreamWAV
 ## 连击计数：连续命中时逐步升调，中断后回落。极低成本却最能放大"我打中了"的感觉。
 var _combo: int = 0
 var _combo_decay_left: float = 0.0
@@ -41,6 +43,7 @@ func _ready() -> void:
 	for spec in hit_specs:
 		_hit_streams.append(_generate_tone(float(spec.freq), float(spec.dur), float(spec.vol)))
 	_graze_stream = _generate_tone(2400.0, 0.03, 0.16)
+	_stream_dash = _generate_sweep(900.0, 260.0, 0.14, 0.28)
 	for i in _pool_size:
 		var player := AudioStreamPlayer.new()
 		add_child(player)
@@ -149,6 +152,11 @@ func play_explosion() -> void:
 
 ## 擦弹 tick：音高随层数上升，形成"越擦越亮"的连续反馈。
 ## 用短促高频的正弦（不是扫频），因为它要密集触发、需要和射击音区分开。
+## 闪避音效
+func play_dash() -> void:
+	_play_stream(_stream_dash, _players)
+
+
 func play_graze_tick(stacks: int) -> void:
 	if _graze_stream == null:
 		return

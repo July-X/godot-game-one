@@ -182,6 +182,33 @@ func spawn_explosion() -> void:
 	SFX.play_explosion()
 
 
+## 闪避残影：冲刺时留一串半透明拷贝，让"我刚才冲过去了"看得见
+const DASH_AFTERIMAGE_COUNT: int = 5
+var _dash_afterimages: Array[Sprite2D] = []
+
+
+func trigger_dash() -> void:
+	if _sprite == null:
+		return
+	_dash_afterimages.clear()
+	var dir: Vector2 = _player.velocity.normalized()
+	if dir.length() < 0.01:
+		dir = Vector2.UP
+	for i in range(DASH_AFTERIMAGE_COUNT):
+		var ghost := Sprite2D.new()
+		ghost.texture = _sprite.texture
+		ghost.scale = _sprite.scale
+		ghost.rotation = _sprite.rotation
+		ghost.global_position = _sprite.global_position - dir * float(i) * 16.0
+		ghost.modulate = Color(0.5, 0.85, 1.0, 0.55 - float(i) * 0.1)
+		ghost.z_index = _sprite.z_index - 1
+		get_tree().current_scene.add_child(ghost)
+		_dash_afterimages.append(ghost)
+		var tw := ghost.create_tween()
+		tw.tween_property(ghost, "modulate:a", 0.0, 0.26)
+		tw.tween_callback(ghost.queue_free)
+
+
 func play_level_up_effect() -> void:
 	var tween := create_tween()
 	tween.set_loops(3)
