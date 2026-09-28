@@ -22,54 +22,54 @@ signal draft_opened(peer_id: int, cards: Array)
 const CARDS: Array[Dictionary] = [
 	# ── 改变操作方式（构筑的核心）────────────────────────────
 	{
-		"id": "pierce", "name": "贯穿弹芯", "kind": "style",
-		"desc": "子弹多贯穿 1 个敌人\n需要贴近敌群输出",
+		"id": "pierce", "icon": "pierce", "name": "贯穿弹芯", "kind": "style",
+		"desc": "多贯穿 1 个敌人",
 		"max_stacks": 3,
 	},
 	{
-		"id": "splash", "name": "溅射弹头", "kind": "style",
-		"desc": "命中小范围爆炸\n需要卡准敌群位置",
+		"id": "splash", "icon": "splash", "name": "溅射弹头", "kind": "style",
+		"desc": "命中小范围爆炸",
 		"max_stacks": 2,
 	},
 	{
-		"id": "homing", "name": "追踪回路", "kind": "style",
-		"desc": "子弹轻微追踪\n站桩也能覆盖全场",
+		"id": "homing", "icon": "homing", "name": "追踪回路", "kind": "style",
+		"desc": "子弹轻微追踪",
 		"max_stacks": 2,
 	},
 	{
-		"id": "ricochet", "name": "回弹弹皮", "kind": "style",
-		"desc": "撞墙后改为散射\n改变走位节奏",
+		"id": "ricochet", "icon": "ricochet", "name": "回弹弹皮", "kind": "style",
+		"desc": "撞墙后散射",
 		"max_stacks": 1,
 	},
 	{
-		"id": "graze_focus", "name": "擦弹专注", "kind": "style",
-		"desc": "擦弹半径 +8px\n窗口 2s → 3s",
+		"id": "graze_focus", "icon": "graze_focus", "name": "擦弹专注", "kind": "style",
+		"desc": "擦弹 +8px",
 		"max_stacks": 3,
 	},
 	# ── 数值（最多一半，与上面混合）──────────────────────────
 	{
-		"id": "power", "name": "高爆弹头", "kind": "stat",
-		"desc": "威力 +3。",
+		"id": "power", "icon": "power", "name": "高爆弹头", "kind": "stat",
+		"desc": "威力 +3",
 		"max_stacks": 99,
 	},
 	{
-		"id": "firerate", "name": "过载扳机", "kind": "stat",
-		"desc": "速射 +2。",
+		"id": "firerate", "icon": "firerate", "name": "过载扳机", "kind": "stat",
+		"desc": "速射 +2",
 		"max_stacks": 8,
 	},
 	{
-		"id": "spread", "name": "散射枪管", "kind": "stat",
-		"desc": "扩散 +2。",
+		"id": "spread", "icon": "spread", "name": "散射枪管", "kind": "stat",
+		"desc": "扩散 +2",
 		"max_stacks": 5,
 	},
 	{
-		"id": "vitality", "name": "强化装甲", "kind": "stat",
-		"desc": "生命上限 +20\n并立即回复 20",
+		"id": "vitality", "icon": "vitality", "name": "强化装甲", "kind": "stat",
+		"desc": "生命 +20",
 		"max_stacks": 8,
 	},
 	{
-		"id": "shield", "name": "护盾电容", "kind": "stat",
-		"desc": "充能间隔 8s → 6s",
+		"id": "shield", "icon": "shield", "name": "护盾电容", "kind": "stat",
+		"desc": "充能 8s→6s",
 		"max_stacks": 2,
 	},
 ]
@@ -177,6 +177,7 @@ static func card_texts() -> Array:
 	var out: Array = []
 	for card: Dictionary in CARDS:
 		out.append({
-			"id": card.id, "name": card.name, "desc": card.desc, "kind": card.kind,
+			"id": card.id, "icon": card.get("icon", card.id), "name": card.name,
+			"desc": card.desc, "kind": card.kind,
 		})
 	return out

@@ -106,7 +106,14 @@ func _process(_delta: float) -> void:
 ## 面板不暂停游戏、不锁定鼠标：玩家在选卡时仍然可以走位。
 ## 这是本作的设计要求（"全自动射击 + 只用鼠标走位"），
 ## 所以选卡用 1/2/3 键而不是点击。
-var _draft_card_labels: Array[Label] = []
+##
+## 排版原则：**图标是主要信息通道，文字只是补充**。
+## 弹幕战斗中玩家只有零点几秒扫一眼，字号小的说明文字根本读不完；
+## 图标（贯穿的箭头、爆开的星芒、弯曲的追踪线）能在 0.2 秒内传达效果。
+var _card_icon_script = preload("res://scripts/card_icon.gd")
+var _draft_card_icons: Array = []
+## 每张卡是一对 [名字 Label, 说明 Label]
+var _draft_card_labels: Array = []
 
 func _update_draft_panel() -> void:
 	if _draft_panel == null:
@@ -118,33 +125,57 @@ func _update_draft_panel() -> void:
 	var draft: Dictionary = UpgradeDraft.get_draft(my_pid)
 	var cards: Array = draft.get("cards", [])
 	_draft_panel.visible = true
-	## 首次出现时才建卡片标签，之后只更新文字（避免每帧重建节点）
+	## 首次出现时才建卡片，之后只更新内容（避免每帧重建节点）
 	while _draft_card_labels.size() < cards.size():
 		var panel := PanelContainer.new()
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 2)
+		## 卡片放大到 210 宽：图标 40px + 名字 16px + 一行说明 13px，
+		## 在 1280×720 的视口里占据约 1/6 宽度，远处也能看清图标
+		panel.custom_minimum_size = Vector2(210, 132)
+		var icon := Control.new()
+		icon.set_script(_card_icon_script)
+		icon.custom_minimum_size = Vector2(0, 44)
 		var l := Label.new()
-		## 卡片宽度必须放得下最长的一行描述，否则三个卡片会互相重叠
-		panel.custom_minimum_size = Vector2(200, 96)
-		l.custom_minimum_size = Vector2(192, 88)
-		l.add_theme_font_size_override("font_size", 13)
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(200, 22)
+		l.add_theme_font_size_override("font_size", 16)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		panel.add_child(l)
+		var l2 := Label.new()
+		l2.custom_minimum_size = Vector2(200, 20)
+		l2.add_theme_font_size_override("font_size", 13)
+		l2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(icon)
+		box.add_child(l)
+		box.add_child(l2)
+		panel.add_child(box)
 		_draft_row.add_child(panel)
-		_draft_card_labels.append(l)
+		_draft_card_icons.append(icon)
+		_draft_card_labels.append([l, l2])
 	for i in range(_draft_card_labels.size()):
-		var label: Label = _draft_card_labels[i]
+		var pair: Array = _draft_card_labels[i]
+		var name_label: Label = pair[0]
+		var desc_label: Label = pair[1]
+		var icon: Control = _draft_card_icons[i]
 		if i < cards.size():
 			var card: Dictionary = UpgradeDraft.card_by_id(str(cards[i]))
-			label.visible = true
-			## 风格卡（金色）与数值卡（青色）用颜色区分：
-			## 改变操作方式的卡才是构筑的主体，要一眼能挑出来
+			name_label.visible = true
+			desc_label.visible = true
+			icon.visible = true
+			## 风格卡（青）与数值卡（白）用颜色区分：改变操作方式的卡
+			## 才是构筑主体，要一眼能挑出来
 			var tint: Color = Color(0.55, 0.9, 1.0, 1.0) if str(card.get("kind", "stat")) == "style" \
 				else Color(0.85, 0.85, 0.9, 1.0)
-			label.add_theme_color_override("font_color", tint)
-			label.text = "[%d]\n%s\n\n%s" % [i + 1, str(card.get("name", "")), str(card.get("desc", ""))]
+			name_label.add_theme_color_override("font_color", tint)
+			desc_label.add_theme_color_override("font_color",
+				Color(0.72, 0.72, 0.8, 1.0))
+			## 名字带 [1]/[2]/[3] 前缀，按键和卡片位置一一对应
+			name_label.text = "[%d] %s" % [i + 1, str(card.get("name", ""))]
+			desc_label.text = str(card.get("desc", ""))
+			icon.setup(str(card.get("icon", card.get("id", ""))), tint)
 		else:
-			label.visible = false
+			name_label.visible = false
+			desc_label.visible = false
+			icon.visible = false
 	_draft_title.text = "升级！按 1 / 2 / 3 选择  (%.0f 秒)" % float(draft.get("left", 0.0))
 
 
