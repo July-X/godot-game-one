@@ -69,6 +69,7 @@ const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
 ## 贴图内不放跨界星星，滚动时按该边长取模循环即可无缝衔接。
 ## 取 512 而非更小：256 的贴图在 1280 宽的屏幕上会横排重复 5 次，
 ## 肉眼能直接看出网格状重复（实测截图确认）；512 只重复 2.5 次。
+const Palette = preload("res://scripts/palette.gd")
 const STAR_FIELD_TILE: int = 512
 ## 玩家极速兜底值（motion_controller.move_speed 默认 260）。
 ## 正常情况走 player.get_max_move_speed()，这里只作为玩家节点尚未就绪时的回退。
@@ -252,6 +253,8 @@ func _debug_log_variant_assets() -> void:
 ## bright_min/bright_max 是亮度范围，colored=true 时给近景星加色相变化。
 static func _build_star_tile(count: int, size_min: int, size_max: int,
 		bright_min: float, bright_max: float, colored: bool) -> ImageTexture:
+	var star_base: Color = Palette.STAR_NEAR if colored \
+		else (Palette.STAR_MID if size_min > 2 else Palette.STAR_FAR)
 	var img := Image.create(STAR_FIELD_TILE, STAR_FIELD_TILE, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	for i in range(count):
@@ -259,12 +262,13 @@ static func _build_star_tile(count: int, size_min: int, size_max: int,
 		var b: float = randf_range(bright_min, bright_max)
 		var tint := Color(b, b * 0.88, b * randf_range(0.85, 1.25), 1.0)
 		if colored:
-			match randi() % 5:
-				0: tint = Color(b, b * 0.9, b, 1.0)
-				1: tint = Color(b, b * 0.7, b * 0.6, 1.0)
-				2: tint = Color(b * 0.5, b * 0.8, b, 1.0)
-				3: tint = Color(b * 0.85, b * 0.7, b * 0.7, 1.0)
-				_: tint = Color(b * 0.7, b * 0.8, b, 1.0)
+			## 近景大星只在冷色区间做微偏移制造层次，不引入暖色——
+			## 暖色留给敌方弹幕，玩家看到暖色必须立刻知道"危险"
+			match randi() % 4:
+				0: tint = Color(tint.r, tint.g, tint.b * 0.92, 1.0)
+				1: tint = Color(tint.r * 0.92, tint.g, tint.b, 1.0)
+				2: tint = Color(tint.r, tint.g * 0.95, tint.b * 0.97, 1.0)
+				_: tint = Color(tint.r, tint.g, tint.b, 1.0)
 		## 贴图边缘的星星会平铺时在接缝处重复，因此避开边缘一格
 		var ox: int = randi_range(1, STAR_FIELD_TILE - size - 1)
 		var oy: int = randi_range(1, STAR_FIELD_TILE - size - 1)
@@ -284,7 +288,7 @@ static func _build_star_tile(count: int, size_min: int, size_max: int,
 
 func _create_parallax_background() -> void:
 	if _bg_color:
-		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
+		_bg_color.color = Color(Palette.BG_BASE.r, Palette.BG_BASE.g, Palette.BG_BASE.b, 1.0)
 		_bg_color.z_index = -100
 
 	## 星空从「每颗星一个 Sprite2D」改为「每层一张平铺贴图」。
@@ -299,9 +303,9 @@ func _create_parallax_background() -> void:
 	## （第一版按 256 贴图取 120/60/22，密度是原来的 14 倍，弹幕可读性
 	##   被背景吃掉——对弹幕射击来说这是比"看出贴图重复"严重得多的问题。）
 	var star_tiles: Array = [
-		_build_star_tile(34, 2, 2, 0.3, 0.7, false),
-		_build_star_tile(17, 3, 5, 0.5, 0.9, false),
-		_build_star_tile(7, 6, 12, 0.7, 1.0, true),
+		_build_star_tile(34, 2, 2, 0.55, 1.0, false),
+		_build_star_tile(17, 3, 5, 0.75, 1.15, false),
+		_build_star_tile(7, 6, 12, 0.9, 1.3, true),
 	]
 	var layer_defs: Array = [
 		{speed = 12.0, z = -10},
@@ -332,9 +336,12 @@ func _create_parallax_background() -> void:
 		img.fill(Color(0, 0, 0, 0))
 		var cx: float = w / 2.0
 		var cy: float = h / 2.0
-		var nc_r: float = randf_range(0.06, 0.25)
-		var nc_g: float = randf_range(0.03, 0.15)
-		var nc_b: float = randf_range(0.3, 0.7)
+		## 星云只从配色系统里取两种低饱和色，不再随机取高饱和蓝紫——
+		## 高饱和背景会和敌方弹幕抢注意力，是可读性的头号敌人
+		var neb_base: Color = Palette.NEBULA_COOL if randf() < 0.72 else Palette.NEBULA_WARM
+		var nc_r: float = neb_base.r
+		var nc_g: float = neb_base.g
+		var nc_b: float = neb_base.b
 		var nc_a: float = randf_range(0.08, 0.18)
 		var blob_count: int = randi_range(3, 6)
 		for j in range(blob_count):
@@ -371,9 +378,10 @@ func _create_parallax_background() -> void:
 		var planet := Sprite2D.new()
 		var p_size: int = randi_range(50, 90)
 		var img := Image.create(p_size, p_size, false, Image.FORMAT_RGBA8)
-		var pc_r: float = randf_range(0.15, 0.4)
-		var pc_g: float = randf_range(0.08, 0.25)
-		var pc_b: float = randf_range(0.35, 0.65)
+		var pc_shade: float = randf_range(0.75, 1.15)
+		var pc_r: float = Palette.PLANET_SHADE.r * pc_shade
+		var pc_g: float = Palette.PLANET_SHADE.g * pc_shade
+		var pc_b: float = Palette.PLANET_SHADE.b * pc_shade
 		for y in range(p_size):
 			for x in range(p_size):
 				var dx: float = float(x - p_size * 0.5)

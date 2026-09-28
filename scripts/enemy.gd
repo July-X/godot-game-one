@@ -32,6 +32,8 @@ var _warn_tween: Tween = null
 ## 预警弹道方向（世界坐标单位向量）
 var _warn_dir: Vector2 = Vector2.ZERO
 
+const Palette = preload("res://scripts/palette.gd")
+
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _health_bar: ProgressBar = $HealthBar
 
@@ -136,7 +138,7 @@ func _draw() -> void:
 	## 蓄力过半才逐渐显现，避免"一直有根线"变成背景噪声
 	var t: float = 1.0 - _warn_left / WARN_DURATION
 	var alpha: float = clampf((t - 0.25) / 0.75, 0.0, 1.0) * 0.55
-	draw_line(Vector2.ZERO, _warn_dir * to_edge, Color(1.0, 0.35, 0.3, alpha), 2.0)
+	draw_line(Vector2.ZERO, _warn_dir * to_edge, Color(Palette.WARN_LINE.r, Palette.WARN_LINE.g, Palette.WARN_LINE.b, alpha), 2.0)
 
 
 ## 蓄力预警视觉：整体变红并轻微放大。放大而不是闪烁，是因为闪烁在
@@ -149,7 +151,7 @@ func _set_warning_visual(on: bool) -> void:
 		_warn_tween.set_loops(6)
 		_warn_tween.tween_property(_sprite, "scale", Vector2(1.18, 1.18), 0.12)
 		_warn_tween.tween_property(_sprite, "scale", Vector2(1.0, 1.0), 0.12)
-		_sprite.modulate = Color(1.8, 0.55, 0.5, 1.0)
+		_sprite.modulate = Color(Palette.WARN_TINT.r * 1.8, Palette.WARN_TINT.g, Palette.WARN_TINT.b, 1.0)
 	else:
 		if _warn_tween != null and _warn_tween.is_valid():
 			_warn_tween.kill()
@@ -161,7 +163,7 @@ func _set_warning_visual(on: bool) -> void:
 func _set_recover_visual(on: bool) -> void:
 	if _sprite == null or _sprite.modulate.r > 1.5:
 		return
-	_sprite.modulate = Color(0.62, 0.68, 0.85, 1.0) if on else Color(1, 1, 1, 1)
+	_sprite.modulate = Palette.RECOVER_TINT if on else Color(1, 1, 1, 1)
 
 func _move_chase(delta: float) -> void:
 	if _target and is_instance_valid(_target):
@@ -225,21 +227,21 @@ func _shoot_single(angle: float) -> void:
 	var dmg: float = 1.0
 	## 狙击手是"针"：高伤高速，必须提前看到
 	_spawn_enemy_bullet(global_position + Vector2.from_angle(angle) * 20, angle, dmg,
-		SPEED_FAST, Color(1.0, 0.4, 0.3, 1.0))
+		SPEED_FAST, Palette.ENEMY_BULLET_FAST)
 
 func _shoot_spread(angle: float) -> void:
 	for i in range(-1, 2):
 		var a: float = angle + i * 0.2
 		## 散射者弹速取中间档，是可绕行的"墙"
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.5,
-			SPEED_MID, Color(0.3, 1.0, 0.4, 1.0))
+			SPEED_MID, Palette.ENEMY_BULLET_MID)
 
 func _shoot_circle() -> void:
 	for i in range(6):
 		var a: float = float(i) * TAU / 6.0
 		## 环绕者的环形弹压到慢档：六发一环，速度快了玩家只能挨打、不能走位
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, 0.3,
-			SPEED_SLOW, Color(0.6, 0.3, 1.0, 1.0))
+			SPEED_SLOW, Palette.ENEMY_BULLET_SLOW)
 
 func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	health -= amount

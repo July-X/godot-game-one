@@ -1,4 +1,5 @@
 extends Node
+const Palette = preload("res://scripts/palette.gd")
 ## 战斗控制器
 ##
 ## 负责：普攻、技能（散射/激光）、追踪导弹、自动拾取。
@@ -52,7 +53,8 @@ func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, lev
 		## - Client: 仅上报请求，不本地生成，避免重复碰撞结算
 		var _m = get_tree().current_scene
 		if _m and _m.has_method("register_bullet_spawn"):
-			_m.register_bullet_spawn(pos, angle, damage, is_player, level, speed, Color(1, 1, 1, 1), owner_peer)
+			_m.register_bullet_spawn(pos, angle, damage, is_player, level, speed,
+			Palette.PLAYER_BULLET if is_player else Color(1, 1, 1, 1), owner_peer)
 		if not multiplayer.is_server():
 			return
 	var bullet := Pool.acquire("bullet", _bullet_scene)

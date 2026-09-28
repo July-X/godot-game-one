@@ -1,4 +1,5 @@
 extends CanvasLayer
+const Palette = preload("res://scripts/palette.gd")
 ## HUD 控制器 — 动态技能条 + 像素风 UI
 
 @onready var _score_label: Label = $ScoreLabel
@@ -125,10 +126,10 @@ func _update_dash_display() -> void:
 	_dash_label.visible = true
 	if ready:
 		_dash_label.text = "闪避就绪（Shift）"
-		_dash_label.add_theme_color_override("font_color", Color(0.6, 0.95, 1.0, 1.0))
+		_dash_label.add_theme_color_override("font_color", Palette.DASH_READY)
 	else:
 		_dash_label.text = "闪避冷却 %.1fs" % (1.1 - pl.get_dash_cooldown_ratio() * 1.1)
-		_dash_label.add_theme_color_override("font_color", Color(0.55, 0.6, 0.7, 1.0))
+		_dash_label.add_theme_color_override("font_color", Palette.DASH_COOLDOWN)
 
 
 ## 倒地 / 救援 HUD
@@ -149,7 +150,7 @@ func _update_downed_display() -> void:
 	var warn: bool = left <= 5.0
 	_downed_label.text = "队友倒地！按住 E 救援  剩余 %.0f 秒" % left
 	_downed_label.add_theme_color_override("font_color",
-		Color(1.0, 0.45, 0.4, 1.0) if warn else Color(1.0, 0.8, 0.5, 1.0))
+		Palette.DOWNED_CRITICAL if warn else Palette.DOWNED_SAFE)
 	_revive_bar.value = float(downed_node.get_revive_ratio()) * 100.0
 
 
@@ -244,8 +245,8 @@ func _update_draft_panel() -> void:
 			icon.visible = true
 			## 风格卡（青）与数值卡（白）用颜色区分：改变操作方式的卡
 			## 才是构筑主体，要一眼能挑出来
-			var tint: Color = Color(0.55, 0.9, 1.0, 1.0) if str(card.get("kind", "stat")) == "style" \
-				else Color(0.85, 0.85, 0.9, 1.0)
+			var tint: Color = Palette.CARD_STYLE if str(card.get("kind", "stat")) == "style" \
+				else Palette.CARD_STAT
 			name_label.add_theme_color_override("font_color", tint)
 			desc_label.add_theme_color_override("font_color",
 				Color(0.72, 0.72, 0.8, 1.0))

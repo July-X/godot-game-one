@@ -1,4 +1,5 @@
 extends Area2D
+const Palette = preload("res://scripts/palette.gd")
 ## 子弹 — 支持对象池复用
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
@@ -48,7 +49,7 @@ func reset() -> void:
 	_homing_strength = 0.0
 	remove_from_group("player_bullets")
 	remove_from_group("enemy_bullets")
-	_sprite.modulate = Color(1, 1, 1, 1)
+	_sprite.modulate = Palette.PLAYER_BULLET if _is_player_bullet else Color(1, 1, 1, 1)
 
 
 ## 从持有者的构筑读取行为开关。每颗子弹生成时取一次，之后不再查——
@@ -122,9 +123,12 @@ func _apply_bullet_appearance() -> void:
 		_sprite.texture = SpriteFactory.create_bullet_sprite(true, _level)
 		var scale_val: float = (0.6 + min(_damage * 0.08, 0.6)) * 0.55
 		_sprite.scale = Vector2(scale_val, scale_val)
+		_sprite.modulate = Palette.PLAYER_BULLET
 	else:
 		_sprite.texture = SpriteFactory.create_bullet_sprite(false, 1)
-		_sprite.scale = Vector2(0.67, 0.67)
+		## 敌弹视觉尺寸比玩家弹略大：弹幕游戏里"看起来更大"会被读成
+		## "更难躲"，能提前给玩家心理准备。判定框不变，不影响实际难度。
+		_sprite.scale = Vector2(0.78, 0.78)
 
 
 ## 「追踪回路」卡的转向：朝最近敌人缓慢修正方向。
