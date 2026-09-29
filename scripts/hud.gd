@@ -58,6 +58,11 @@ const BOSS_BONUS_DAMAGE_MAX: float = 20.0
 const BOSS_BONUS_MOVE_SPEED_MAX: float = 0.5
 const SKILL_SLOT_DESKTOP: Vector2 = Vector2(144, 144)
 const SKILL_SLOT_MOBILE: Vector2 = Vector2(116, 116)
+
+## 图标资源缺失时的字形兜底（见 _create_skill_slot）
+const SKILL_GLYPH: Dictionary = {
+	"laser": "L", "skill": "S", "dash": "»",
+}
 const SKILL_BAR_MOBILE_MARGIN: Vector2 = Vector2(30, 38)
 const SKILL_BAR_DESKTOP_MARGIN: Vector2 = Vector2(20, 18)
 
@@ -112,8 +117,15 @@ func _process(_delta: float) -> void:
 ##
 ## 闪避有 1.1 秒 CD，玩家很容易在冷却里还去按。必须把"能不能闪"直接显示出来，
 ## 否则失败反馈是"按了没反应"，会被理解成游戏卡了。
+##
+## 触摸端不显示这行字：闪避按钮本身就是右下角第三格，
+## 带冷却遮罩和读秒数字，信息比这行文字更完整。
+## 两处都显示反而会让人以为"按钮是别的东西、这行字才是闪避的状态"。
 func _update_dash_display() -> void:
 	if _dash_label == null:
+		return
+	if _is_touch_platform():
+		_dash_label.visible = false
 		return
 	var scene := get_tree().current_scene
 	if scene == null or not scene.has_method("_player"):
@@ -197,6 +209,8 @@ var _card_icon_script = preload("res://scripts/card_icon.gd")
 var _draft_card_icons: Array = []
 ## 每张卡是一对 [名字 Label, 说明 Label]
 var _draft_card_labels: Array = []
+## 每张卡的根 Button。触摸端靠它选卡（见 _on_draft_card_pressed）
+var _draft_card_buttons: Array[Button] = []
 
 func _update_draft_panel() -> void:
 	if _draft_panel == null:
@@ -209,29 +223,52 @@ func _update_draft_panel() -> void:
 	var cards: Array = draft.get("cards", [])
 	_draft_panel.visible = true
 	## 首次出现时才建卡片，之后只更新内容（避免每帧重建节点）
-	while _draft_card_labels.size() < cards.size():
+	while _draft_card_buttons.size() < cards.size():
+		## 卡片根节点必须是 Button 而不是 PanelContainer。
+		##
+		## 原来的实现是 PanelContainer + Label，桌面端靠 main.gd 的 1/2/3 键选卡，
+		## 触摸端因此完全选不了：Control 默认 mouse_filter=STOP，
+		## 点击被控件吃掉却没有任何处理，看起来就是"按了没反应"。
+		## Button 同时吃鼠标与触摸，桌面键鼠和手机触摸走同一条路径，
+		## 不用维护两套选择逻辑。
+		var btn := Button.new()
+		btn.flat = true
+		btn.custom_minimum_size = Vector2(210, 132)
+		## 抢焦点会让键盘输入跑到 UI 上，操作契约是"全自动射击 + 只走位"，
+		## 选卡界面不应该改变焦点归属
+		btn.focus_mode = Control.FOCUS_NONE
 		var panel := PanelContainer.new()
+		panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		## 卡片本体不接收输入，事件要能穿透到 Button 上
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var box := VBoxContainer.new()
 		box.add_theme_constant_override("separation", 2)
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		## 卡片放大到 210 宽：图标 40px + 名字 16px + 一行说明 13px，
 		## 在 1280×720 的视口里占据约 1/6 宽度，远处也能看清图标
-		panel.custom_minimum_size = Vector2(210, 132)
 		var icon := Control.new()
 		icon.set_script(_card_icon_script)
 		icon.custom_minimum_size = Vector2(0, 44)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var l := Label.new()
 		l.custom_minimum_size = Vector2(200, 22)
 		l.add_theme_font_size_override("font_size", 16)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var l2 := Label.new()
 		l2.custom_minimum_size = Vector2(200, 20)
 		l2.add_theme_font_size_override("font_size", 13)
 		l2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l2.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		box.add_child(icon)
 		box.add_child(l)
 		box.add_child(l2)
 		panel.add_child(box)
-		_draft_row.add_child(panel)
+		btn.add_child(panel)
+		## index 在卡片只创建不销毁的前提下是稳定的（_draft_row 始终 3 张）
+		btn.pressed.connect(_on_draft_card_pressed.bind(_draft_card_buttons.size()))
+		_draft_row.add_child(btn)
+		_draft_card_buttons.append(btn)
 		_draft_card_icons.append(icon)
 		_draft_card_labels.append([l, l2])
 	for i in range(_draft_card_labels.size()):
@@ -239,6 +276,8 @@ func _update_draft_panel() -> void:
 		var name_label: Label = pair[0]
 		var desc_label: Label = pair[1]
 		var icon: Control = _draft_card_icons[i]
+		var btn: Button = _draft_card_buttons[i]
+		btn.visible = i < cards.size()
 		if i < cards.size():
 			var card: Dictionary = UpgradeDraft.card_by_id(str(cards[i]))
 			name_label.visible = true
@@ -251,7 +290,9 @@ func _update_draft_panel() -> void:
 			name_label.add_theme_color_override("font_color", tint)
 			desc_label.add_theme_color_override("font_color",
 				Color(0.72, 0.72, 0.8, 1.0))
-			## 名字带 [1]/[2]/[3] 前缀，按键和卡片位置一一对应
+			## 名字带序号前缀，按键/卡片位置一一对应。
+			## 触摸端没有 1/2/3 键，所以改成"点第 N 张"——序号仍然保留，
+			## 让玩家知道这张卡对应哪个键（手柄/桌面玩家仍然受益）
 			name_label.text = "[%d] %s" % [i + 1, str(card.get("name", ""))]
 			desc_label.text = str(card.get("desc", ""))
 			icon.setup(str(card.get("icon", card.get("id", ""))), tint)
@@ -259,7 +300,19 @@ func _update_draft_panel() -> void:
 			name_label.visible = false
 			desc_label.visible = false
 			icon.visible = false
-	_draft_title.text = "升级！按 1 / 2 / 3 选择  (%.0f 秒)" % float(draft.get("left", 0.0))
+	var hint: String = "点击卡片选择" if _is_touch_platform() else "按 1 / 2 / 3 选择"
+	_draft_title.text = "升级！%s  (%.0f 秒)" % [hint, float(draft.get("left", 0.0))]
+
+
+## 触摸端选卡。main.gd 的 1/2/3 键路径仍然保留：
+## 选卡面板不暂停游戏（这是刻意的，见 main.gd 注释），
+## 键盘玩家可以在敌人还在打的时候直接按键，不必伸手去点。
+func _on_draft_card_pressed(index: int) -> void:
+	UpgradeDraft.choose_card(_local_peer_id(), index)
+
+
+func _is_touch_platform() -> bool:
+	return OS.has_feature("android") or OS.has_feature("ios")
 
 
 ## 已激活的组合进化提示。玩家看不到自己解锁了什么，
@@ -302,6 +355,11 @@ func _update_graze_display() -> void:
 
 ## ── 动态技能条 ──────────────────────────────────────────────
 ## 定义技能、动态创建按钮、按 action 触发技能
+##
+## 闪避（dash）也放在这里，而不是另做一个按钮：
+## 三个动作共用一套冷却遮罩、图标与按下反馈，玩家一眼就能看出
+## "右下角这一排都是消耗资源的动作"。若把闪避做成独立控件，
+## 它就会在视觉上脱离这一排，而闪避恰恰是最需要被看到的那个（1.1s CD）。
 func _setup_skill_bar() -> void:
 	_skill_data = [
 		{
@@ -313,6 +371,11 @@ func _setup_skill_bar() -> void:
 			"name": "散射",
 			"action": "skill", "key": KEY_W,
 			"bar_color": Color(0.15, 0.72, 0.28),
+		},
+		{
+			"name": "闪避",
+			"action": "dash", "key": KEY_SHIFT,
+			"bar_color": Color(0.15, 0.62, 0.78),
 		},
 	]
 
@@ -367,6 +430,17 @@ func _create_skill_slot(data: Dictionary) -> void:
 	var tex_path: String = "res://assets/sprites/ui/skill_%s.png" % data.action
 	if ResourceLoader.exists(tex_path):
 		icon_tex.texture = load(tex_path)
+	else:
+		## 图标缺失时给一个可辨识的字形占位，而不是留一个透明方块。
+		## 空按钮在手机上是最糟的情况：玩家看得见、点得动、却不知道是什么。
+		var fallback := Label.new()
+		fallback.text = SKILL_GLYPH.get(str(data.action), "?")
+		fallback.add_theme_font_size_override("font_size", 46)
+		fallback.add_theme_color_override("font_color", Color(0.85, 0.93, 1.0, 0.95))
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon_tex.add_child(fallback)
 	btn.add_child(icon_tex)
 
 	_skill_bar.add_child(btn)
@@ -416,7 +490,7 @@ func _layout_skill_bar() -> void:
 		return
 	var slot_size := _get_skill_slot_size() * 0.8
 	var gap: float = 8.0
-	var count: int = max(_skill_slots.size(), 2)
+	var count: int = max(_skill_slots.size(), 3)
 	var bar_size := Vector2(slot_size.x * float(count) + gap * float(count - 1), slot_size.y)
 	_skill_bar.size = bar_size
 	_skill_bar.custom_minimum_size = bar_size
@@ -461,7 +535,22 @@ func _layout_skill_slot(slot: Dictionary, slot_size: Vector2) -> void:
 	name_lbl.position = Vector2(0, slot_size.y - 34.0)
 	name_lbl.size = Vector2(slot_size.x, 22.0)
 
+## HUD 所在的**实际坐标空间**尺寸。
+##
+## 以前直接读 ProjectSettings 的 1280×720。那只在"视口恰好等于设计尺寸"时成立：
+## 拉伸模式改成 canvas_items + expand 之后，手机高屏手机的 CanvasLayer 空间
+## 远大于 1280×720，而 headless 下更是能到 1280×1280——继续拿 1280×720 当
+## 参照物，会把完全正常的技能条误判成"跑到画布外"，
+## 于是每次启动都刷一条 push_error（联机门禁会把运行期 ERROR: 计入失败）。
+##
+## 这里必须用真实可视矩形：所有调用方（技能条守卫、横幅居中、Boss 血条居中）
+## 问的都是"我画在哪儿会不会跑到屏幕外"，答案是真实可视矩形，不是设计稿尺寸。
 func _get_design_canvas_size() -> Vector2:
+	var vp := get_viewport()
+	if vp != null:
+		var real := vp.get_visible_rect().size
+		if real.x > 0.0 and real.y > 0.0:
+			return real
 	var width := float(ProjectSettings.get_setting("display/window/size/viewport_width", 1280))
 	var height := float(ProjectSettings.get_setting("display/window/size/viewport_height", 720))
 	return Vector2(width, height)
@@ -477,8 +566,14 @@ func _verify_skill_bar_layout() -> void:
 		or rect.end.y < 0.0
 	if outside:
 		push_error("[HUD] SkillBar outside design canvas: rect=%s canvas=%s. Resetting to bottom-right anchors." % [str(rect), str(canvas_size)])
+		## 槽数必须按实际来。以前这里写死 2.0，是在只有两个技能的时代留下的：
+		## 闪避按钮加进来变成 3 格后，自愈分支会把技能条重排成两格的宽度，
+		## 第三个按钮被挤出屏幕——**自愈代码本身变成了 bug 来源**。
 		var slot_size := _get_skill_slot_size() * 0.8
-		var bar_size := Vector2(slot_size.x * 2.0 + 8.0, slot_size.y)
+		var slot_count: int = maxi(_skill_slots.size(), 3)
+		var gap: float = 8.0
+		var bar_size := Vector2(slot_size.x * float(slot_count) + gap * float(slot_count - 1),
+			slot_size.y)
 		_skill_bar.anchor_left = 1.0
 		_skill_bar.anchor_top = 1.0
 		_skill_bar.anchor_right = 1.0
@@ -487,14 +582,15 @@ func _verify_skill_bar_layout() -> void:
 		_skill_bar.offset_top = -bar_size.y - 18.0
 		_skill_bar.offset_right = -20.0
 		_skill_bar.offset_bottom = -18.0
-	if _skill_slots.size() < 2:
-		push_error("[HUD] SkillBar expected 2 skill slots, got %d." % _skill_slots.size())
+	if _skill_slots.size() < 3:
+		push_error("[HUD] SkillBar expected 3 skill slots (laser/skill/dash), got %d." % _skill_slots.size())
 
 ## 技能按钮被点击 / 触屏触发
 func _on_skill_slot_pressed(data: Dictionary) -> void:
 	match data.action:
 		"skill": _trigger_skill()
 		"laser": _trigger_laser()
+		"dash": _trigger_dash()
 
 ## 移动端触屏技能按钮
 func _on_skill_slot_gui_input(event: InputEvent, data: Dictionary) -> void:
@@ -502,6 +598,7 @@ func _on_skill_slot_gui_input(event: InputEvent, data: Dictionary) -> void:
 		match data.action:
 			"skill": _trigger_skill()
 			"laser": _trigger_laser()
+			"dash": _trigger_dash()
 
 func _update_cooldowns() -> void:
 	for slot in _skill_slots:
@@ -515,6 +612,15 @@ func _update_cooldowns() -> void:
 			"laser":
 				cd = GameState.get_laser_cooldown()
 				cd_max = GameState.get_laser_cooldown_max()
+			"dash":
+				## 闪避的冷却不在 GameState 里（它是玩家本地的动作状态，
+				## 联机时各端独立），只能从本地玩家节点读。
+				## 读不到就按"就绪"处理：宁可少画遮罩，也不要把一个
+				## 永远冷却中的按钮摆在玩家面前。
+				var pl := _resolve_local_player()
+				if pl != null and pl.has_method("get_dash_cooldown_ratio"):
+					cd_max = 1.1
+					cd = float(pl.get_dash_cooldown_ratio()) * cd_max
 		var progress: float = 1.0 - cd / cd_max if cd_max > 0 else 1.0
 		slot.overlay.set_ready_progress(progress)
 		if cd > 0:
@@ -527,25 +633,26 @@ func _update_cooldowns() -> void:
 ## ── 技能触发 ────────────────────────────────────────────────
 
 func _trigger_skill() -> void:
-	var player := _resolve_local_player()
-	if player and player.has_method("request_action"):
-		player.request_action("skill")
-	elif player and player.has_node("ActionRouter"):
-		var router := player.get_node("ActionRouter")
-		if router and router.has_method("request_action"):
-			router.request_action("skill")
-	if not (OS.has_feature("android") or OS.has_feature("ios")):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_request_player_action("skill")
 
 func _trigger_laser() -> void:
+	_request_player_action("laser")
+
+## 闪避。走和技能完全相同的 request_action 通路（action_router.gd），
+## 不直接调 motion_controller：闪避的可用性判定在玩家侧，
+## 冷却中按下会被静默忽略，按钮的冷却遮罩负责提前告知玩家。
+func _trigger_dash() -> void:
+	_request_player_action("dash")
+
+func _request_player_action(action: String) -> void:
 	var player := _resolve_local_player()
 	if player and player.has_method("request_action"):
-		player.request_action("laser")
+		player.request_action(action)
 	elif player and player.has_node("ActionRouter"):
 		var router := player.get_node("ActionRouter")
 		if router and router.has_method("request_action"):
-			router.request_action("laser")
-	if not (OS.has_feature("android") or OS.has_feature("ios")):
+			router.request_action(action)
+	if not _is_touch_platform():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _resolve_local_player() -> Node:

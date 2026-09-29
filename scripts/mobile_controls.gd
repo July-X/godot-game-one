@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 @export var joystick_radius: float = 112.0
+## 兜底圆心（桌面调试用）。真机走 `_calc_joystick_center()` 的贴底逻辑。
 @export var base_offset: Vector2 = Vector2(140.0, 550.0)
 @export var knob_scale: float = 0.38
 var _move_vector: Vector2 = Vector2.ZERO
@@ -18,6 +19,16 @@ func _ready() -> void:
 	_joystick_center = _calc_joystick_center()
 	_build_visual_nodes()
 	_update_visual_knob(_joystick_center)
+	## 视口尺寸会变（横竖屏、canvas_items+expand 的比例适配），
+	## 摇杆必须跟着重算圆心，否则换向后摇杆会留在屏幕外。
+	if get_viewport() and not get_viewport().size_changed.is_connected(_recalc_joystick):
+		get_viewport().size_changed.connect(_recalc_joystick)
+
+
+func _recalc_joystick() -> void:
+	_joystick_center = _calc_joystick_center()
+	if _move_touch_id == -1:
+		_update_visual_knob(_joystick_center)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
@@ -56,10 +67,18 @@ func _update_move_vector(current_pos: Vector2) -> void:
 		_update_visual_knob(_joystick_center + _move_vector * joystick_radius)
 	move_input.emit(_move_vector)
 
+## 摇杆圆心。贴左下角，位置由视口尺寸算出来而不是写死。
+##
+## 原来的 `base_offset = (140, 550)` 只是 1280×720 下的一个点。
+## 改成 canvas_items + expand 之后手机视口可能更高（20:9 机型逻辑高度能到 870+），
+## 写死 550 会让摇杆悬在屏幕中间偏上，拇指够不到、也会和右下角技能条打架。
+## 所以默认贴底左，距离边距固定，这样任何比例下都在拇指自然落点。
 func _calc_joystick_center() -> Vector2:
 	var size: Vector2 = get_viewport().size
-	var center_x: float = clamp(base_offset.x, joystick_radius + 24.0, size.x * 0.5)
-	var center_y: float = clamp(base_offset.y, joystick_radius + 24.0, size.y - joystick_radius - 24.0)
+	var margin_x: float = joystick_radius + 48.0
+	var margin_y: float = joystick_radius + 72.0
+	var center_x: float = clampf(base_offset.x, margin_x, maxf(size.x - margin_x, margin_x))
+	var center_y: float = clampf(base_offset.y, margin_y, maxf(size.y - margin_y, margin_y))
 	return Vector2(center_x, center_y)
 
 func _build_visual_nodes() -> void:

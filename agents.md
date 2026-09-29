@@ -126,6 +126,16 @@ godot --headless --path . res://tests/wave_probe.tscn
 有人为了让浪峰更刺激而调大形状倍率时 `curve_probe` 会全绿，
 但整局难度已经悄悄涨了。
 
+**改任何移动端交互（HUD 按钮 / 触摸 / 视口自适应）后必须跑移动端门禁**：
+
+```bash
+godot --headless --path . res://tests/mobile_check.tscn
+```
+
+断言升级卡是可点控件（触摸端曾经完全选不了）、闪避有按钮入口、
+相机与出怪中心跟随视口。**当前共 9 项断言**，失败时非零退出。
+这条独立于联机门禁：触摸交互的问题在桌面 headless 下默认测不出来。
+
 涉及 `hud.gd` / 场景结构的改动，还必须额外跑主场景运行验证
 （`--quit` 不覆盖 `_ready` / `_process` 链路）：
 

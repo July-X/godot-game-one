@@ -10,10 +10,15 @@ position = Vector2(640, 360)
 
 [node name="BgColor" type="ColorRect" parent="." unique_id=1028279153]
 z_index = -100
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 offset_left = -100.0
 offset_top = -100.0
-offset_right = 1380.0
-offset_bottom = 820.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
 color = Color(0.06, 0.08, 0.18, 1)
 
 [node name="Starfield1" type="Sprite2D" parent="." unique_id=1339224260]

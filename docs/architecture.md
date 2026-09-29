@@ -637,6 +637,9 @@ godot --headless --path . res://tests/curve_probe.tscn
 
 # 5. 波次编排门禁（改 wave_director.gd / 阵型 / 章节主题后必跑）
 godot --headless --path . res://tests/wave_probe.tscn
+
+# 6. 移动端交互门禁（改 HUD 按钮 / 触摸 / 视口自适应后必跑）
+godot --headless --path . res://tests/mobile_check.tscn
 ```
 
 `run_probe.sh` 判定失败的条件（任一命中即 `exit 1`）：
@@ -748,3 +751,47 @@ godot --headless --path . res://tests/wave_probe.tscn
 **联机**：编排器**只在 Host 权威运行**（客户端 `_tick_wave_director` 直接 return），
 出怪点照旧走既有 `_rpc_spawn_enemy` 广播，因此两端看到的波次天然一致，
 **不新增同步包**（只有 `bullet_speed_mult` 一个新字段挂在已有生成包里）。
+
+---
+
+## 18. 移动端适配（2026-09-28）
+
+### 18.1 视口与全屏
+
+| 设置 | 值 | 位置 |
+|---|---|---|
+| 拉伸模式 | `canvas_items` + `aspect=expand` | `project.godot` |
+| 手持方向 | `0`（Landscape） | `project.godot` |
+| 沉浸模式 | `immersive_mode=true` | `export_presets.cfg` |
+| 边到边 | `edge_to_edge=true` | `export_presets.cfg` |
+
+`edge_to_edge` 必须为 true：Android 15（API 35）起对 targetSdk=35 的应用
+强制边到边显示，此时再声明 false 会触发兼容模式把窗口塞进安全区，
+表现就是"画面没有全屏"。
+
+### 18.2 视口自适应的访问口（`main.gd`）
+
+| 访问口 | 替代原来写死的 |
+|---|---|
+| `_screen_center_x()` | 7 处 `Vector2(640, ...)`（精英/Boss 入场、玩家出生点） |
+| `_screen_span_x()` | 背景装饰散布范围 `1180` / `1500` |
+| `_center_camera_on_viewport()` | `main.tscn` 里 `Camera2D(640, 360)`，监听 `size_changed` |
+
+`BgColor` 已从固定矩形改为满屏锚点（`anchor_right/bottom = 1.0`）。
+`mobile_controls.gd` 的摇杆圆心改为贴左下角并监听 `size_changed`。
+
+### 18.3 触摸入口
+
+| 交互 | 控件 | 说明 |
+|---|---|---|
+| 升级选卡 | `Button`（`_draft_card_buttons`） | 内容层 `MOUSE_FILTER_IGNORE`，`FOCUS_NONE` 不抢焦点 |
+| 激光 / 散射 / 闪避 | `SkillBar` 三个 `Button` | 共用冷却遮罩与按下反馈 |
+| 移动 | `mobile_controls.gd` 摇杆 | `_unhandled_input`，按钮消费掉的触摸不会漏进摇杆 |
+
+HUD 的 CanvasLayer 在 MobileControls 之后添加，同 layer 下后加的先命中，
+所以按钮优先于摇杆区域。
+
+`hud.gd` 的 `_get_design_canvas_size()` 读**真实可视矩形**而不是
+ProjectSettings 的设计尺寸——后者只在"视口恰好等于设计尺寸"时成立。
+参照物错了会把正常布局误判成越界并刷 `push_error`，
+而联机门禁会把运行期 `ERROR:` 计入失败。

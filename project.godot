@@ -37,7 +37,21 @@ UpgradeDraft="*res://scripts/upgrade_draft.gd"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window/stretch/mode="viewport"
+; 拉伸模式必须是 canvas_items 而不是 viewport。
+; 两者在桌面端看起来一样，但在手机上是两种东西：
+;   viewport  —— 根视口固定 1280×720，多出来的屏幕部分用黑边填满。
+;                20:9 的手机横屏会左右各留一条黑边，玩家感知就是"没全屏"。
+;   canvas_items —— 根视口按屏幕比例扩展（配合 aspect=expand），
+;                多出来的高度/宽度变成真正的可视区域，没有黑边，
+;                而且 2D 内容整体等比缩放，UI 锚点与像素风都保持正常。
+; 选 canvas_items + expand 的另一个理由：敌人刷点、玩家边界夹取全部读
+; get_viewport_rect().size，扩展出来的区域会被自动纳入可玩范围，
+; 高屏手机因此拥有更多躲避空间，而不是多两块黑边。
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+; 手机强制横屏。竖屏下 1280×720 的构图会被压成一条，弹幕完全没法躲。
+; 0 = Landscape，1 = Portrait，4 = Sensor（跟随陀螺仪，玩家躺着玩会翻转，不取）。
+window/handheld/orientation=0
 
 [physics]
 

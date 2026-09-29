@@ -184,6 +184,12 @@ func _ready() -> void:
 	_camera_shake = _camera_shake_script.new()
 	_camera_shake.name = "CameraShake"
 	add_child(_camera_shake)
+	_center_camera_on_viewport()
+	## 视口尺寸会变（手机横竖屏、窗口缩放、canvas_items+expand 的比例适配）。
+	## 相机必须跟着走，否则画面会偏出可视区——看起来就是"不是全屏，
+	## 右边黑一块"。用 size_changed 而不是每帧检查，成本为零。
+	if get_viewport() and not get_viewport().size_changed.is_connected(_center_camera_on_viewport):
+		get_viewport().size_changed.connect(_center_camera_on_viewport)
 	set_process(true)
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -382,7 +388,7 @@ func _create_parallax_background() -> void:
 						var new_a: float = min(existing.a + a, nc_a)
 						img.set_pixel(x, y, Color(new_r, new_g, new_b, new_a))
 		nebula.texture = ImageTexture.create_from_image(img)
-		nebula.position = Vector2(randf_range(-200, 1500), randf_range(-200, 900))
+		nebula.position = Vector2(randf_range(-200.0, _screen_span_x() + 200.0), randf_range(-200.0, 900.0))
 		nebula.z_index = -6 + randi() % 3
 		add_child(nebula)
 		_nebulas.append(nebula)
@@ -417,7 +423,7 @@ func _create_parallax_background() -> void:
 						var ring_a: float = 0.4 * (1.0 - abs(d2 - ring_r) / 2.0)
 						img.set_pixel(x, y, Color(pc_r * 1.2, pc_g * 1.2, pc_b * 1.2, ring_a))
 		planet.texture = ImageTexture.create_from_image(img)
-		planet.position = Vector2(randf_range(100, 1180), randf_range(100, 620))
+		planet.position = Vector2(randf_range(100.0, _screen_span_x() - 100.0), randf_range(100.0, 620.0))
 		planet.z_index = -4
 		add_child(planet)
 		_planets.append(planet)
@@ -427,7 +433,7 @@ func _start_bgm() -> void:
 
 func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
-	_player.position = Vector2(640, 500)
+	_player.position = Vector2(_screen_center_x(), 500)
 	add_child(_player)
 	GameState.ensure_player_state(_player.peer_id)
 	_alive_players[_player.peer_id] = true
@@ -873,14 +879,14 @@ func _scroll_background(delta: float) -> void:
 		neb.position.x += delta * 0.8
 		if neb.position.y > 900:
 			neb.position.y = -200
-			neb.position.x = randf_range(-200, 1500)
+			neb.position.x = randf_range(-200.0, _screen_span_x() + 200.0)
 
 	for pl in _planets:
 		pl.position.y += delta * 1.2
 		pl.position.x += delta * 0.3
 		if pl.position.y > 760:
 			pl.position.y = -100
-			pl.position.x = randf_range(100, 1180)
+			pl.position.x = randf_range(100.0, _screen_span_x() - 100.0)
 
 func _apply_client_perf_profile() -> void:
 	## 加入端降低背景渲染负担，优先保障同屏战斗帧率。
@@ -933,6 +939,37 @@ func _apply_player_interpolation(delta: float) -> void:
 		if pnode == null:
 			continue
 		pnode.global_position = pnode.global_position.lerp(_player_target_positions[pid], alpha)
+
+
+## 屏幕水平中心。
+##
+## 这些位置以前全部写死 640（= 1280 / 2）。在桌面 1280×720 上恰好正确，
+## 但改成 canvas_items + expand 之后，手机高屏手机的视口宽度会大于 1280，
+## 写死的 640 就不再是中心——精英和 Boss 会从偏左的位置入场。
+## 做成访问口而不是常量，理由和 `_enemy_speed_cap()` 一样：
+## 视口尺寸变了，出怪点必须跟着变，而不是各处各记一个魔法数字。
+func _screen_center_x() -> float:
+	return get_viewport_rect().size.x * 0.5
+
+
+## 可视区宽度。背景装饰（行星 / 星云）的横向散布范围用它，
+## 而不是写死 1180 / 1500 —— 同样是 canvas_items + expand 之后
+## 视口会变宽，写死的范围会让装饰全部堆在屏幕左侧，右半边空荡荡。
+func _screen_span_x() -> float:
+	return get_viewport_rect().size.x
+
+
+## 把相机摆到可视区正中。
+##
+## 场景里 Camera2D 原本写死在 (640, 360)，那只是 1280×720 的中心。
+## 相机只偏移 `offset`（震屏用），不改变 `position`，
+## 所以这里改 position 不会和 camera_shake.gd 打架。
+func _center_camera_on_viewport() -> void:
+	var cam := get_node_or_null("Camera2D") as Camera2D
+	if cam == null:
+		return
+	var size := get_viewport_rect().size
+	cam.position = size * 0.5
 
 
 ## 敌速上限：优先取本机玩家的真实极速，玩家节点没就绪时用兜底常量。
@@ -1147,7 +1184,7 @@ func _spawn_elite() -> void:
 	_show_elite_warning()
 	GameState.elite_encounter_count += 1
 	_elite = _elite_scene.instantiate()
-	_elite.position = Vector2(640, -60)
+	_elite.position = Vector2(_screen_center_x(), -60)
 	var elite_mult: float = 1.0 + (GameState.elite_encounter_count - 1) * 0.1
 	_elite.set_difficulty(elite_mult)
 	if _player and is_instance_valid(_player):
@@ -1164,7 +1201,7 @@ func _spawn_elite() -> void:
 		_rpc_show_elite_warning.rpc()
 	add_child(_elite)
 	var tween := create_tween()
-	tween.tween_property(_elite, "position", Vector2(640, 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_elite_shield_broken_window_started() -> void:
 	var eid := -1
@@ -1209,7 +1246,7 @@ func _show_elite_warning() -> void:
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	warning.position = Vector2(0, 300)
-	warning.size = Vector2(1280, 60)
+	warning.size = Vector2(get_viewport_rect().size.x, 60)
 	warning.z_index = 100
 	add_child(warning)
 	var tween := create_tween()
@@ -1284,7 +1321,7 @@ func _spawn_boss(level: int) -> void:
 	_enter_boss_fight_mode()
 	_boss_reward_claimed_peers.clear()
 	_boss = _boss_scene.instantiate()
-	_boss.position = Vector2(640, -80)
+	_boss.position = Vector2(_screen_center_x(), -80)
 	var variant_id := _pick_boss_variant_id()
 	_current_boss_variant_id = variant_id
 	if _boss.has_method("set_sprite_variant"):
@@ -1303,7 +1340,7 @@ func _spawn_boss(level: int) -> void:
 		_rpc_spawn_boss.rpc(eid, level, variant_id)
 	add_child(_boss)
 	var tween := create_tween()
-	tween.tween_property(_boss, "position", Vector2(640, 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_boss, "position", Vector2(_screen_center_x(), 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _pick_boss_variant_id() -> int:
 	var variant_count := 0
@@ -1862,7 +1899,7 @@ func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
 	_elite.name = str(eid)
 	_elite.entity_id = eid
 	_elite._is_network_ghost = true
-	_elite.position = Vector2(640, -60)
+	_elite.position = Vector2(_screen_center_x(), -60)
 	_elite.set_difficulty(elite_mult)
 	if _player and is_instance_valid(_player):
 		_elite.set_target(_player)
@@ -1909,7 +1946,7 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int) -> void:
 	_boss.name = str(eid)
 	_boss.entity_id = eid
 	_boss._is_network_ghost = true
-	_boss.position = Vector2(640, -80)
+	_boss.position = Vector2(_screen_center_x(), -80)
 	if _boss.has_method("set_sprite_variant"):
 		_boss.set_sprite_variant(variant_id)
 	_boss.setup(level)
