@@ -58,6 +58,43 @@ func _check_skill_slots(hud: Node) -> void:
 	## 字形兜底 Label，取第一个会永远拿到兜底字符，测不到真正的动作名。
 	_check("dash_slot_present", flat.has("闪避"),
 		"技能槽文本=%s（必须含 闪避）" % str(flat))
+	_check_skill_icon_loaded(bar)
+
+
+## 技能槽必须真的加载到图标贴图，而不是退回字形占位。
+##
+## hud.gd 的 `_create_skill_slot` 在贴图缺失时会塞一个字形 Label 兜底
+## （HUD 上不能出现"看得见、点得动、却不知道是什么"的空按钮）。
+## 但这个兜底是**静默**的：图标文件被误删或改错路径，游戏照样跑，
+## 只是图标悄悄变成了一个字母。所以必须由门禁守住。
+func _check_skill_icon_loaded(bar: Node) -> void:
+	var missing: Array = []
+	for c in bar.get_children():
+		var tex: TextureRect = _find_texture_rect(c)
+		var name_lbl := _find_label_text(c)
+		if tex == null or tex.texture == null:
+			missing.append(name_lbl)
+	_check("skill_icons_loaded", missing.is_empty(),
+		"没有加载到贴图的槽位=%s（会退回字形占位）" % str(missing))
+
+
+func _find_texture_rect(node: Node) -> TextureRect:
+	if node is TextureRect:
+		return node as TextureRect
+	for c in node.get_children():
+		var t := _find_texture_rect(c)
+		if t != null:
+			return t
+	return null
+
+
+func _find_label_text(node: Node) -> String:
+	for c in node.get_children():
+		if c is Label:
+			var t := (c as Label).text
+			if not t.is_empty():
+				return t
+	return "?"
 
 
 func _collect_label_texts(node: Node) -> Array:
