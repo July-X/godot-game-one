@@ -35,6 +35,7 @@ func _ready() -> void:
 	await _check_touch_card_select(hud)
 	await _check_dash_button(hud)
 	_check_camera_centered(main)
+	await _check_joystick(main)
 	_report()
 
 
@@ -164,12 +165,17 @@ func _check_dash_button(hud: Node) -> void:
 	if router != null:
 		router.consume_actions()
 	var can_before: bool = player.can_dash()
-	hud.call("_trigger_dash")
-	## 闪避是在玩家自己的物理帧里消费的，等够帧让它真的发生。
-	## 这里**不去读队列**：等完帧队列早已被 player.gd 取走，读到的是空数组，
-	## 那不是"按钮没接线"，那是读错了地方。判据是"闪避真的进入冷却"。
-	for i in range(12):
-		await get_tree().process_frame
+	var button: Button = hud.get_node("SkillBar").get_child(2)
+	var tap := InputEventScreenTouch.new()
+	tap.position = button.get_global_rect().get_center()
+	tap.pressed = true
+	get_viewport().push_input(tap, true)
+	# 玩家在物理帧消费按键。无窗口时多个渲染帧可能落在同一个物理帧内。
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	tap = tap.duplicate()
+	tap.pressed = false
+	get_viewport().push_input(tap, true)
 	var can_after: bool = player.can_dash()
 	_check("dash_button_triggers", can_before and not can_after,
 		"触发前可闪=%s 触发后=%s（false = 确实闪出去了）" % [str(can_before), str(can_after)])
@@ -191,6 +197,38 @@ func _check_camera_centered(main: Node) -> void:
 	var center_x: float = main.call("_screen_center_x")
 	_check("spawn_center_follows_viewport", absf(center_x - vs.x * 0.5) < 0.01,
 		"_screen_center_x()=%.1f 视口宽=%.1f" % [center_x, vs.x])
+
+
+func _check_joystick(main: Node) -> void:
+	var stick = main.get_node_or_null("MobileControls")
+	var player: Node = main._player
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
+		_check("desktop_no_joystick", stick == null, "desktop")
+		# 在桌面模拟手机入场次序，使用生产摇杆、玩家绑定和视口事件分发。
+		main._spawn_mobile_controls()
+		stick = main.get_node("MobileControls")
+		player = preload("res://scenes/entities/player.tscn").instantiate()
+		main.add_child(player)
+		player.position = Vector2(320, 360)
+	if stick == null:
+		_check("joystick_present", false, "missing MobileControls")
+		return
+	var motion = player.get_node("MotionController")
+	var touch := InputEventScreenTouch.new()
+	touch.index = 1
+	touch.position = stick._joystick_center + Vector2.RIGHT * 84.0
+	touch.pressed = true
+	var start_x: float = player.position.x
+	get_viewport().push_input(touch, true)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check("touch_drives_own_ship", motion.mobile_mode and motion.touch_move.x > 0.65
+		and player.position.x > start_x,
+		"move=%s radius=%s" % [motion.touch_move, stick.joystick_radius])
+	touch = touch.duplicate()
+	touch.pressed = false
+	get_viewport().push_input(touch, true)
+	_check("touch_release_stops_stick", motion.touch_move == Vector2.ZERO, str(motion.touch_move))
 
 
 func _check(name: String, ok: bool, detail: String) -> void:

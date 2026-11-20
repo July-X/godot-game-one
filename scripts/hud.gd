@@ -23,7 +23,7 @@ const Palette = preload("res://scripts/palette.gd")
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
-@onready var _perm_leaderboard_entries: VBoxContainer = $LeaderboardPanel/LeaderboardEntries
+@onready var _perm_leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
 @onready var _skill_bar: HBoxContainer = $SkillBar
 
 var _damage_flash: ColorRect
@@ -56,7 +56,7 @@ const BOSS_BONUS_LASER_CD_MAX: float = 5.0
 const BOSS_BONUS_BULLET_COUNT_MAX: float = 4.0
 const BOSS_BONUS_DAMAGE_MAX: float = 20.0
 const BOSS_BONUS_MOVE_SPEED_MAX: float = 0.5
-const SKILL_SLOT_DESKTOP: Vector2 = Vector2(144, 144)
+const SKILL_SLOT_DESKTOP: Vector2 = Vector2(90, 90)
 const SKILL_SLOT_MOBILE: Vector2 = Vector2(116, 116)
 
 ## 图标资源缺失时的字形兜底（见 _create_skill_slot）
@@ -71,7 +71,7 @@ func _ready() -> void:
 	layer = 20
 	_game_over_panel.visible = false
 	_set_control_ignore_input(_game_over_panel)
-	_set_control_ignore_input($LeaderboardPanel)
+	_fps_label.visible = OS.get_cmdline_user_args().has("--fps")
 	_score_label.z_index = 30
 	_level_label.z_index = 30
 	_player_scores_label.z_index = 30
@@ -99,7 +99,6 @@ func _ready() -> void:
 	_update_health(GameState.get_current_health(), GameState.get_max_health())
 	_update_player_scores(GameState.get_all_player_scores(), GameState.score)
 	_update_powerup_display()
-	_refresh_leaderboard()
 
 func _process(_delta: float) -> void:
 	_refresh_score_if_needed()
@@ -424,7 +423,7 @@ func _create_skill_slot(data: Dictionary) -> void:
 	var icon_tex := TextureRect.new()
 	icon_tex.size = slot_size
 	icon_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon_tex.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	icon_tex.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED if _is_touch_platform() else TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_tex.z_index = 3
 	var tex_path: String = "res://assets/sprites/ui/skill_%s.png" % data.action
@@ -527,12 +526,12 @@ func _layout_skill_slot(slot: Dictionary, slot_size: Vector2) -> void:
 	var overlay: Control = slot.overlay
 	overlay.size = slot_size - Vector2(4, 4)
 	var icon_tex: TextureRect = slot.icon
-	icon_tex.size = slot_size
+	icon_tex.size = slot_size if _is_touch_platform() else slot_size - Vector2(0, 18)
 	var cd_label: Label = slot.cd_label
 	cd_label.size = slot_size
 	cd_label.add_theme_font_size_override("font_size", 34 if slot_size.x < 130.0 else 44)
 	var name_lbl: Label = slot.name
-	name_lbl.position = Vector2(0, slot_size.y - 34.0)
+	name_lbl.position = Vector2(0, slot_size.y - (34.0 if _is_touch_platform() else 20.0))
 	name_lbl.size = Vector2(slot_size.x, 22.0)
 
 ## HUD 所在的**实际坐标空间**尺寸。
@@ -680,12 +679,13 @@ func _on_level_changed(new_level: int) -> void:
 
 func _on_player_scores_changed(scores: Dictionary, total_score: int) -> void:
 	_update_player_scores(scores, total_score)
-	_refresh_leaderboard()
 
 func _on_health_changed(current: int, maximum: int) -> void:
 	_update_health(current, maximum)
 
 func _on_game_over(final_score: int, final_level: int) -> void:
+	if _game_over_panel.visible:
+		return
 	_game_over_panel.visible = true
 	_final_score_label.text = "得分: %d" % final_score
 	_final_level_label.text = "等级: %d" % final_level
@@ -1104,14 +1104,15 @@ func _update_platform_hints() -> void:
 			_restart_label.text = "等待房主重新开始"
 	else:
 		if can_restart:
-			_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\nR - 重新开始"
 			_restart_label.text = "按 R 重新开始"
 		else:
-			_controls_label.text = "鼠标 - 移动/瞄准\nESC - 释放鼠标\nQ - 激光  W - 散射\n等待房主重新开始"
 			_restart_label.text = "等待房主重新开始"
+		_controls_label.text = "Q 激光   W 散射   Shift 闪避   Esc 释放鼠标"
+		if NetworkManager.is_online():
+			_controls_label.text += "   E 救援"
 
 func _update_fps(delta: float) -> void:
-	if _fps_label == null:
+	if not _fps_label.visible:
 		return
 	_fps_accum += delta
 	if _fps_accum < 0.2:
@@ -1217,7 +1218,19 @@ func show_pickup_toast(powerup_type: String, world_pos: Vector2) -> void:
 	toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	toast.position = world_pos + Vector2(-60.0, -36.0)
 	toast.size = Vector2(120.0, 24.0)
-	add_child(toast)
+	if powerup_type == "core":
+		# 把文字放在断环外，和断环一起画在战斗层的敌弹下方。
+		var anchor := get_viewport().get_canvas_transform() * world_pos
+		var gap := 34.0
+		var room_right := anchor.x + gap + toast.size.x <= _get_design_canvas_size().x
+		toast.position = world_pos + Vector2(gap if room_right else -gap - toast.size.x,
+			-22.0 if anchor.y >= 42.0 else 22.0)
+		toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if room_right else HORIZONTAL_ALIGNMENT_RIGHT
+		toast.z_index = -1
+		get_parent().add_child(toast)
+	else:
+		add_child(toast)
+	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_active_pickup_toasts.append(toast)
 	var tween := create_tween()
 	tween.tween_property(toast, "position:y", toast.position.y - 20.0, 0.8)
@@ -1240,5 +1253,5 @@ func _pickup_text(powerup_type: String) -> String:
 		"bomb":
 			return "炸弹清场"
 		"core":
-			return "核心奖励"
+			return "核心 · 冷却缩短"
 	return ""

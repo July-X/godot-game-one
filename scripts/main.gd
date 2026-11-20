@@ -134,7 +134,7 @@ const MODE_SWITCH_PROMPT_HOLD_SECONDS: float = 5.0
 const DEATH_MARQUEE_HOLD_SECONDS: float = 0.5
 const DEATH_MARQUEE_FADE_SECONDS: float = 3.0
 
-@onready var _bg_color: ColorRect = $BgColor
+@onready var _bg_color: ColorRect = $Backdrop/BgColor
 
 var _camera_shake_script = preload("res://scripts/camera_shake.gd")
 
@@ -196,7 +196,8 @@ func _ready() -> void:
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_create_parallax_background()
-	_spawn_mobile_controls()
+	if OS.has_feature("android") or OS.has_feature("ios"):
+		_spawn_mobile_controls()
 	_spawn_hud()
 	_start_bgm()
 	GameState.reset_game()
@@ -306,9 +307,7 @@ static func _build_star_tile(count: int, size_min: int, size_max: int,
 	return ImageTexture.create_from_image(img)
 
 func _create_parallax_background() -> void:
-	if _bg_color:
-		_bg_color.color = Color(Palette.BG_BASE.r, Palette.BG_BASE.g, Palette.BG_BASE.b, 1.0)
-		_bg_color.z_index = -100
+	_bg_color.color = Palette.BG_BASE
 
 	## 星空从「每颗星一个 Sprite2D」改为「每层一张平铺贴图」。
 	## 旧实现是 180+90+35 = 305 个节点、305 张各自独立的 2~12px 贴图，
@@ -745,12 +744,8 @@ func _tick_hitstop() -> void:
 		Engine.time_scale = _hitstop_target
 
 func _spawn_mobile_controls() -> void:
-	if OS.has_feature("android") or OS.has_feature("ios"):
-		if get_node_or_null("MobileControls") != null:
-			return
-		var mc = _mobile_controls_scene.instantiate()
-		mc.name = "MobileControls"
-		add_child(mc)
+	if not has_node("MobileControls"):
+		add_child(_mobile_controls_scene.instantiate())
 
 func _process(delta: float) -> void:
 	_tick_hitstop()
@@ -1089,9 +1084,12 @@ func register_powerup_entity(powerup: Node2D, powerup_type: String) -> void:
 	_rpc_spawn_powerup.rpc(eid, powerup_type, powerup.global_position.x, powerup.global_position.y, assigned_peer_id)
 
 ## Host：掉落物被拾取后广播销毁
-func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 1) -> void:
+func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 0) -> void:
 	if not multiplayer.is_server():
 		return
+	if _despawned_entity_ids.has(entity_id):
+		return
+	_despawned_entity_ids[entity_id] = true
 	var powerup_type := ""
 	var feedback_pos := Vector2.ZERO
 	if _entities.has(entity_id):
@@ -1100,11 +1098,9 @@ func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 1) -
 			powerup_type = node.get_powerup_type()
 			if node is Node2D:
 				feedback_pos = (node as Node2D).global_position
-			GameState.collect_powerup(powerup_type, collector_peer_id)
+			# 超时回收沿用房主原有收益；只有实际拾取才播放近身断环。
+			GameState.collect_powerup(powerup_type, maxi(1, collector_peer_id))
 			_send_powerup_feedback(collector_peer_id, powerup_type, feedback_pos)
-	if _despawned_entity_ids.has(entity_id):
-		return
-	_despawned_entity_ids[entity_id] = true
 	_entity_target_positions.erase(entity_id)
 	if _entities.has(entity_id):
 		var node2 = _entities[entity_id]
@@ -1411,8 +1407,7 @@ func _update_boss_hud() -> void:
 func _enter_boss_fight_mode() -> void:
 	_boss_fight_active = true
 	_clear_non_boss_entities()
-	if _bg_color:
-		_bg_color.color = Color(0.14, 0.03, 0.03, 1.0)
+	_rpc_set_boss_bg(true)
 	if BGM and BGM.has_method("play_boss_bgm"):
 		BGM.play_boss_bgm()
 	if NetworkManager.is_online() and multiplayer.is_server():
@@ -1420,8 +1415,7 @@ func _enter_boss_fight_mode() -> void:
 
 func _exit_boss_fight_mode() -> void:
 	_boss_fight_active = false
-	if _bg_color:
-		_bg_color.color = Color(0.06, 0.06, 0.12, 1.0)
+	_rpc_set_boss_bg(false)
 	if BGM and BGM.has_method("play_bgm"):
 		BGM.play_bgm()
 	if NetworkManager.is_online() and multiplayer.is_server():
@@ -1980,11 +1974,14 @@ func _rpc_spawn_powerup(eid: int, powerup_type: String, pos_x: float, pos_y: flo
 	_entities[eid] = pu
 	add_child(pu)
 
-func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2) -> void:
+func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2, confirmed := true) -> void:
 	if _hud and _hud.has_method("show_pickup_toast"):
 		_hud.show_pickup_toast(powerup_type, world_pos)
-	if powerup_type == "core" and _hud and _hud.has_method("show_center_banner"):
-		_hud.show_center_banner("冷却加速", 0.6, Color(1.0, 0.78, 0.24, 1.0))
+	if powerup_type == "core" and confirmed:
+		var ring = Pool.acquire("core_pickup", _hit_effect_scene)
+		add_child(ring)
+		ring.global_position = world_pos
+		ring.start_core_pickup()
 
 func on_local_boss_reward_feedback(_reward_type: String) -> void:
 	if _hud == null:
@@ -1995,7 +1992,7 @@ func on_local_boss_reward_feedback(_reward_type: String) -> void:
 func _send_powerup_feedback(peer_id: int, powerup_type: String, world_pos: Vector2) -> void:
 	var target_peer := peer_id if peer_id > 0 else 1
 	if target_peer == multiplayer.get_unique_id():
-		on_local_powerup_feedback(powerup_type, world_pos)
+		on_local_powerup_feedback(powerup_type, world_pos, peer_id > 0)
 	else:
 		_rpc_show_powerup_feedback.rpc_id(target_peer, powerup_type, world_pos.x, world_pos.y)
 
@@ -2371,8 +2368,7 @@ func _rpc_spawn_bullets(data: Array) -> void:
 ## 激光同步：
 @rpc("authority", "reliable", "call_remote")
 func _rpc_set_boss_bg(active: bool) -> void:
-	if _bg_color:
-		_bg_color.color = Color(0.14, 0.03, 0.03, 1.0) if active else Color(0.06, 0.06, 0.12, 1.0)
+	_bg_color.color = Palette.BG_BOSS if active else Palette.BG_BASE
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_boss_ultimate_laser_charge(pos_x: float, pos_y: float, duration: float) -> void:

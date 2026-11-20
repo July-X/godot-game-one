@@ -98,7 +98,7 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 
 判定标准：**`[PROBE] ... VERDICT SUMMARY pass=N failed=0` 且两个进程退出码都是 0**，
 `run_probe.sh` 还会额外把 `SCRIPT ERROR` 和运行期 `ERROR:` 计入失败。
-当前共 36 项断言（host 22 + client 14）。
+当前共 40 项断言（房主 24 项、加入端 16 项），含两端的雨燕槽位和核心拾取去重。独立的混合画幅用例可用 `tests/run_probe.sh 7790 wide-host` 和 `wide-client` 复现，已知窄端看不到贴住宽端右界的队友。
 
 **改任何难度数值后必须跑难度曲线门禁**（防止难度墙悄悄长回来）：
 
@@ -134,7 +134,7 @@ godot --headless --path . res://tests/mobile_check.tscn
 
 断言升级卡是可点控件（触摸端曾经完全选不了）、闪避有按钮入口、
 三个技能槽都真的加载到图标贴图（而不是静默退回字形占位）、
-相机与出怪中心跟随视口。**当前共 10 项断言**，失败时非零退出。
+相机与出怪中心跟随视口。桌面另检查摇杆不在场，并用模拟触摸验证移动和松手。**桌面运行共 13 项断言**，失败时非零退出。
 这条独立于联机门禁：触摸交互的问题在桌面 headless 下默认测不出来。
 
 涉及 `hud.gd` / 场景结构的改动，还必须额外跑主场景运行验证
@@ -143,6 +143,8 @@ godot --headless --path . res://tests/mobile_check.tscn
 ```bash
 godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 ```
+
+改战斗背景、雨燕或拾取与命中特效时运行 `godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn`。用图形模式并追加 `-- capture /已有目录/前缀` 可保存四帧，在同一构图中检查敌弹遮挡。
 
 ## 7. 工作约束
 
@@ -214,7 +216,7 @@ godot --headless --path . --quit
 - **单机闭环 ✅**：标题 → 战斗 → 精英 / Boss 波次 → 结算
 - **联机闭环 ✅**：2 人 Wi-Fi LAN / 鸿蒙近场发现 + ENet 战斗同步，Host 权威
 - **程序化管线 ✅**：贴图、音效、BGM 全部程序化，零外部资源依赖
-- **联机回归门禁 ✅**：`tests/run_probe.sh` + `tests/lan_probe.gd`，**36 项断言**（host 22 + client 14），一条命令收口退出码
+- **联机回归门禁 ✅**：`tests/run_probe.sh` + `tests/lan_probe.gd`，**40 项断言**（房主 24 项、加入端 16 项），一条命令收口退出码
 - **关卡节奏 ✅**：`scripts/wave_director.gd` 接管全部杂兵投放。4 拍乐句（各 16 秒）
   + 6 种阵型 + 每 5 级一个章节主题。**章节平均速率 ≡ 改造前速率**（误差 0.000%），
   峰谷比 4.25×。设计全文见 `docs/level_design_proposal.md`

@@ -51,8 +51,9 @@ scenes/ui/title_screen.tscn   ← 项目主场景
 |------|-----|--------|
 | 移动 | 鼠标移动（惯性） | 左侧虚拟摇杆 |
 | 射击 | 自动 | 自动 |
-| 技能 1（环形散射，15s） | `Space` / △ 按钮 | △ 按钮 |
+| 技能 1（环形散射，15s） | `W` / 散射按钮 | 散射按钮 |
 | 技能 2（激光，10s） | `Q` / ○ 按钮 | ○ 按钮 |
+| 闪避 | `Shift` | 闪避按钮 |
 | 释放鼠标 | `ESC` | — |
 | 全屏切换 | `F11` | — |
 
@@ -75,7 +76,7 @@ godot-game-one/
 │   └── harmony_bridge.gd       # Autoload，鸿蒙近场发现桥接层
 ├── tests/
 │   ├── run_probe.sh             # 联机回归门禁入口（起双进程 + 收口退出码 + 扫报错）
-│   ├── lan_probe.gd             # 双进程 headless 联机回归探针（36 项断言）
+│   ├── lan_probe.gd             # 双进程联机回归（40 项断言）
 │   └── lan_probe.tscn
 ├── docs/
 ├── backup_3d/                  # 旧 3D 版本存档（已废弃，勿参考）
@@ -128,11 +129,12 @@ godot-game-one/
 - ✅ 玩家位置由 `main.gd` 显式同步（4 字段 / 45Hz / 两端插值），不依赖引擎场景复制
 - ✅ 客户端漏怪自愈（未知 entity_id 限频请求快照）
 - ✅ Boss 阻塞兜底：精英在场时 Boss 触发挂起，精英死亡后补发
-- ✅ 双进程 headless 回归门禁（`tests/run_probe.sh`，36 项断言，一条命令判成败）
+- ✅ 双进程联机回归（`tests/run_probe.sh`，40 项断言），两端分别核对 P1/P2 机体和核心拾取者
 
 ### 其他
 - ✅ HUD（血量/属性条/记分牌/排行榜/技能冷却/Boss 阶段条）
 - ✅ 移动端虚拟摇杆 + 技能按钮
+- 第一档雨燕按飞船所属槽位显示。房主 P1 冰蓝单中线，加入者 P2 淡紫双标记。完整榜单在结算时显示。
 - ✅ 屏幕震动、命中特效、爆炸序列帧
 - ✅ 渲染上限 120fps + 物理插值（物理 60Hz），GL Compatibility 后端（本机实测 276fps）
 
@@ -152,6 +154,9 @@ godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
 # 联机回归门禁（推荐：一条命令，自动起双进程并判成败）
 tests/run_probe.sh 7788
+
+# 固定构图，核对布局、特效寿命、碰撞和开火挂点
+godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 ```
 
 手工跑探针（需要实时看日志时，两个终端）：

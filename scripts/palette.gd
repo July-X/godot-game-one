@@ -18,7 +18,8 @@ extends Node
 ## 后处理或额外贴图**，draw call 与改动前完全一致。
 
 ## ── 背景（低饱和暗色，绝不与弹幕同色）────────────────────
-const BG_BASE: Color = Color(0.045, 0.048, 0.085)
+const BG_BASE: Color = Color("#0a1020")
+const BG_BOSS: Color = Color("#211926")
 ## 星云：明度和饱和度都压到很低，只留一点点冷色倾向做纵深
 const NEBULA_COOL: Color = Color(0.10, 0.12, 0.26)
 const NEBULA_WARM: Color = Color(0.18, 0.10, 0.14)

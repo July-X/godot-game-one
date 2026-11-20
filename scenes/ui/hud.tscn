@@ -188,19 +188,15 @@ horizontal_alignment = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -230.0
+offset_left = -340.0
 offset_top = 12.0
 offset_right = -16.0
 offset_bottom = 90.0
-theme_override_colors/font_color = Color(0.45, 0.5, 0.7, 0.85)
+theme_override_colors/font_color = Color(0.64, 0.74, 0.86, 0.9)
 theme_override_font_sizes/font_size = 13
-text = "鼠标 - 移动/瞄准
-Shift - 闪避
-ESC - 释放鼠标
-Space - 技能
-Q - 激光
-E - 救援
-R - 重新开始"
+text = "Q 激光   W 散射   Shift 闪避   Esc 释放鼠标"
+horizontal_alignment = 2
+vertical_alignment = 0
 
 [node name="FpsLabel" type="Label" parent="."]
 anchors_preset = 1
@@ -227,36 +223,6 @@ offset_bottom = -18.0
 theme_override_constants/separation = 8
 alignment = 2
 
-[node name="LeaderboardPanel" type="Panel" parent="."]
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -229.0
-offset_top = 126.0
-offset_right = -16.0
-offset_bottom = 357.0
-grow_horizontal = 0
-theme_override_styles/panel = SubResource("3")
-modulate = Color(1, 1, 1, 1)
-
-[node name="LeaderboardLabel" type="Label" parent="LeaderboardPanel"]
-layout_mode = 0
-offset_left = 8.0
-offset_top = 6.0
-offset_right = -8.0
-offset_bottom = 26.0
-theme_override_colors/font_color = Color(0.55, 0.65, 1.0, 0.9)
-theme_override_font_sizes/font_size = 14
-text = "最高分记录"
-
-[node name="LeaderboardEntries" type="VBoxContainer" parent="LeaderboardPanel"]
-layout_mode = 0
-offset_left = 8.0
-offset_top = 28.0
-offset_right = -8.0
-offset_bottom = -6.0
-theme_override_constants/separation = 3
-
 [node name="GameOverPanel" type="Panel" parent="."]
 visible = false
 anchors_preset = 8
@@ -265,9 +231,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -200.0
-offset_top = -140.0
+offset_top = -200.0
 offset_right = 200.0
-offset_bottom = 140.0
+offset_bottom = 200.0
 theme_override_styles/panel = SubResource("3")
 
 [node name="VBox" type="VBoxContainer" parent="GameOverPanel"]
@@ -277,9 +243,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -160.0
-offset_top = -100.0
+offset_top = -180.0
 offset_right = 160.0
-offset_bottom = 100.0
+offset_bottom = 180.0
 theme_override_constants/separation = 12
 alignment = 1
 

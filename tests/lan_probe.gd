@@ -53,6 +53,10 @@ var _failed: int = 0
 ## 客户端逐帧采样结果，见 _sample_sync_authority
 var _p2_overwritten: bool = false
 var _p1_followed: bool = false
+const HOST_CORE_POS := Vector2(112, 86)
+const CLIENT_CORE_POS := Vector2(192, 86)
+const EXPIRED_CORE_POS := Vector2(272, 86)
+var _core_pulses: Array[Vector2] = []
 
 
 func _ready() -> void:
@@ -65,6 +69,7 @@ func _ready() -> void:
 	if argv.size() >= 2:
 		_port = int(argv[1])
 	_t0 = Time.get_ticks_msec()
+	get_tree().node_added.connect(_observe_core)
 	_log("boot port=%d pid=%d" % [_port, OS.get_process_id()])
 	_run()
 
@@ -239,6 +244,12 @@ func _host_scenario() -> void:
 	var client_id: int = NetworkManager.connected_peers[0]
 
 	await _wait_seconds(2.0)
+	await _check_swift_slots()
+	_collect_test_core(1, HOST_CORE_POS)
+	_collect_test_core(client_id, CLIENT_CORE_POS)
+	_collect_test_core(0, EXPIRED_CORE_POS)
+	await get_tree().process_frame
+	_check("host_only_own_core", _core_pulses == [HOST_CORE_POS], str(_core_pulses))
 	await _verify_peer_labels("h3")
 
 	## 制造两端分数差，验证记分牌跨端刷新 + 槽位标签
@@ -500,6 +511,9 @@ func _client_scenario() -> void:
 
 	await _wait_seconds(2.0)
 	await _verify_peer_labels_client(my_id, "c3")
+	await _check_swift_slots()
+	await _wait_until(func(): return _core_pulses.has(CLIENT_CORE_POS), 3.0)
+	_check("client_only_own_core", _core_pulses == [CLIENT_CORE_POS], str(_core_pulses))
 
 	## 同步归属双向验证（配合 Host 侧 h7）：
 	## 远端 P1 幽灵必须跟到 Host 挪动的标记点 —— 证明玩家位置同步仍然工作；
@@ -583,6 +597,46 @@ func _verify_peer_labels_client(my_id: int, tag: String) -> void:
 
 
 ## ── 工具 ─────────────────────────────────────────────────────
+func _check_swift_slots() -> void:
+	var skins: Dictionary = {}
+	for pid: int in _main._players:
+		var sprite: Sprite2D = _main._players[pid].get_node("Sprite2D")
+		skins[_main._hud._peer_label(pid)] = sprite.texture.resource_path.get_file()
+	_check("swift_slots", skins == {"P1": "swift_p1.png", "P2": "swift_p2.png"}, str(skins))
+	var prefix := OS.get_environment("GODOT_SWIFT_CAPTURE")
+	if not prefix.is_empty() and DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		var file := "%s-%s.png" % [prefix, _role]
+		_check("capture_ships", get_viewport().get_texture().get_image().save_png(file) == OK, file)
+
+
+func _observe_core(node: Node) -> void:
+	if Pool._active.get(node) == "core_pickup":
+		# node_added 早于生成方写入世界坐标。
+		_record_core.call_deferred(node)
+
+
+func _record_core(node: Node2D) -> void:
+	if node.position in [HOST_CORE_POS, CLIENT_CORE_POS, EXPIRED_CORE_POS]:
+		_core_pulses.append(node.position)
+
+
+func _collect_test_core(pid: int, pos: Vector2) -> void:
+	var drop = preload("res://scenes/entities/powerup.tscn").instantiate()
+	_main.add_child(drop)
+	drop.position = pos
+	drop.setup("core")
+	_main.register_powerup_entity(drop, "core")
+	if pid == 0:
+		drop._lifetime = 0.0
+		drop._physics_process(0.01)
+	else:
+		drop.start_magnet(_main._players[pid])
+		drop.collect()
+		drop.collect()
+		_main._on_network_powerup_collected(drop.entity_id, pid)
+
+
 func _wait_until(cond: Callable, timeout: float) -> bool:
 	var deadline: int = Time.get_ticks_msec() + int(timeout * 1000.0)
 	while Time.get_ticks_msec() < deadline:

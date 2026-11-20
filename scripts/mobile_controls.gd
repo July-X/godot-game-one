@@ -27,12 +27,11 @@ func _ready() -> void:
 
 func _recalc_joystick() -> void:
 	_joystick_center = _calc_joystick_center()
+	_base_node.position = _joystick_center - _base_node.size * 0.5
 	if _move_touch_id == -1:
 		_update_visual_knob(_joystick_center)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not (OS.has_feature("android") or OS.has_feature("ios")):
-		return
 	## 触屏控制（移动端）
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -84,7 +83,7 @@ func _calc_joystick_center() -> Vector2:
 func _build_visual_nodes() -> void:
 	_ui_root = Control.new()
 	_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_ui_root.mouse_filter = Control.MOUSE_FILTER_PASS
+	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_ui_root)
 	_base_node = Panel.new()
 	_base_node.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 双进程 headless 联机回归门禁。
 #
-#   tests/run_probe.sh [端口]
+#   tests/run_probe.sh [端口] [wide-host|wide-client]
 #
 # 做三件人工流程做不到的事：
 #   1. 自动收口两个进程的退出码（探针断言失败 → 非零退出）
@@ -15,6 +15,12 @@
 set -uo pipefail
 
 PORT="${1:-7788}"
+CASE="${2:-}"
+case "$CASE" in
+  "") SCENE=res://tests/lan_probe.tscn ;;
+  wide-host|wide-client) SCENE=res://tests/mixed_viewport_probe.tscn ;;
+  *) echo "用法: $0 [端口] [wide-host|wide-client]" >&2; exit 2 ;;
+esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"
 HOST_LOG="$LOG_DIR/host.log"
@@ -29,11 +35,11 @@ GODOT="${GODOT:-godot}"
 echo "[probe] port=$PORT log_dir=$LOG_DIR"
 cd "$ROOT" || exit 2
 
-"$GODOT" --headless --path . res://tests/lan_probe.tscn -- host "$PORT" \
+"$GODOT" --headless --path . "$SCENE" -- host "$PORT" "$CASE" \
 	> "$HOST_LOG" 2>&1 &
 HOST_PID=$!
 sleep 1
-"$GODOT" --headless --path . res://tests/lan_probe.tscn -- client "$PORT" \
+"$GODOT" --headless --path . "$SCENE" -- client "$PORT" "$CASE" \
 	> "$CLIENT_LOG" 2>&1 &
 CLIENT_PID=$!
 
@@ -75,7 +81,7 @@ if [ "$HOST_RC" -ne 0 ] || [ "$CLIENT_RC" -ne 0 ] \
 		cat "$HOST_LOG" "$CLIENT_LOG" | grep -A 2 "SCRIPT ERROR" | head -20
 	fi
 	KEEP_LOGS=1
-	echo "[probe] FAIL（日志保留在 $LOG_DIR）"
+	echo "[probe] FAIL（日志保留在 ${LOG_DIR}）"
 	exit 1
 fi
 

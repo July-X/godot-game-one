@@ -6,6 +6,12 @@ extends Node
 @onready var _player: CharacterBody2D = get_parent() as CharacterBody2D
 @onready var _sprite: Sprite2D = _player.get_node("Sprite2D") as Sprite2D if _player.has_node("Sprite2D") else null
 @onready var _engine_glow: Sprite2D = _player.get_node("EngineGlow") as Sprite2D if _player.has_node("EngineGlow") else null
+@onready var _original_exhaust: Texture2D = _engine_glow.texture if _engine_glow else null
+
+## 关闭后第一档也走原有等级贴图和程序化回退。
+const USE_SWIFT_HULL := true
+const SWIFT_EXHAUST := "res://assets/sprites/player/swift_exhaust.png"
+var _using_swift := false
 
 var _walk_cycle: float = 0.0
 var _invincible_timer: float = 0.0
@@ -75,13 +81,24 @@ func update_appearance() -> void:
 	var visual_tier: int = _get_visual_tier()
 	var shoot_level: int = GameState.get_shoot_level(_player.peer_id)
 	if _sprite:
-		_sprite.texture = SpriteFactory.create_player_sprite(visual_tier)
+		var hull: Texture2D
+		if USE_SWIFT_HULL and visual_tier == 1:
+			# peer_id 属于这艘飞机。加入端也把房主的远端机画成 P1。
+			var path := "res://assets/sprites/player/swift_p%d.png" % (1 if _player.peer_id == 1 else 2)
+			if ResourceLoader.exists(path):
+				hull = load(path)
+		_using_swift = hull != null
+		_sprite.texture = hull if _using_swift else SpriteFactory.create_player_sprite(visual_tier)
 		_apply_peer_tint()
 	if _engine_glow:
 		_engine_glow.visible = true
 		_engine_glow.position.y = 32.0
 		_base_breath_alpha = 0.6 + shoot_level * 0.2
 		_engine_glow.modulate = Color(1.0, 0.6, 0.2, _base_breath_alpha)
+		_engine_glow.texture = _original_exhaust
+		if _using_swift and ResourceLoader.exists(SWIFT_EXHAUST):
+			_engine_glow.texture = load(SWIFT_EXHAUST)
+			_engine_glow.modulate = Color("#c8b7fa") if _player.peer_id != 1 else Color("#9ef2ff")
 		## 尾焰纵向随射速等级变长：给"变强了"一个持续可见的视觉反馈，
 		## 比只在属性条上加数字更容易被玩家注意到
 		_glow_base_scale = Vector2(PLAYER_VISUAL_SCALE,
@@ -95,7 +112,7 @@ func update_appearance() -> void:
 func _apply_peer_tint() -> void:
 	if not _sprite:
 		return
-	if not NetworkManager.is_online():
+	if _using_swift or not NetworkManager.is_online():
 		_sprite.modulate = Color(1.0, 1.0, 1.0, 1.0)
 		return
 	if _player.peer_id == 1:

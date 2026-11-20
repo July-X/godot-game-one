@@ -29,6 +29,8 @@ var _active: Dictionary = {}
 func acquire(type_name: String, _scene: PackedScene) -> Node:
 	var node: Node = _scene.instantiate()
 	_active[node] = type_name
+	# 换场景可能先于特效到期，场景直接释放子节点时也要移除登记。
+	node.tree_exiting.connect(func(): _active.erase(node), CONNECT_ONE_SHOT)
 	return node
 
 ## 回收单个节点

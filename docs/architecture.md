@@ -16,7 +16,7 @@
 | 引擎 | Godot 4.6.2 |
 | 语言 | GDScript |
 | 渲染 | 2D（Node2D / CanvasLayer） |
-| 设计视口 | 1280×720，`window/stretch/mode="viewport"` |
+| 设计视口 | 1280×720，`canvas_items` 拉伸，`expand` 随画幅扩展 |
 | 纹理过滤 | 默认 0（最近邻，像素风） |
 | 平台 | PC（鼠标）+ Android（触屏） |
 | **项目主场景** | `scenes/ui/title_screen.tscn` |
@@ -81,6 +81,8 @@
 │   ├── lan_probe.tscn
 │   ├── curve_probe.gd         # 难度曲线门禁（数值不越界）
 │   ├── wave_probe.gd          # 波次编排门禁（节奏形状不塌陷）
+│   ├── combat_visual_probe.gd / .tscn   # 战斗画面、拾取时序、炮口和可选录帧
+│   ├── mixed_viewport_probe.gd / .tscn  # 双进程混合画幅边界用例
 │   ├── curve_probe.tscn / wave_probe.tscn
 ├── docs/
 ├── backup_3d/                 # 旧 3D 版本存档（已废弃）
@@ -217,7 +219,7 @@ main._process(delta)
 
 | 技能 | 触发 | 冷却 | 效果 |
 |------|------|------|------|
-| 环形散射 | `Space` / △ 按钮 | 15s | 全向环形发射 |
+| 环形散射 | `W` / △ 按钮 | 15s | 全向环形发射 |
 | 激光 | `Q` / ○ 按钮 | 10s | 激光弹，命中后闪电链溅射 |
 
 ### 5.5 护盾
@@ -227,7 +229,9 @@ main._process(delta)
 
 ### 5.6 外观演进
 
-飞机外形按 `shoot_level` 每 5 级切换一次，最多 5 档（`assets/sprites/player/variants/lv01.png`~`lv05.png`）。
+外形按 `GameState.level` 每 5 级升一档，最多 5 档。联机 P2 沿用原有的落后一档规则，最低为第一档。
+第一档由 `feedback_controller.gd` 按飞机的 `peer_id` 选贴图。房主和单机使用 P1 冰蓝单中线，加入者使用 P2 淡紫双标记。两端以同一规则绘制本机和队友。机体和短尾焰由 `scripts/generate_assets/make_swift.py` 生成。
+关闭 `USE_SWIFT_HULL` 或缺少对应机体贴图时，第一档会用原有外形。其余档位沿用 `variants/lv02.png` 至 `lv05.png`。
 
 ---
 
@@ -342,7 +346,7 @@ HUD 继承 `CanvasLayer`，**不能直接调用 `get_viewport_rect()`**（导出
 HUD 不生成）；需要视口尺寸时使用设计视口常量或 `get_viewport().get_visible_rect()`。
 
 显示内容：血条、属性条（扩散/速射/威力 + 护盾 + Boss 强化分组）、积分、等级、
-记分牌、实时排行榜、历史排行榜、技能冷却覆盖层、Boss 顶部阶段条、中心横幅、拾取 Toast。
+双人记分、技能冷却、Boss 阶段条和拾取短提示。历史榜在结算时填充。核心拾取的金色断环和获益文字都在敌弹下方，文字排在环外并避让屏幕边缘。
 
 ### 10.1 联机命名契约
 
@@ -356,15 +360,14 @@ func _peer_label(peer_id: int) -> String:
 ```
 
 ENet 分配的 Client peer_id 是随机 32 位数，**UI 任何位置都不得直接显示真实 peer_id**。
-该函数被记分牌、实时排行榜、历史排行榜共用。
+战斗中的双人记分和结算榜共用此函数。
 
 ### 10.2 技能按钮
 
 - PC：鼠标 CAPTURED 模式下通过 `_input` 坐标检测
 - 移动端：`gui_input` 捕获任意触点，支持多指同时操作（左手摇杆 + 右手按钮）
 - 冷却覆盖层统一由 `cooldown_overlay.gd` 提供两种形态（三角 / 圆形）
-- 采用 `window/stretch/mode="viewport"`，技能条必须用**设计视口**右下锚点定位，
-  不能用 Android 物理窗口尺寸计算，否则会被带出 1280×720 画布
+- 技能条锚定可视画布右下角。桌面每格宽 72 个设计像素，移动端保留 92.8 像素的触摸区。桌面快捷键见 §15，启动参数 `-- --fps` 可显示帧率。
 
 ---
 
@@ -609,8 +612,9 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 |------|-----|--------|
 | 移动 | 鼠标移动 | 左侧摇杆 |
 | 自动射击 | 始终开启 | 始终开启 |
-| 技能 1（环形散射） | `Space` / △ 按钮 | △ 按钮 |
+| 技能 1（环形散射） | `W` / △ 按钮 | △ 按钮 |
 | 技能 2（激光） | `Q` / ○ 按钮 | ○ 按钮 |
+| 闪避 | `Shift` | 闪避按钮 |
 | 释放鼠标 | `ESC` | — |
 | 全屏切换 | `F11` | — |
 
@@ -640,6 +644,9 @@ godot --headless --path . res://tests/wave_probe.tscn
 
 # 6. 移动端交互门禁（改 HUD 按钮 / 触摸 / 视口自适应后必跑）
 godot --headless --path . res://tests/mobile_check.tscn
+
+# 7. 战斗画面、拾取反馈和首档机体的炮口与碰撞
+godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 ```
 
 `run_probe.sh` 判定失败的条件（任一命中即 `exit 1`）：
@@ -671,10 +678,11 @@ godot --headless --path . res://tests/mobile_check.tscn
 > 12 级就超过玩家速度，而当时没有任何测试能发现——所有测试都在测联机与手感，
 > 没人测过数值曲线本身。
 
-探针断言共 **36 项**（host 22 + client 14），覆盖：
+常规双进程探针共 **40 项**（房主 24 项、加入端 16 项），覆盖：
 
 - 死亡 ≠ 断线：P1 被 Boss 终局激光内圈秒杀后，P2 会话存活、不回退单机
 - P1/P2 槽位命名：记分牌不暴露真实 ENet peer_id
+- 房主和加入端都能辨认两艘雨燕，拾取确认只给拾取者播放一次断环
 - 终局激光时序：蓄力 120 物理帧（2.0s）、推进阶段只检测尖端
 - 束外玩家零伤害：推进 3s + 持续 10s 全程逐帧采样 P2 血量
 - 精英在场时 Boss 触发进入 pending，杀精英后补发
@@ -777,8 +785,8 @@ godot --headless --path . res://tests/mobile_check.tscn
 | `_screen_span_x()` | 背景装饰散布范围 `1180` / `1500` |
 | `_center_camera_on_viewport()` | `main.tscn` 里 `Camera2D(640, 360)`，监听 `size_changed` |
 
-`BgColor` 已从固定矩形改为满屏锚点（`anchor_right/bottom = 1.0`）。
-`mobile_controls.gd` 的摇杆圆心改为贴左下角并监听 `size_changed`。
+`Backdrop` 位于独立 CanvasLayer（layer = −1），子节点 `BgColor` 锚定视口四边。世界中的视差星空在它上方，Boss 进退和两端染色共用 `_rpc_set_boss_bg`。移动端摇杆贴左下角并监听 `size_changed`。
+混合画幅的世界边界仍按各自视口计算。运行 `tests/run_probe.sh 7790 wide-host` 或 `wide-client` 可独立复现，目前窄端的队友可见性断言失败。后续共享战斗矩形方案见 `docs/Development_Plan.md`。
 
 ### 18.3 触摸入口
 
@@ -788,8 +796,7 @@ godot --headless --path . res://tests/mobile_check.tscn
 | 激光 / 散射 / 闪避 | `SkillBar` 三个 `Button` | 共用冷却遮罩与按下反馈 |
 | 移动 | `mobile_controls.gd` 摇杆 | `_unhandled_input`，按钮消费掉的触摸不会漏进摇杆 |
 
-HUD 的 CanvasLayer 在 MobileControls 之后添加，同 layer 下后加的先命中，
-所以按钮优先于摇杆区域。
+Android 和 iOS 入场时先创建摇杆，再创建 HUD 并绑定受本机控制的玩家。技能按钮接收触摸后，其余触摸交给摇杆的 `_unhandled_input`。桌面只创建 HUD。
 
 `hud.gd` 的 `_get_design_canvas_size()` 读**真实可视矩形**而不是
 ProjectSettings 的设计尺寸——后者只在"视口恰好等于设计尺寸"时成立。
