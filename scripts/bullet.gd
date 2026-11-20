@@ -2,8 +2,6 @@ extends Area2D
 const Palette = preload("res://scripts/palette.gd")
 ## 子弹 — 支持对象池复用
 
-var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
-
 var _direction: Vector2 = Vector2.ZERO
 var _speed: float = 600.0
 var _damage: float = 1.0
@@ -87,11 +85,9 @@ func _splash_damage(enemies: Array) -> void:
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
 			continue
 		if e is Node2D and (e as Node2D).global_position.distance_to(origin) <= _splash_radius:
+			var shielded := _hits_shield(e)
 			e.take_damage(_damage * 0.5, owner_peer_id)
-			var fx := Pool.acquire("hit_effect", _hit_effect_scene)
-			get_tree().current_scene.add_child(fx)
-			fx.global_position = (e as Node2D).global_position
-			fx.start()
+			Pool.spawn_hit((e as Node2D).global_position, shielded)
 
 func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0, owner_id: int = -1) -> void:
 	global_position = pos
@@ -199,17 +195,18 @@ func _on_body_entered(body: Node2D) -> void:
 	if _is_player_bullet:
 		## 多人：Client 子弹击中本地幽灵敌人 → 报告 Host
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
+			var shielded := _hits_shield(body)
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if body.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
 						attacker_peer = multiplayer.get_unique_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
-				_spawn_hit()
+				_spawn_hit(shielded)
 				_recycle()
 			else:
 				body.take_damage(_damage, owner_peer_id)
-				_spawn_hit()
+				_spawn_hit(shielded)
 				if _resolve_hit(body):
 					_recycle()
 	else:
@@ -238,31 +235,34 @@ func _on_area_entered(area: Area2D) -> void:
 		return
 	if _is_player_bullet:
 		if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
+			var enemy := area.get_parent()
+			var shielded := _hits_shield(enemy)
 			if NetworkManager.is_online() and not multiplayer.is_server():
-				var enemy = area.get_parent()
 				if enemy.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
 						attacker_peer = multiplayer.get_unique_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
-				_spawn_hit()
+				_spawn_hit(shielded)
 				_recycle()
 			else:
-				var enemy := area.get_parent()
 				enemy.take_damage(_damage, owner_peer_id)
-				_spawn_hit()
+				_spawn_hit(shielded)
 				if _resolve_hit(enemy):
 					_recycle()
 
-func _spawn_hit() -> void:
+func _hits_shield(target: Node) -> bool:
+	return target.has_method("has_impact_shield") and target.has_impact_shield()
+
+func _spawn_hit(shielded := false) -> void:
 	## 日常命中的反馈：极轻的震屏 + 命中音。
 	## 这里最容易犯的错是给太重——自动射击每秒钟能命中十几次，
 	## 一旦每次都震，连击时画面会持续抖，弹幕反而看不清。
 	## 所以强度压到 0.06，并把"手感"主要交给命中音的连击升调。
 	var scene := get_tree().current_scene
 	if scene != null and scene.has_method("emit_hit_feedback"):
-		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, true)
-	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
-	get_tree().current_scene.add_child(hit)
-	hit.global_position = global_position
-	hit.start()
+		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, _is_player_bullet and not shielded)
+	Pool.spawn_hit(global_position, shielded)
+	if _is_player_bullet and NetworkManager.is_online() and multiplayer.is_server():
+		if scene and scene.has_method("register_projectile_impact"):
+			scene.register_projectile_impact(global_position, shielded)

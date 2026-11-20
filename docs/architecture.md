@@ -82,6 +82,8 @@
 │   ├── curve_probe.gd         # 难度曲线门禁（数值不越界）
 │   ├── wave_probe.gd          # 波次编排门禁（节奏形状不塌陷）
 │   ├── combat_visual_probe.gd / .tscn   # 战斗画面、拾取时序、炮口和可选录帧
+│   ├── combat_feedback_probe.gd / .tscn # 固定事件的有声回放和反馈门禁
+│   ├── feedback_lan_probe.gd / .tscn    # 双端两次破盾、销毁及消息重发
 │   ├── mixed_viewport_probe.gd / .tscn  # 双进程混合画幅边界用例
 │   ├── curve_probe.tscn / wave_probe.tscn
 ├── docs/
@@ -91,12 +93,14 @@
 
 ---
 
+加入端子弹保持纯渲染。房主在已有实体位置包中最多附带一个已结算的子弹落点，坐标与盾面标记共 3 个浮点数。精英破盾提示由可靠护盾同步与显式破盾消息共用的状态生成。只有战斗击毁的销毁通知会在远端播放爆炸，清场继续静默。
+
 ## 3. Autoload 全局系统（10 个）
 
 | Autoload | 脚本 | 职责 |
 |----------|------|------|
 | `GameState` | `game_state.gd` | 全局状态真理源，信号广播中心 |
-| `SFX` | `sfx_manager.gd` | 程序化 8-bit 音效播放器池 |
+| `SFX` | `sfx_manager.gd` | 程序化音源，8 个开火声部，12 个共享声部。玩家受击、激光预警、破盾、精英击毁各用 1 个专用声部 |
 | `BGM` | `bgm_manager.gd` | 程序化 BGM 生成与循环 |
 | `SpriteFactory` | `sprite_factory.gd` | 程序化贴图生成与缓存 |
 | `Leaderboard` | `leaderboard.gd` | `ConfigFile` 排行榜持久化 |

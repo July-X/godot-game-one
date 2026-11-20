@@ -31,6 +31,9 @@ func get_network_health() -> float:
 func get_network_max_health() -> float:
 	return float(_max_health)
 
+func has_impact_shield() -> bool:
+	return _shield > 0
+
 func get_network_shield() -> float:
 	return float(_shield)
 
@@ -43,13 +46,15 @@ func apply_network_health(hp: float, max_hp: float) -> void:
 	_update_health_bar()
 
 func apply_network_shield(shield: float, max_shield: float) -> void:
-	var was_shielded := _shield > 0
+	var previous := _shield
 	_max_shield = max(int(max_shield), 1)
 	_shield = clampi(int(shield), 0, _max_shield)
 	if _shield > 0:
-		_shield_break_visual_played = false
-	if _is_network_ghost and was_shielded and _shield <= 0:
-		_play_shield_break_visual()
+		_shield_break_played = false
+		if _is_network_ghost and _shield < previous:
+			SFX.play_shield_hit()
+	if _is_network_ghost and previous > 0 and _shield <= 0:
+		_play_shield_break_feedback()
 		shield_broken_window_started.emit()
 	_update_shield_visual_color(0.45)
 	_update_shield_bar()
@@ -70,13 +75,12 @@ var _health_at_phase_change: bool = false
 var _close_escape_cooldown: float = 0.0
 var _phase_b_timer: float = 0.0
 var _phase_c_drone_timer: float = 1.6
-var _shield_break_visual_played: bool = false
+var _shield_break_played := false
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
-var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _shield_shatter_scene = preload("res://scripts/shield_shatter_burst.gd")
 
 @onready var _sprite: Sprite2D = $Sprite2D
@@ -93,7 +97,7 @@ func _ready() -> void:
 	_hide_square_shield_sprite()
 	_shield_circle = Node2D.new()
 	_shield_circle.set_script(preload("res://scripts/shield_circle.gd"))
-	_shield_circle.z_index = 3
+	_shield_circle.z_index = -1
 	_shield_circle.position = Vector2(0, 0)
 	add_child(_shield_circle)
 	_shield_circle.setup(80.0, Color(1.0, 0.7, 0.15, 0.5))
@@ -114,7 +118,7 @@ func set_difficulty(mult: float) -> void:
 	_max_health = _health
 	_shield = int(total_hp * 1.0 * mult)
 	_max_shield = _shield
-	_shield_break_visual_played = false
+	_shield_break_played = false
 	BASE_SPEED = 50.0 * mult
 	CHASE_SPEED = 65.0 * mult
 
@@ -253,7 +257,7 @@ func _attack_narrow_fan() -> void:
 	for i in range(count):
 		var a: float = start_a + step * i
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 28, a, 2.0, 520.0, Color(1.0, 0.42, 0.2, 1.0))
-	SFX.play_enemy_death()
+	SFX.play_enemy_volley()
 
 func _attack_targeted_burst() -> void:
 	if not _target or not is_instance_valid(_target):
@@ -264,7 +268,7 @@ func _attack_targeted_burst() -> void:
 		var spread_offset: float = deg_to_rad(randf_range(-4.0, 4.0))
 		var a: float = angle + spread_offset
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 28, a, 3.0, 620.0, Color(1.0, 0.18, 0.15, 1.0))
-	SFX.play_shoot()
+	SFX.play_enemy_volley()
 
 func _attack_ring() -> void:
 	var count: int = 14
@@ -273,7 +277,7 @@ func _attack_ring() -> void:
 			continue
 		var a: float = float(i) * TAU / float(count)
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 28, a, 1.0, 380.0, Color(1.0, 0.62, 0.35, 0.95))
-	SFX.play_explosion()
+	SFX.play_enemy_volley()
 	var scene_d := get_tree().current_scene
 	if scene_d != null and scene_d.has_method("emit_hit_feedback"):
 		scene_d.emit_hit_feedback(scene_d.SHAKE_ELITE_DEATH, 0.12, false)
@@ -343,7 +347,8 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 		return
 	if _shield > 0:
 		_shield -= amount
-		_spawn_shield_hit_effect()
+		if _shield > 0:
+			SFX.play_shield_hit()
 		if _shield_circle: _shield_circle.set_color(Color(1.0, 0.9, 0.5, 0.9))
 		_flash_shield_bar()
 		_update_shield_bar()
@@ -369,19 +374,8 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	if _health <= 0:
 		_die(killer_peer_id)
 
-func _spawn_shield_hit_effect() -> void:
-	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
-	get_tree().current_scene.add_child(hit)
-	hit.global_position = global_position
-	hit.start()
-
 func _shield_break_effect() -> void:
-	SFX.play_explosion()
-	_play_shield_break_visual()
-	for i in range(6):
-		var exp = _explosion_scene.instantiate()
-		get_tree().current_scene.add_child(exp)
-		exp.global_position = global_position + Vector2(randf_range(-30, 30), randf_range(-30, 30))
+	_play_shield_break_feedback()
 	_shield_regen_timer = SHIELD_REGEN_TIME
 	if _shield_circle:
 		_shield_circle.set_color(Color(0, 0, 0, 0))
@@ -389,30 +383,21 @@ func _shield_break_effect() -> void:
 
 func force_network_shield_destroyed() -> void:
 	_shield = 0
-	_play_shield_break_visual()
+	_play_shield_break_feedback()
 	_update_shield_visual_color(0.0)
 	_update_shield_bar()
 
-func _play_shield_break_visual() -> void:
-	if _shield_break_visual_played:
+## 可靠快照和显式破盾通知都可能先到，两端共用一次表现。
+func _play_shield_break_feedback() -> void:
+	if _shield_break_played:
 		return
-	_shield_break_visual_played = true
-	_spawn_shield_shatter_burst()
-
-func _spawn_shield_shatter_burst() -> void:
-	_destroy_shield_circle()
-	var burst := Node2D.new()
-	burst.set_script(_shield_shatter_scene)
+	_shield_break_played = true
+	SFX.play_shield_break()
+	var burst = _shield_shatter_scene.new()
+	burst.z_index = -1
 	get_tree().current_scene.add_child(burst)
 	burst.global_position = global_position
-	burst.z_index = 8
-	if burst.has_method("setup"):
-		burst.setup(78.0, Color(1.0, 0.72, 0.18, 0.95), 22)
-
-func _destroy_shield_circle() -> void:
-	if _shield_circle and is_instance_valid(_shield_circle):
-		_shield_circle.queue_free()
-	_shield_circle = null
+	burst.setup(78.0, Color(1.0, 0.72, 0.18, 0.85), 22, true)
 
 func _update_health_bar() -> void:
 	if _health_bar:
@@ -465,16 +450,20 @@ func _die(killer_peer_id: int = -1) -> void:
 	elite_died.emit()
 	GameState.add_kill(killer_peer_id)
 	GameState.add_score(1000 * GameState.level, killer_peer_id)
-	call_deferred("_spawn_explosion")
+	call_deferred("play_death_feedback")
 	call_deferred("_spawn_rewards")
 	queue_free()
 
-func _spawn_explosion() -> void:
-	for i in range(4):
+func play_death_feedback() -> void:
+	for i in 4:
 		var exp = _explosion_scene.instantiate()
+		if i == 0:
+			exp.setup_combat(0.25, 1.05, 73.0)
+		else:
+			exp.setup_combat(0.25, 0.52)
 		get_tree().current_scene.add_child(exp)
-		exp.global_position = global_position + Vector2(randf_range(-40, 40), randf_range(-40, 40))
-	SFX.play_explosion()
+		exp.global_position = global_position + Vector2(randf_range(-17, 17), randf_range(-17, 17))
+	SFX.play_elite_death()
 
 func _spawn_rewards() -> void:
 	var types: Array[String] = ["heal", "bomb", "spread", "speed", "heal", "power", "heal", "power", "speed", "spread", "heal", "bomb"]

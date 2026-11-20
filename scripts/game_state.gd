@@ -191,8 +191,6 @@ func _rpc_play_sfx(sound: String) -> void:
 		"player_hurt":
 			if SFX and SFX.has_method("play_player_hurt"):
 				SFX.play_player_hurt()
-			if multiplayer.is_server():
-				_rpc_play_sfx.rpc("player_hurt")
 		"explosion":
 			if SFX and SFX.has_method("play_explosion"):
 				SFX.play_explosion()
@@ -444,6 +442,9 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 			max_health = s.max_health
 			health_changed.emit(current_health, max_health)
 		SFX.play_player_hurt()
+		# P2 的扣血在房主结算，沿用音效消息通知受击者。
+		if NetworkManager.is_online() and multiplayer.is_server() and pid in NetworkManager.connected_peers:
+			_rpc_play_sfx.rpc_id(pid, "player_hurt")
 		if int(s.current_health) <= 0 and _is_local_peer(pid) and not NetworkManager.is_online():
 			game_over.emit(score, level)
 	if int(s.current_health) <= 0:

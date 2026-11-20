@@ -9,6 +9,12 @@
 - 范围规则：先保证联机与战斗节奏稳定，再谈资产替换
 - 主原则：**零外部依赖**——引擎刚装好、仓库刚 clone 下来就能跑出完整画面与音效
 
+## 战斗反馈试听
+
+同一场景可运行 `godot --headless --fixed-fps 60 res://tests/combat_feedback_probe.tscn` 验证，图形模式用 `--write-movie /已有目录/frame.png` 导出逐帧画面和立体声 WAV。录制包含主炮、两次破盾、精英击毁，以及夹在密集命中间的玩家受击和 Boss 激光蓄力。对照时用同一背景音乐、事件帧和播放电平，静音时检查火花、击毁轮廓及敌弹遮挡。
+
+双进程运行 `bash tests/run_probe.sh 7855 feedback` 可核对房主及加入端的命中、两次破盾、击毁和 P2 受击。精英当前的回盾计时器只重置计时，用例通过既有护盾快照注入正值，以覆盖第二次破盾。无窗口实时时钟检查可运行 `godot --headless res://tests/combat_feedback_probe.tscn -- realtime audio-tail`，等待受击声在连续开火中自然播完。
+
 ## 视觉方向
 
 - **基础参考**：Contra / Metal Slug 时代的街机可读性

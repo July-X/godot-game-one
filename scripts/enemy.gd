@@ -275,7 +275,11 @@ func _spawn_explosion() -> void:
 	var scene := get_tree().current_scene
 	if scene != null and scene.has_method("add_shake"):
 		scene.add_shake(scene.SHAKE_ENEMY_DEATH)
+	play_death_feedback()
+
+func play_death_feedback() -> void:
 	var exp = _explosion_scene.instantiate()
+	exp.setup_combat(0.15, 0.82, 23.0)
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
 	SFX.play_enemy_death()
