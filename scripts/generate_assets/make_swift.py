@@ -5,6 +5,38 @@ from PIL import ImageDraw
 from generate_core_assets import OUTPUT_DIR, new_sprite, save_image
 
 
+def finish_first_hull(image, outline, shadow, mid, lit, ice):
+    # Keep both pilots' silhouette, barrel tips and engine sockets on the same grid.
+    mask = image.getchannel("A")
+    draw = ImageDraw.Draw(image)
+    for mirror in (False, True):
+        def facet(points, color):
+            draw.polygon([(47 - x if mirror else x, y) for x, y in points], fill=color)
+
+        facet([(2, 38), (7, 30), (18, 22), (21, 19), (19, 26), (10, 32)], lit if not mirror else mid)
+        facet([(4, 36), (18, 25), (20, 25), (17, 28), (8, 34)], mid if not mirror else shadow)
+        facet([(15, 7), (16, 7), (16, 10), (15, 10)], mid)
+        facet([(17, 35), (20, 34), (21, 37), (21, 40), (19, 42), (16, 39)], shadow)
+        facet([(17, 36), (20, 36), (20, 40), (17, 40)], outline)
+        facet([(17, 36), (20, 36), (20, 37), (17, 37)], mid)
+        facet([(18, 39), (20, 39), (20, 40), (18, 40)], lit)
+
+    # One lit nose ridge and an offset canopy reflection give the wings a clear front.
+    draw.polygon([(23, 2), (24, 3), (27, 16), (25, 19), (20, 18), (21, 11)], shadow)
+    draw.polygon([(23, 2), (24, 4), (24, 13), (21, 18), (21, 12)], lit)
+    draw.line([(23, 3), (22, 8), (21, 14)], fill=ice)
+    draw.polygon([(23, 12), (25, 12), (27, 17), (27, 23), (24, 26), (20, 24), (20, 18)], outline)
+    draw.polygon([(23, 14), (25, 15), (26, 19), (25, 22), (22, 23), (21, 20)], mid)
+    draw.polygon([(23, 14), (25, 15), (24, 18), (22, 21), (21, 19)], lit)
+    draw.line([(23, 15), (22, 17)], fill=ice)
+    draw.polygon([(20, 25), (24, 24), (28, 25), (27, 31), (25, 35), (22, 35), (20, 31)], outline)
+    draw.polygon([(23, 25), (26, 26), (26, 31), (24, 34), (22, 33), (22, 29)], shadow)
+    # Texture y=29..30 sits at the collision center (0, 8) with the existing 1.45× scale.
+    draw.rectangle((23, 27, 24, 33), fill=lit)
+    draw.rectangle((23, 29, 24, 30), fill="#edfcff")
+    image.putalpha(mask)
+
+
 def hull(second_pilot):
     image = new_sprite(48, 48)
     draw = ImageDraw.Draw(image)
@@ -38,7 +70,7 @@ def hull(second_pilot):
         draw.rectangle((19, 28, 20, 30), fill=ice)
         draw.rectangle((27, 28, 28, 30), fill=ice)
     else:
-        draw.rectangle((23, 27, 24, 33), fill=ice)
+        finish_first_hull(image, outline, shadow, mid, lit, ice)
     return image
 
 
