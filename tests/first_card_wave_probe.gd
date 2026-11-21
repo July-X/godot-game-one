@@ -22,14 +22,15 @@ var min_bullet_gap := INF
 var path := PackedVector2Array()
 var health := 0
 var low_health := 0
-var chosen_by_key := false
-var sending_key := false
+var hint_ticks := 0
+var hint_clear := true
+var capture_dir := ""
 
 func _ready() -> void:
 	# Headless 的默认窗口是方形，固定逻辑视口才能与录屏逐帧对照。
 	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
-	get_window().content_scale_size = Vector2i(1280, 720)
+	get_window().content_scale_size = Vector2i(1600 if "--wide" in OS.get_cmdline_user_args() else 1280, 720)
 	process_physics_priority = -20
 	call_deferred("_start")
 
@@ -40,16 +41,18 @@ func _start() -> void:
 		get_tree().quit(2)
 		return
 	card = args[0]
-	route = args[1] if args.size() > 1 else ROUTES[card]
+	route = args[1] if args.size() > 1 and not args[1].begins_with("--") else ROUTES[card]
 	if route not in ROUTES.values():
 		get_tree().quit(2)
 		return
 	seed(1121)
+	for arg in args:
+		if arg.begins_with("--capture="):
+			capture_dir = arg.trim_prefix("--capture=")
 	start = Engine.get_physics_frames()
 	health = GameState.get_current_health(1)
 	low_health = health
 	_check("fixed_offer", UpgradeDraft.get_draft(1).get("cards") == ["pierce", "splash", "graze_focus"])
-	UpgradeDraft.card_chosen.connect(func(_pid, id, _index): chosen_by_key = sending_key and id == card)
 	get_tree().node_added.connect(_observe_birth)
 	trial._player.get_node("GrazeArea").area_entered.connect(func(area):
 		if area.is_in_group("enemy_bullets"):
@@ -69,13 +72,15 @@ func _physics_process(_delta: float) -> void:
 			var key := InputEventKey.new()
 			key.keycode = KEYS[card]
 			key.pressed = true
-			sending_key = true
 			get_viewport().push_input(key)
-			sending_key = false
 			trial._player.set_process_unhandled_input(false)
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		return
+	_trace_frame(tick)
 	if tick < trial.END_TICK:
+		_observe_hint()
+		if tick == (300 if card == "graze_focus" else 120):
+			_capture_action()
 		_steer(tick)
 		path.append(trial._player.position.snapped(Vector2(.01, .01)))
 		min_x = minf(min_x, trial._player.position.x)
@@ -86,6 +91,41 @@ func _physics_process(_delta: float) -> void:
 			min_bullet_gap = minf(min_bullet_gap, b.position.distance_to(trial._player.position))
 	else:
 		_finish()
+
+func _trace_frame(tick: int) -> void:
+	var p = trial._player
+	var state: Array = [p.position, p.rotation, p.velocity, GameState.get_current_health(1), GameState.get_shield_layers(1), GameState.total_kills]
+	for ship in trial.squad:
+		state.append([ship.position, ship.health] if is_instance_valid(ship) else null)
+	for group in ["player_bullets", "enemy_bullets"]:
+		var shots: Array = []
+		for shot in get_tree().get_nodes_in_group(group):
+			shots.append([shot.position, shot._direction, shot._speed, shot._damage, shot._pierced.size()])
+		state.append(shots)
+	print("[FRAME] ", tick, " ", var_to_bytes(state).hex_encode().sha256_text())
+
+func _observe_hint() -> void:
+	var hint: Label = trial._action_hint
+	if not hint.visible:
+		return
+	hint_ticks += 1
+	var ink := hint.get_global_rect().grow(2.0)
+	hint_clear = hint_clear and get_viewport().get_visible_rect().encloses(ink)
+	var draft: Control = trial._hud._draft_panel
+	hint_clear = hint_clear and (not draft.visible or not ink.intersects(draft.get_global_rect()))
+	for group in ["player", "enemies", "enemy_bullets"]:
+		for unit in get_tree().get_nodes_in_group(group):
+			var sprite := unit.get_node("Sprite2D") as Sprite2D
+			hint_clear = hint_clear and not ink.intersects(sprite.get_global_transform_with_canvas() * sprite.get_rect())
+	# 中央文字在试飞右侧扇弹起点以及左路出口之间。
+	hint_clear = hint_clear and ink.position.x > trial.field.x * .38 and ink.end.x < trial.field.x * .59
+
+func _capture_action() -> void:
+	if capture_dir.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	await RenderingServer.frame_post_draw
+	var frame := get_viewport().get_texture().get_image()
+	_check("captured_action", frame.save_png(capture_dir.path_join(card + ".png")) == OK)
 
 func _steer(tick: int) -> void:
 	var p = trial._player
@@ -160,12 +200,16 @@ func _on_kill(ship: Node2D, i: int) -> void:
 
 func _finish() -> void:
 	set_physics_process(false)
-	_check("choice_from_key", chosen_by_key)
+	_check("choice_from_key", UpgradeDraft.get_draft(1).get("source") == "key")
 	_check("one_card", GameState.get_card_stacks(1) == {card: 1})
 	_check("fixed_wave", orders == 6 and fans == 9)
 	_check("one_credit_per_kill", GameState.total_kills == kills.size())
 	_check("end_menu", trial.get_node("TrialUI/Options/Retry").is_visible_in_tree())
 	_check("survived_without_hit", low_health == health)
+	var window: Dictionary = trial.ACTION_HINTS.get(card, {}) if "--trial-hint" in OS.get_cmdline_user_args() else {}
+	var expected_ticks := int(window.end) - int(window.start) if not window.is_empty() else 0
+	_check("action_hint_window", hint_ticks == expected_ticks and not trial._action_hint.visible)
+	_check("action_hint_clear_of_targets_and_draft", hint_clear)
 	var radius: float = trial._player.get_node("GrazeArea/CollisionShape2D").shape.radius
 	_check("graze_geometry", radius == (42.0 if card == "graze_focus" else 34.0))
 	if route == "column" and card == "pierce":

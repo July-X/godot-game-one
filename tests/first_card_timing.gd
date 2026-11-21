@@ -13,7 +13,6 @@ var start_tick := 0
 var next_order := 0
 var director_births := 0
 var opened_tick := -1
-var scripted_key := false
 var timeout_mode := false
 var first_choice := false
 var elite_seen := false
@@ -77,13 +76,11 @@ func _opened(_pid: int, cards: Array) -> void:
 	if observed_trial and GameState.level == 2:
 		failed = failed or GameState.total_kills != 10 or cards != ["pierce", "splash", "graze_focus"]
 
-func _chosen(_pid: int, card: String, index: int) -> void:
-	var reason := "unattributed"
-	if scripted_key:
-		reason = "script_key"
-	elif timeout_mode and _tick() - opened_tick >= 599:
-		reason = "timeout"
-	if reason == "unattributed":
+func _chosen(pid: int, card: String, index: int) -> void:
+	var source: String = UpgradeDraft.get_draft(pid).source
+	var reason := "script_key" if source == "key" else source
+	var expected := "timeout" if timeout_mode else "key"
+	if source != expected or (timeout_mode and _tick() - opened_tick < 599):
 		failed = true
 	if not first_choice:
 		first_choice_tick = _tick()
@@ -111,9 +108,7 @@ func _physics_process(_delta: float) -> void:
 		var key := InputEventKey.new()
 		key.keycode = choice_key
 		key.pressed = true
-		scripted_key = true
 		get_viewport().push_input(key)
-		scripted_key = false
 
 func _process(_delta: float) -> void:
 	if trace == null:

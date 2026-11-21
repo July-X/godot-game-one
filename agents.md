@@ -154,7 +154,7 @@ godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
 改 Boss 护盾、掉落或奖励同步时，运行 `tests/run_probe.sh 7788 boss`。单人实弹、炸弹、同帧结算与换场可从 `tests/boss_lifecycle_probe.tscn` 独立复跑。改母舰画面或顶部生命条时，再运行 `tests/battle_presentation_probe.tscn`。[画面和联机复跑方法](docs/art_audio_pipeline.md#裂隙母舰可读性)
 
-改首卡或试飞敌阵时，运行 `python3 tests/run_first_card_probe.py /tmp/first-card-results`。八组冻结轨迹须逐架、逐弹一致，同一路线须逐帧走位一致。普通导演和试飞的完整流程均要区分按键、超时，跑到首只 Boss 实际受伤。[验证口径](docs/first_card_trial.md)
+改首卡或试飞敌阵时，运行 `python3 tests/run_first_card_probe.py /tmp/first-card-results`。同画幅同路线的 A/B 须逐架、逐弹、逐帧走位一致。普通导演和试飞均须覆盖按键、超时，并跑到首只 Boss 实际受伤。提示改动还要覆盖 16:9、20:9 的双指选卡和重试。[验证口径](docs/first_card_trial.md)
 
 ## 7. 工作约束
 

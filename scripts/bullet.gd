@@ -1,4 +1,6 @@
 extends Area2D
+
+signal card_effect(card: String, target: Node2D)
 const Palette = preload("res://scripts/palette.gd")
 ## 子弹 — 支持对象池复用
 
@@ -70,6 +72,8 @@ func _resolve_hit(target: Node) -> bool:
 	if _pierced.has(target):
 		return false
 	_pierced.append(target)
+	if _pierced.size() == 2 and card_effect.has_connections():
+		card_effect.emit("pierce", target)
 	if _splash_radius > 0.0:
 		_splash_damage(get_tree().get_nodes_in_group("enemies"))
 	if _pierce_left > 0:
@@ -86,7 +90,11 @@ func _splash_damage(enemies: Array) -> void:
 			continue
 		if e is Node2D and (e as Node2D).global_position.distance_to(origin) <= _splash_radius:
 			var impact := _impact_for(e)
+			var observed := card_effect.has_connections() and not _pierced.has(e) and e.is_in_group("ordinary_enemies")
+			var before: int = e.health if observed else 0
 			e.take_damage(_damage * 0.5, owner_peer_id)
+			if observed and e.health < before:
+				card_effect.emit("splash", e)
 			Pool.spawn_hit((e as Node2D).global_position, impact)
 
 func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0, owner_id: int = -1) -> void:

@@ -34,7 +34,7 @@ scenes/ui/title_screen.tscn   ← 项目主场景
 └── 联机 → scenes/ui/lobby.tscn → scenes/main.tscn
 ```
 
-「首卡试飞」从一级起飞。二级选卡后，可以用左侧纵队试贯穿，等右队聚拢试溅射，或沿扇弹外侧试擦弹。打完这一波继续本局。[操作、逐帧记录与复跑命令](docs/first_card_trial.md)
+「首卡试飞」从一级起飞。二级选卡后，可以用左侧纵队试贯穿，等右队聚拢试溅射，或沿扇弹外侧试擦弹。打完这一波继续本局。[操作、逐帧记录与复跑命令](docs/first_card_trial.md) · [行动提示试玩单](docs/first_card_playtest.md)
 
 ## 核心循环
 

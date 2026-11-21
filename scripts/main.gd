@@ -1445,11 +1445,11 @@ func _input(event: InputEvent) -> void:
 		if my_pid > 0 and UpgradeDraft.has_draft(my_pid):
 			match event.keycode:
 				KEY_1, KEY_KP_1:
-					UpgradeDraft.choose_card(my_pid, 0)
+					UpgradeDraft.choose_card(my_pid, 0, "key")
 				KEY_2, KEY_KP_2:
-					UpgradeDraft.choose_card(my_pid, 1)
+					UpgradeDraft.choose_card(my_pid, 1, "key")
 				KEY_3, KEY_KP_3:
-					UpgradeDraft.choose_card(my_pid, 2)
+					UpgradeDraft.choose_card(my_pid, 2, "key")
 
 	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
 		if OS.has_feature("android") or OS.has_feature("ios"):

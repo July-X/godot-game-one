@@ -15,6 +15,34 @@
 
 八组测试都核对了实际入场的六架敌机和九发扇弹。同路线的两种卡还逐帧比对了玩家位置，精度为 0.01 像素。四种走法均由脚本给出。是否看懂卡面、选卡后会不会自行改变走位，要靠真人试玩观察。
 
+## 行动提示对照
+
+A 沿用现有卡面和流程。B 由 `--trial-hint` 开启。顶部中央只有一行文字，位于战斗物体下层，随本机安全区定位。贯穿和溅射在确认后第 1 至 179 帧可见。擦弹在第 188 至 361 帧可见，跨过原有扇弹预告和第一轮发射。威力卡无提示，重试从原选卡画面开始。
+
+| 卡 | B 版行动提示 |
+| --- | --- |
+| 贯穿弹芯 | 去左侧对齐纵队 |
+| 溅射弹头 | 去右侧等敌机靠拢 |
+| 擦弹专注 | 等扇弹，沿弹幕外缘飞 |
+
+试飞可用 `--trial-log` 输出 `[TRIAL_EVENT]`。以确认帧为零，记录选择来源 `key`、`tap` 或 `timeout`，以及提示起止、首次结果和本波结束。贯穿以同一实弹经过两架不同靶机为准，溅射以原伤害分支确实扣到邻机的生命为准，擦弹读实际新增层数。擦弹的固定边缘航迹还与同路威力卡比对。失血累计从确认算起，治疗不冲销已失去的生命，护盾损失另按原规则处理。结束记录的 `result_tick=-1` 代表这波没有观察到特有效果。事件留在本机终端，真人记录可用[首张卡试玩单](first_card_playtest.md)。
+
+### 本机结果
+
+Mac 上用 Godot 4.6.2 复跑。16:9 的原八组 A/B 对照共 4,400 个战斗帧，20:9 的四组共 2,200 帧。逐帧核对玩家位置、朝向、速度、生命值、护盾、击杀数、靶机位置与生命值，以及双方弹体位置、方向、弹速和命中状态。12 对全部一致，六架靶机和九发扇弹在每次运行中都按原表出生。16:9 的 A 与 `56c5c29` 的八组出生、航迹和结果摘要逐行一致。
+
+| 首次结果 | 16:9，A 与 B | 20:9，A 与 B |
+| --- | --- | --- |
+| 同一发贯穿两架 | 第 137 帧，2.28 秒 | 第 145 帧，2.42 秒 |
+| 溅射扣到邻机生命 | 第 225 帧，3.75 秒 | 第 225 帧，3.75 秒 |
+| 擦弹新增一层 | 第 479 帧，7.98 秒 | 第 481 帧，8.02 秒 |
+
+这些固定走法的首次结果与整波累计失血均为零。真实 Godot 窗口的八对截图中，三张构筑卡的像素差落在顶部文字范围，威力卡的两版逐像素相同。两种画幅的模拟触屏各通过 13 项图形验证，含按住摇杆点卡、左右移动、松手、重试和离场。累计失血另用可控的两点扣血后治疗复验。
+
+普通局与试飞各自的按键、超时四条流程，加上 B 版试飞的两条流程，均到达首只 Boss 的首次实弹受伤。B 版超时实例在第 415 帧开卡，第 1014 帧自动选贯穿，日志记为 `timeout`。完整流程继续使用原导演和实时时间机制。常规联机 40/40、反馈联机 25/25、桌面移动端交互门禁 13/13，项目导入和主场景启动通过。
+
+所有走位与输入由脚本驱动。真人能否在看到提示后找对时机、自己说出效果，留给试玩。手机触屏尚未实测。
+
 ## 原版首卡、精英和 Boss 的时间
 
 普通局的追加采样以 `53c0b65` 为起点，已追踪到首只 Boss 的死亡信号。每局从一级开始，记录候选及选择方式。下一波里分别核对实弹带上了哪张卡、何时命中队员，以及何时出现这张卡才有的效果。选卡时战斗继续，展示到确认的时间单列。首领的入场等待、可交火时间、护盾免伤和提前死亡均有逐帧记录。[首只 Boss 采样与试玩单](boss_pace_baseline.md)
@@ -48,8 +76,22 @@
 godot --path . res://scenes/first_card_trial.tscn
 godot --path . res://scenes/first_card_trial.tscn -- --from-draft
 
-# 八组同阵对照，加上普通局和试飞各自的按键、超时流程
+# 原八组路线逐对比较 A/B，宽屏复跑四组，另跑按键、超时、触摸和重试
 python3 tests/run_first_card_probe.py /tmp/first-card-results
+
+# 同一起点的短试玩，分别从选卡开始
+godot --path . res://scenes/first_card_trial.tscn -- --from-draft --trial-log
+godot --path . res://scenes/first_card_trial.tscn -- --from-draft --trial-log --trial-hint
+
+# 宽屏同构图截图，输出目录需已存在。A 省去 --trial-hint。
+godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync \
+  --audio-driver Dummy res://tests/first_card_wave_probe.tscn -- graze_focus --wide \
+  --trial-hint --trial-log --capture=/tmp/first-card-capture
+
+# 同画幅验证模拟双指输入和重试
+godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync \
+  --audio-driver Dummy res://tests/first_card_controls_probe.tscn -- --wide --from-draft \
+  --trial-hint --trial-log --capture=/tmp/first-card-touch.png
 
 # 单独录制一条。可将 pierce 换成 splash、graze_focus 或 power
 godot --path . --windowed --resolution 1280x720 --fixed-fps 60 \

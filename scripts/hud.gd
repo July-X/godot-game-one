@@ -238,7 +238,7 @@ func _update_draft_title() -> void:
 	_draft_title.text = "本机升级 · %s · 超时取第一张" % action if _draft_prompt.is_empty() else _draft_prompt
 
 func _on_draft_card_pressed(index: int) -> void:
-	UpgradeDraft.choose_card(_local_peer_id(), index)
+	UpgradeDraft.choose_card(_local_peer_id(), index, "tap")
 
 func _on_draft_card_touch(event: InputEvent, button: Button, index: int) -> void:
 	if _accept_touch_press(event, button):

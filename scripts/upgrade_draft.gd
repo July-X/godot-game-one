@@ -136,11 +136,11 @@ func _process(delta: float) -> void:
 		if float(d.left) <= 0.0:
 			## 超时自动选第一张。必须要有兜底：否则玩家没看到/没空选卡
 			## 时会被永久卡住，拿不到升级收益。
-			choose_card(int(peer_id), 0)
+			choose_card(int(peer_id), 0, "timeout")
 
 
-## 玩家按键选卡。index 越界或已选过都忽略。
-func choose_card(peer_id: int, index: int) -> bool:
+## index 越界或已选过都忽略。来源供观察者在 card_chosen 中读取。
+func choose_card(peer_id: int, index: int, source := "direct") -> bool:
 	if not _drafts.has(peer_id):
 		return false
 	var d: Dictionary = _drafts[peer_id]
@@ -150,6 +150,7 @@ func choose_card(peer_id: int, index: int) -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	d.chosen = true
+	d.source = source
 	_drafts[peer_id] = d
 	var card_id: String = str(cards[index])
 	GameState.apply_card(peer_id, card_id)
