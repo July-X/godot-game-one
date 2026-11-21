@@ -1125,8 +1125,7 @@ func _spawn_boss(level: int) -> void:
 	add_child(_boss)
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_spawn_boss.rpc(_boss.entity_id, level, variant_id, _boss_snapshot(_boss))
-	var tween := create_tween()
-	tween.tween_property(_boss, "position", Vector2(_screen_center_x(), 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_boss.animate_entry(Vector2(_screen_center_x(), 160))
 
 func _pick_boss_variant_id() -> int:
 	var variant_count := 0

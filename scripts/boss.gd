@@ -24,7 +24,8 @@ var _attack_index: int = 0
 var _shoot_timer: float = 0.0
 var _shoot_angle_offset: float = 0.0
 var _circle_radius: float = 220.0
-var _knockback_tween: Tween = null
+var _entry_tween: Tween = null
+var _hit_recoil_tween: Tween = null
 var entity_id: int = 0
 var _network_window_stamp := -1
 var _finished_laser_cycles := 0
@@ -90,15 +91,17 @@ func apply_network_health(hp: float, max_hp: float) -> void:
 	_update_phase_from_health(false)
 
 var _is_network_ghost: bool = false
-var _recent_hit_window: float = 0.0
-var _recent_hit_count: int = 0
 var _sprite_variant_id: int = 0
 var _rush_cooldown: float = 0.0
 var _last_position: Vector2 = Vector2.ZERO
 var _corner_stuck_time: float = 0.0
 var _fire_pressure_window: float = 0.0
 var _fire_pressure_hits: int = 0
+var _pressure_hits_by_peer: Dictionary[int, int] = {}
+var _pilot_trails: Dictionary[int, Vector2] = {}
 var _dodge_cooldown: float = 0.0
+var _dodge_shift := Vector2.ZERO
+var _dodge_elapsed := 0.0
 var _strafe_bias: Vector2 = Vector2.ZERO
 var _velocity_blend: Vector2 = Vector2.ZERO
 var _feint_timer: float = 0.0
@@ -122,9 +125,6 @@ var _laser_dot_accumulator: float = 0.0
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
-const BOSS_KNOCKBACK_BASE: float = 16.0
-const BOSS_KNOCKBACK_RECENT_HIT_WINDOW: float = 0.24
-const BOSS_KNOCKBACK_DECAY_PER_HIT: float = 0.20
 const BOSS_VISUAL_SCALE: float = 2.0 / 3.0
 const BOSS_TARGET_TTK_SECONDS: float = 42.0
 const BOSS_EXPECTED_PLAYER_UPTIME: float = 0.95
@@ -135,6 +135,9 @@ const BOSS_FIRE_PRESSURE_WINDOW: float = 0.45
 const BOSS_FIRE_PRESSURE_HITS: int = 3
 const BOSS_DODGE_COOLDOWN: float = 0.62
 const BOSS_DODGE_SHIFT: float = 140.0
+const BOSS_DODGE_SECONDS := 0.60
+const BOSS_PILOT_TREND_SECONDS := 0.14
+const BOSS_MAX_PILOT_DRIFT := 48.0
 const BOSS_STANDOFF_MIN_DIST: float = 300.0
 const BOSS_STANDOFF_MAX_DIST: float = 560.0
 const BOSS_LEAD_SECONDS: float = 0.34
@@ -202,6 +205,15 @@ func _ready() -> void:
 	## setup() 可能在 add_child() 前调用，这里再次应用一次视觉状态，确保贴图一定落到 Sprite2D 上
 	_apply_visual_state()
 
+func animate_entry(destination: Vector2) -> void:
+	_entry_tween = create_tween()
+	_entry_tween.tween_property(self, "position", destination, 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _stop_entry_motion() -> void:
+	if _entry_tween and _entry_tween.is_valid():
+		_entry_tween.kill()
+	_entry_tween = null
+
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
 		return
@@ -215,6 +227,7 @@ func _physics_process(delta: float) -> void:
 
 	_state_timer -= delta
 	_shoot_timer -= delta
+	_sample_pilot_motion(delta)
 	_update_phase_from_health(true)
 	if _should_start_ultimate_laser():
 		_start_ultimate_laser()
@@ -225,14 +238,10 @@ func _physics_process(delta: float) -> void:
 	_rush_cooldown = max(_rush_cooldown - delta, 0.0)
 	_dodge_cooldown = max(_dodge_cooldown - delta, 0.0)
 	_feint_timer = max(_feint_timer - delta, 0.0)
-	if _recent_hit_window > 0.0:
-		_recent_hit_window = max(_recent_hit_window - delta, 0.0)
-		if _recent_hit_window <= 0.0:
-			_recent_hit_count = 0
 	if _fire_pressure_window > 0.0:
-		_fire_pressure_window = max(_fire_pressure_window - delta, 0.0)
+		_fire_pressure_window -= delta
 		if _fire_pressure_window <= 0.0:
-			_fire_pressure_hits = 0
+			_clear_fire_pressure()
 
 	match _state:
 		State.IDLE: _tick_idle(delta)
@@ -241,11 +250,20 @@ func _physics_process(delta: float) -> void:
 		State.RETREAT: _tick_retreat(delta)
 		State.ENRAGED: _tick_attack(delta)
 
-	_apply_close_range_escape(delta)
-	_apply_fireline_dodge()
+	var dodging := not _dodge_shift.is_zero_approx()
+	if dodging:
+		_tick_fireline_dodge(delta)
+	else:
+		_apply_close_range_escape(delta)
 
 	_enforce_arena_bounds()
-	_resolve_corner_stuck(delta)
+	if not dodging:
+		_try_start_fireline_dodge()
+	if _dodge_shift.is_zero_approx():
+		_resolve_corner_stuck(delta)
+	else:
+		_corner_stuck_time = 0.0
+		_last_position = global_position
 
 ## ── 状态切换 ────────────────────────────────────────────────
 
@@ -335,8 +353,8 @@ func _tick_retreat(delta: float) -> void:
 	var to_center: Vector2 = global_position.direction_to(center)
 	var edge_bias: float = _get_edge_bias()
 	var move_dir: Vector2 = (away * (1.0 - edge_bias) + to_center * edge_bias).normalized()
-	_velocity_blend = _velocity_blend.lerp(move_dir * spd, BOSS_CRUISE_ACCEL * delta)
-	global_position += _velocity_blend * delta
+	if _dodge_shift.is_zero_approx():
+		_move_with_inertia(move_dir * spd, delta)
 	_face_target(delta)
 	if _state_timer <= 0:
 		_check_enrage()
@@ -418,6 +436,7 @@ func _should_start_ultimate_laser() -> bool:
 	return _last_laser_hp_ratio - current_ratio >= BOSS_ULTIMATE_LASER_HP_INTERVAL
 
 func _start_ultimate_laser() -> void:
+	_stop_entry_motion()
 	_last_laser_hp_ratio = _health / maxf(_max_health, 1.0)
 	_shield_active = true
 	_ultimate_laser_charging = true
@@ -426,6 +445,8 @@ func _start_ultimate_laser() -> void:
 	_ultimate_laser_fire_timer = 0.0
 	_ultimate_laser_start = global_position
 	_laser_dot_accumulator = 0.0
+	_dodge_shift = Vector2.ZERO
+	_clear_fire_pressure()
 	_velocity_blend = Vector2.ZERO
 	_enter_state(State.ATTACK, BOSS_ULTIMATE_LASER_CHARGE + BOSS_ULTIMATE_LASER_TRAVEL)
 	queue_redraw()
@@ -581,9 +602,14 @@ func _ideal_standoff_position() -> Vector2:
 func _cruise_towards(target_pos: Vector2, speed_scale: float, delta: float) -> void:
 	if _feint_timer <= 0.0:
 		_pick_new_strafe_bias()
+	if not _dodge_shift.is_zero_approx():
+		return
 	var desired := global_position.direction_to(_clamp_to_arena(target_pos))
 	var speed: float = (210.0 + _level * 9.0) * speed_scale * (1.22 if _state == State.ENRAGED else 1.0)
-	_velocity_blend = _velocity_blend.lerp(desired * speed, BOSS_CRUISE_ACCEL * delta)
+	_move_with_inertia(desired * speed, delta)
+
+func _move_with_inertia(desired_velocity: Vector2, delta: float) -> void:
+	_velocity_blend = _velocity_blend.lerp(desired_velocity, BOSS_CRUISE_ACCEL * delta)
 	global_position += _velocity_blend * delta
 
 func _face_target(delta: float) -> void:
@@ -807,35 +833,66 @@ func _resolve_corner_stuck(delta: float) -> void:
 		_corner_stuck_time = 0.0
 	_last_position = global_position
 
-func _apply_fireline_dodge() -> void:
-	if _dodge_cooldown > 0.0:
-		return
-	if _fire_pressure_hits < BOSS_FIRE_PRESSURE_HITS:
-		return
-	if not _target or not is_instance_valid(_target):
-		return
-	var to_player: Vector2 = global_position.direction_to(_target.global_position)
-	var left: Vector2 = Vector2(-to_player.y, to_player.x)
-	var right: Vector2 = -left
-	var left_pos: Vector2 = _clamp_to_arena(global_position + left * BOSS_DODGE_SHIFT)
-	var right_pos: Vector2 = _clamp_to_arena(global_position + right * BOSS_DODGE_SHIFT)
-	var left_score: float = _score_dodge_position(left_pos)
-	var right_score: float = _score_dodge_position(right_pos)
-	global_position = left_pos if left_score >= right_score else right_pos
-	_enter_state(State.CIRCLE, randf_range(0.45, 0.85))
-	_dodge_cooldown = BOSS_DODGE_COOLDOWN
+func _sample_pilot_motion(delta: float) -> void:
+	# 房主上的加入端机体由位置同步驱动，它的 CharacterBody2D.velocity 不代表实际走位。
+	for pilot: Node2D in get_tree().get_nodes_in_group("player"):
+		var id := pilot.get_instance_id()
+		var current := pilot.global_position
+		var previous: Vector2 = _pilot_trails.get(id, current)
+		_pilot_trails[id] = previous.lerp(current, minf(delta / BOSS_PILOT_TREND_SECONDS, 1.0))
+
+func _fire_pressure_pilot() -> Node2D:
+	var source := _target
+	var most_hits := 0
+	for pilot: Node2D in get_tree().get_nodes_in_group("player"):
+		var peer_id: int = pilot.peer_id
+		var hits: int = _pressure_hits_by_peer.get(peer_id, 0)
+		if hits > most_hits and GameState.is_player_alive(peer_id) and not GameState.is_player_downed(peer_id):
+			most_hits = hits
+			source = pilot
+	return source
+
+func _clear_fire_pressure() -> void:
 	_fire_pressure_hits = 0
 	_fire_pressure_window = 0.0
+	_pressure_hits_by_peer.clear()
 
-func _score_dodge_position(pos: Vector2) -> float:
+func _try_start_fireline_dodge() -> void:
+	if _dodge_cooldown > 0.0 or _fire_pressure_hits < BOSS_FIRE_PRESSURE_HITS:
+		return
+	_stop_entry_motion()
+	var pilot := _fire_pressure_pilot()
+	var side := pilot.global_position.direction_to(global_position).orthogonal()
+	if side.is_zero_approx():
+		side = Vector2.LEFT
+	var trail: Vector2 = _pilot_trails.get(pilot.get_instance_id(), pilot.global_position)
+	var drift := (pilot.global_position - trail).limit_length(BOSS_MAX_PILOT_DRIFT)
+	var left := _clamp_to_arena(global_position + side * BOSS_DODGE_SHIFT)
+	var right := _clamp_to_arena(global_position - side * BOSS_DODGE_SHIFT)
+	var destination := left if _score_dodge_position(left, drift) >= _score_dodge_position(right, drift) else right
+	_dodge_shift = destination - global_position
+	_dodge_elapsed = 0.0
+	_enter_state(State.CIRCLE, randf_range(0.45, 0.85))
+	_dodge_cooldown = BOSS_DODGE_COOLDOWN
+	_clear_fire_pressure()
+
+func _tick_fireline_dodge(delta: float) -> void:
+	var previous := smoothstep(0.0, BOSS_DODGE_SECONDS, _dodge_elapsed)
+	_dodge_elapsed = minf(_dodge_elapsed + delta, BOSS_DODGE_SECONDS)
+	var progress := smoothstep(0.0, BOSS_DODGE_SECONDS, _dodge_elapsed)
+	_move_with_inertia(_dodge_shift * (progress - previous) / delta, delta)
+	if _dodge_elapsed >= BOSS_DODGE_SECONDS:
+		_dodge_shift = Vector2.ZERO
+
+func _score_dodge_position(pos: Vector2, drift: Vector2) -> float:
 	var screen := NetworkManager.battle_size(self)
 	var margin_x: float = min(pos.x - ARENA_MARGIN_X, screen.x - ARENA_MARGIN_X - pos.x)
 	var margin_y: float = min(pos.y - ARENA_MARGIN_Y, screen.y - ARENA_MARGIN_Y - pos.y)
-	var edge_space: float = min(margin_x, margin_y)
-	var dist_player: float = pos.distance_to(_target.global_position)
-	return edge_space * 1.8 + dist_player * 0.18
+	var shift := pos - global_position
+	# 落点留出后续机动空间，并避开施压者正在横移的一侧。
+	return shift.length() + minf(margin_x, margin_y) * 0.5 - shift.dot(drift) / BOSS_DODGE_SHIFT
 
-func take_damage(amount: float = 1.0, _killer_peer_id: int = -1) -> void:
+func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 	if _dead:
 		return
 	var applied: float = max(amount, 0.0)
@@ -844,13 +901,12 @@ func take_damage(amount: float = 1.0, _killer_peer_id: int = -1) -> void:
 	if _shield_active:
 		return
 	_health -= applied
-	if _fire_pressure_window > 0.0:
-		_fire_pressure_hits += 1
-	else:
-		_fire_pressure_hits = 1
+	_fire_pressure_hits += 1
 	_fire_pressure_window = BOSS_FIRE_PRESSURE_WINDOW
+	if killer_peer_id > 0:
+		_pressure_hits_by_peer[killer_peer_id] = _pressure_hits_by_peer.get(killer_peer_id, 0) + 1
 	_hit_flash()
-	_hit_knockback()
+	_hit_recoil()
 	if _health <= 0:
 		die()
 
@@ -860,33 +916,16 @@ func _hit_flash() -> void:
 	var tween := create_tween()
 	tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.08)
 
-func _hit_knockback() -> void:
-	if not _target or not is_instance_valid(_target):
+func _hit_recoil() -> void:
+	if _hit_recoil_tween and _hit_recoil_tween.is_running():
 		return
-	if _knockback_tween and _knockback_tween.is_valid() and _knockback_tween.is_running():
-		return
-	if _recent_hit_window > 0.0:
-		_recent_hit_count += 1
-	else:
-		_recent_hit_count = 1
-	_recent_hit_window = BOSS_KNOCKBACK_RECENT_HIT_WINDOW
-
-	var origin := _clamp_to_arena(global_position)
-	global_position = origin
-	var dir: Vector2 = global_position.direction_to(_target.global_position) * -1.0
-	var recent_hit_resist: float = clampf(1.0 - (_recent_hit_count - 1) * BOSS_KNOCKBACK_DECAY_PER_HIT, 0.25, 1.0)
-	var state_resist: float = 0.45 if (_state == State.RETREAT or _attack_index == 4) else 1.0
-	var push_dist := BOSS_KNOCKBACK_BASE * recent_hit_resist * state_resist
-	var pushed := _clamp_to_arena(origin + dir * push_dist)
-	_knockback_tween = create_tween().set_parallel(true)
-	_knockback_tween.tween_property(self, "global_position", pushed, 0.03).set_ease(Tween.EASE_OUT)
-	_knockback_tween.tween_property(self, "global_position", origin, 0.09).set_delay(0.03).set_ease(Tween.EASE_IN)
 	var squash := Vector2(BOSS_VISUAL_SCALE * 1.08, BOSS_VISUAL_SCALE * 0.95)
 	var restore := Vector2(BOSS_VISUAL_SCALE, BOSS_VISUAL_SCALE)
-	_knockback_tween.tween_property(_sprite, "scale", squash, 0.03).set_ease(Tween.EASE_OUT)
-	_knockback_tween.tween_property(_sprite, "scale", restore, 0.08).set_delay(0.03).set_ease(Tween.EASE_OUT)
-	_knockback_tween.finished.connect(func():
-		_knockback_tween = null
+	_hit_recoil_tween = create_tween()
+	_hit_recoil_tween.tween_property(_sprite, "scale", squash, 0.03).set_ease(Tween.EASE_OUT)
+	_hit_recoil_tween.tween_property(_sprite, "scale", restore, 0.08).set_ease(Tween.EASE_OUT)
+	_hit_recoil_tween.finished.connect(func():
+		_hit_recoil_tween = null
 	)
 
 func die() -> void:

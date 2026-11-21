@@ -87,6 +87,7 @@
 │   ├── pixelfx_probe.gd / .tscn、compare_pixelfx.py # 普通命中与击毁的逐帧实拍及弹体像素比对
 │   ├── impact_scope_probe.gd / .tscn # 真实扣血与各武器接触，对照历史图形帧
 │   ├── feedback_lan_probe.gd / .tscn    # 双端两次破盾、销毁及消息重发
+│   ├── boss_dodge_probe.gd / .tscn      # 单人侧移轨迹、入场接管与双端 P2 施压
 │   ├── mixed_viewport_probe.gd / .tscn  # 双进程混合画幅边界用例
 │   ├── curve_probe.tscn / wave_probe.tscn
 ├── docs/
@@ -410,6 +411,8 @@ ENet 分配的 Client peer_id 是随机 32 位数，**UI 任何位置都不得�
 - 敌人、Boss、精英、弹幕、伤害结算**全部在 Host 执行**，Client 只做插值和 HUD
 - 实体视觉副本走 RPC 广播 + `entity_id` 映射，不依赖自动场景复制
 - 玩家本地直接控制移动，位置通过同步包广播
+
+母舰受压方向由房主依据有效伤害的弹体归属和已观察到的玩家位置选定。加入端只使用已有的母舰位置与旋转包绘制侧移。
 
 ### 11.4 同步包拆分
 

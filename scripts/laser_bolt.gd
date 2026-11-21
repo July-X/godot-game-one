@@ -143,7 +143,7 @@ func _chain_lightning(hit_body: Node2D, can_apply_local_damage: bool) -> void:
 			break
 		var chain_dmg: float = _damage * 0.5 * pow(0.7, i)
 		if can_apply_local_damage:
-			next.take_damage(chain_dmg)
+			next.take_damage(chain_dmg, owner_peer_id)
 		else:
 			_report_enemy_hit(next, chain_dmg)
 		_draw_lightning_bolt(from.global_position, next.global_position)

@@ -157,8 +157,8 @@ func _shield_cycle() -> bool:
 		_shoot_at_boss()
 		_check("open_takes_physical_main_shot", await _wait_until(func(): return shot_hit and _boss.get_network_health() < shield_hp, 1.0),
 			"contact=%s HP=%s -> %s" % [shot_hit, shield_hp, _boss.get_network_health()])
-		# 上一发的击退补间结束后，才能把下一次击毁固定在 TARGET。
-		if not _require("nonfatal_hit_settled", await _wait_until(func(): return _boss._knockback_tween == null, 1.0)):
+		# 等受击缩放收尾，隔离下一次击毁的反馈。
+		if not _require("nonfatal_hit_settled", await _wait_until(func(): return _boss._hit_recoil_tween == null, 1.0)):
 			return false
 	if _role == "client":
 		_check("open_hit_health_is_synced", await _wait_until(func(): return _boss.get_network_health() < shield_hp, 2.0),
