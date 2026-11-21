@@ -11,6 +11,7 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 - [设计决策](./docs/Design_Decisions.md)
 - [关卡设计方案](./docs/level_design_proposal.md) ← 乐句节奏 / 阵型 / 章节主题
 - [美术与音频管线](./docs/art_audio_pipeline.md)
+- [裂隙母舰的画面设计与验收](./docs/art_audio_pipeline.md#裂隙母舰可读性)
 - [Harmony 插件契约](./docs/Harmony_Plugin_Contract.md)
 - [弹幕射击可玩性调研](./docs/research_bullet_hell_fun_2026-09-27.md)
 - [联机回归门禁](./tests/run_probe.sh)

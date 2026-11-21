@@ -48,8 +48,10 @@ var _fps_accum: float = 0.0
 var _active_pickup_toasts: Array = []
 var _boss_status_root: Control = null
 var _boss_status_fill: ColorRect = null
+var _boss_status_hatch: TextureRect = null
 var _boss_status_label: Label = null
 var _boss_status_phase: Label = null
+var _boss_shield_release_left := 0.0
 var _alert_label: Label
 var _alert_tween: Tween
 var _safe_rect := Rect2()
@@ -100,6 +102,7 @@ func _ready() -> void:
 	_update_powerup_display()
 
 func _process(_delta: float) -> void:
+	_boss_shield_release_left = maxf(_boss_shield_release_left - _delta, 0.0)
 	_update_pilots()
 	_refresh_score_if_needed()
 	_update_level(GameState.level)
@@ -970,11 +973,19 @@ func show_boss_status(current: float, maximum: float, phase_name: String, attack
 		_layout_top_rows()
 	var ratio := clampf(current / maxf(maximum, 1.0), 0.0, 1.0)
 	_boss_status_fill.size.x = (BOSS_BAR_SIZE.x - 20.0) * ratio
+	_boss_status_fill.color = Color("#5a616c") if shielded else Color("#e1827f")
+	_boss_status_hatch.visible = shielded
 	_boss_status_label.text = "裂隙母舰  %d%%  ·  %s" % [roundi(ratio * 100), phase_name]
-	_boss_status_phase.text = attack_window
-	_boss_status_phase.add_theme_color_override("font_color", Color("#ff9c76") if shielded else Palette.CARD_STYLE)
+	if shielded:
+		_boss_shield_release_left = 0.0
+	_boss_status_phase.text = "护盾解除 · " + attack_window if _boss_shield_release_left > 0.0 else attack_window
+	_boss_status_phase.add_theme_color_override("font_color", Color("#c3d6e2") if shielded else Palette.CARD_STYLE)
+
+func show_boss_shield_released() -> void:
+	_boss_shield_release_left = 0.55
 
 func hide_boss_status() -> void:
+	_boss_shield_release_left = 0.0
 	if is_instance_valid(_boss_status_root) and _boss_status_root.visible:
 		_boss_status_root.hide()
 		_layout_top_rows()
@@ -990,13 +1001,24 @@ func _ensure_boss_status_ui() -> void:
 	panel.hide()
 	var track := ColorRect.new()
 	track.position = Vector2(10, 28)
-	track.size = Vector2(BOSS_BAR_SIZE.x - 20, 4)
+	track.size = Vector2(BOSS_BAR_SIZE.x - 20, 6)
 	track.color = Color("#313747")
 	panel.add_child(track)
 	_boss_status_fill = ColorRect.new()
 	_boss_status_fill.size = track.size
 	_boss_status_fill.color = Color("#e1827f")
 	track.add_child(_boss_status_fill)
+	var hatch := Image.create_empty(8, 8, false, Image.FORMAT_RGBA8)
+	for y in 8:
+		for x in 8:
+			if (x + y) % 8 < 2:
+				hatch.set_pixel(x, y, Color("#9098a3"))
+	_boss_status_hatch = TextureRect.new()
+	_boss_status_hatch.texture = ImageTexture.create_from_image(hatch)
+	_boss_status_hatch.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_boss_status_hatch.stretch_mode = TextureRect.STRETCH_TILE
+	_boss_status_fill.add_child(_boss_status_hatch)
+	_boss_status_hatch.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_boss_status_label = _label(15, Vector2(10, 2), Vector2(265, 24))
 	panel.add_child(_boss_status_label)
 	_boss_status_phase = _label(14, Vector2(273, 2), Vector2(237, 24), HORIZONTAL_ALIGNMENT_RIGHT)

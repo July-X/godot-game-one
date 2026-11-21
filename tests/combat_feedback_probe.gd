@@ -103,7 +103,7 @@ func _stress() -> void:
 	if first:
 		var voice: AudioStreamPlayer = hurt[0]
 		voice.finished.connect(func(): hurt_finished = voice.stream == SFX._stream_player_hurt, CONNECT_ONE_SHOT)
-	main.broadcast_boss_ultimate_laser_charge(Vector2(940, 132), 1.2)
+	main._show_boss_ultimate_laser_charge(Vector2(940, 132), 1.2)
 	for i in 24:
 		main.emit_hit_feedback(main.SHAKE_HIT, 0.0, true)
 		_record_hit_playbacks(seen)

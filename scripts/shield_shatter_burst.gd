@@ -5,6 +5,13 @@ var _duration: float = 0.48
 var _fragments: Array[Dictionary] = []
 var _flecks := PackedVector2Array()
 var _spread := 1.0
+var _mothership_release := false
+
+func setup_mothership_release() -> void:
+	_mothership_release = true
+	_duration = 0.32
+	_spread = 0.22
+	setup(72.0, Color(0.45, 0.66, 0.80, 0.6), 24)
 
 func setup(radius: float, color: Color, count: int = 18, compact := false) -> void:
 	_fragments.clear()
@@ -42,7 +49,9 @@ func _draw() -> void:
 		var p2: Vector2 = dir * (base_radius + float(frag.length) * (1.0 + t) * sqrt(_spread))
 		var c: Color = frag.color
 		c.a *= alpha
-		draw_line(p1, p2, c, 3.0 * alpha + 1.0)
+		draw_line(p1, p2, c, (1.0 if _mothership_release else 3.0) * alpha + 1.0)
+	if _mothership_release:
+		return
 	var ring_color := Color(1.0, 0.72, 0.18, 0.35 * alpha)
 	draw_arc(Vector2.ZERO, 78.0 + 70.0 * t * _spread, 0.0, TAU, 40, ring_color, 8.0 * alpha * _spread + 1.0)
 	for fleck in _flecks:

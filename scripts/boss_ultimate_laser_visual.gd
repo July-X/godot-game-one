@@ -10,14 +10,14 @@ var _beam_start: Vector2 = Vector2.ZERO
 var _beam_end: Vector2 = Vector2.ZERO
 var _beam_width: float = 96.0
 
-func setup_charge(pos: Vector2, duration: float) -> void:
+func setup_charge(pos: Vector2, duration: float, age := 0.0) -> void:
 	_mode = VisualMode.CHARGE
 	global_position = pos
 	_duration = maxf(duration, 0.1)
-	_age = 0.0
+	_age = age
 	z_index = 85
 
-func setup_beam(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
+func setup_beam(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float, age := 0.0) -> void:
 	_mode = VisualMode.BEAM
 	global_position = Vector2.ZERO
 	_beam_start = from
@@ -25,7 +25,7 @@ func setup_beam(from: Vector2, to: Vector2, travel_time: float, width: float, ho
 	_travel_time = maxf(travel_time, 0.05)
 	_duration = _travel_time + maxf(hold_duration, 0.0) + 0.35
 	_beam_width = maxf(width, 12.0)
-	_age = 0.0
+	_age = age
 	z_index = 86
 
 func _process(delta: float) -> void:

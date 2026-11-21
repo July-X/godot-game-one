@@ -27,6 +27,8 @@ var _player: Node2D = null
 var _hud: Node = null
 var _elite: Node2D = null
 var _boss: Node2D = null
+var _boss_laser_visual: Node2D = null
+var _boss_laser_stamp := -1
 ## 统一震屏入口（trauma 累加模型，见 camera_shake.gd）。
 ## 各处事件只管调 add_shake()，不要各自去写 camera.offset——那样多处震动
 ## 会互相覆盖而不是叠加。旧路径 powerup.gd 仍用 screen_shake 场景，由
@@ -39,7 +41,6 @@ var _wave_director: Node = null
 var _last_wave_phase_text: String = ""
 var _boss_variant_cycle: Array[int] = []
 var _boss_variant_last: int = 0
-var _current_boss_variant_id: int = 0
 var _boss_fight_active: bool = false
 var _pending_boss_level: int = 0
 ## 旧的 `_enemy_spawn_timer` / `_difficulty_timer`（间隔刷怪 + 8 秒脉冲）已删除，
@@ -1107,13 +1108,13 @@ func _spawn_boss(level: int) -> void:
 	_boss = _boss_scene.instantiate()
 	_boss.position = Vector2(_screen_center_x(), -80)
 	var variant_id := _pick_boss_variant_id()
-	_current_boss_variant_id = variant_id
 	if _boss.has_method("set_sprite_variant"):
 		_boss.set_sprite_variant(variant_id)
 	_boss.setup(level)
 	if _player and is_instance_valid(_player):
 		_boss.set_target(_player)
 	_boss.boss_died.connect(_on_boss_died)
+	_boss.shield_released.connect(_hud.show_boss_shield_released)
 	if _boss.has_signal("phase_changed"):
 		_boss.phase_changed.connect(_on_boss_phase_changed)
 	if NetworkManager.is_online() and multiplayer.is_server():
@@ -1121,8 +1122,9 @@ func _spawn_boss(level: int) -> void:
 		_next_entity_id += 1
 		_boss.entity_id = eid
 		_entities[eid] = _boss
-		_rpc_spawn_boss.rpc(eid, level, variant_id)
 	add_child(_boss)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_spawn_boss.rpc(_boss.entity_id, level, variant_id, _boss_snapshot(_boss))
 	var tween := create_tween()
 	tween.tween_property(_boss, "position", Vector2(_screen_center_x(), 160), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
@@ -1151,6 +1153,7 @@ func _pick_boss_variant_id() -> int:
 	return picked
 
 func _on_boss_died() -> void:
+	_clear_boss_laser_visual()
 	if _boss != null:
 		var eid: int = _boss.entity_id
 		if _entities.has(eid):
@@ -1350,6 +1353,7 @@ func _rpc_force_game_over(final_score: int, final_level: int) -> void:
 
 func _clear_runtime_entities_on_game_over() -> void:
 	_rpc_set_boss_bg(false)
+	_clear_boss_laser_visual()
 	for n in get_tree().get_nodes_in_group("enemies"):
 		if n and is_instance_valid(n):
 			n.queue_free()
@@ -1582,14 +1586,8 @@ func _request_entity_snapshot_from_host() -> void:
 func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node) -> void:
 	if peer_id <= 0 or not is_instance_valid(node):
 		return
-	if node == _boss or node.is_in_group("boss"):
-		var level := GameState.level
-		var variant_id := _current_boss_variant_id
-		if node.has_method("get_network_level"):
-			level = int(node.get_network_level())
-		if node.has_method("get_sprite_variant_id"):
-			variant_id = int(node.get_sprite_variant_id())
-		_rpc_spawn_boss.rpc_id(peer_id, eid, level, variant_id)
+	if node is Boss:
+		_rpc_spawn_boss.rpc_id(peer_id, eid, node.get_network_level(), node.get_sprite_variant_id(), _boss_snapshot(node))
 		return
 	if node == _elite or (node.is_in_group("enemies") and node.has_method("get_network_shield")):
 		_rpc_spawn_elite.rpc_id(peer_id, eid, GameState.post_elite_multiplier)
@@ -1701,32 +1699,54 @@ func _rpc_sync_boss_phase(_phase_name: String, variant_id: int) -> void:
 	if _boss.has_method("_apply_visual_state"):
 		_boss._apply_visual_state()
 
-## Host → Client：生成 Boss 幽灵副本
+func _boss_snapshot(boss: Boss) -> Dictionary:
+	return {
+		"position": boss.global_position, "rotation": boss.global_rotation,
+		"hp": boss.get_network_health(), "max_hp": boss.get_network_max_health(),
+		"stamp": boss.get_attack_window_stamp(), "age": boss.get_laser_visual_age(),
+		"from": boss._ultimate_laser_start, "to": boss._ultimate_laser_end,
+	}
+
+## 同 ID 快照补齐当前状态，保留在播的激光和已经消费的解除事件。
 @rpc("authority", "reliable", "call_remote")
-func _rpc_spawn_boss(eid: int, level: int, variant_id: int) -> void:
-	if not NetworkManager.is_online():
+func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary) -> void:
+	if not NetworkManager.is_online() or not GameState.game_running or _despawned_entity_ids.has(eid):
 		return
-	if _despawned_entity_ids.has(eid):
+	var stamp: int = snapshot.stamp
+	var active := _has_active_boss()
+	if active and _boss.entity_id > eid:
 		return
-	if _entities.has(eid):
-		var old_node: Node = _entities[eid]
-		if is_instance_valid(old_node):
-			old_node.queue_free()
-	_boss = _boss_scene.instantiate()
-	_boss.name = str(eid)
-	_boss.entity_id = eid
-	_boss._is_network_ghost = true
-	_boss.position = Vector2(_screen_center_x(), -80)
-	if _boss.has_method("set_sprite_variant"):
+	if not active or _boss.entity_id != eid:
+		if active:
+			_entities.erase(_boss.entity_id)
+			_boss.queue_free()
+		_clear_boss_laser_visual()
+		_boss = _boss_scene.instantiate()
+		_boss.name = str(eid)
+		_boss.entity_id = eid
+		_boss._is_network_ghost = true
+		_boss.position = to_local(snapshot.position)
 		_boss.set_sprite_variant(variant_id)
-	_boss.setup(level)
-	if _player and is_instance_valid(_player):
-		_boss.set_target(_player)
+		_boss.setup(level)
+		if is_instance_valid(_player):
+			_boss.set_target(_player)
+		_boss.boss_died.connect(_on_boss_died)
+		_boss.shield_released.connect(_hud.show_boss_shield_released)
+		add_child(_boss)
+		_boss.apply_network_rotation(snapshot.rotation)
 	_entities[eid] = _boss
-	_boss.boss_died.connect(_on_boss_died)
-	if _boss.has_signal("phase_changed"):
-		_boss.phase_changed.connect(_on_boss_phase_changed)
-	add_child(_boss)
+	var previous: int = _boss.get_attack_window_stamp()
+	if stamp < previous:
+		return
+	var hp: float = snapshot.hp if previous < 0 else minf(snapshot.hp, _boss.get_network_health())
+	_boss.apply_network_health(hp, snapshot.max_hp)
+	if _boss.get_sprite_variant_id() != variant_id:
+		_boss.set_sprite_variant(variant_id)
+		_boss._apply_visual_state()
+	_boss.apply_network_attack_window(stamp)
+	if stamp > previous and _boss.get_attack_window() == Boss.AttackWindow.OPEN:
+		_clear_boss_laser_visual()
+	_sync_boss_laser(stamp, snapshot.from, snapshot.to, snapshot.age, false)
 
 ## Host → Client：生成掉落物幽灵副本
 @rpc("authority", "reliable", "call_remote")
@@ -1817,6 +1837,8 @@ func _rpc_spawn_asteroid(eid: int, pos_x: float, pos_y: float) -> void:
 @rpc("authority", "reliable", "call_remote")
 func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
 	_despawned_entity_ids[eid] = true
+	if is_instance_valid(_boss) and _boss.entity_id == eid:
+		_clear_boss_laser_visual()
 	if _entities.has(eid):
 		var node = _entities[eid]
 		if is_instance_valid(node):
@@ -1875,7 +1897,7 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 
 ## Host → Client：同步实体血量（低频 10Hz）
 @rpc("authority", "unreliable", "call_remote")
-func _rpc_sync_entity_health(data: PackedFloat32Array, boss_window := -1) -> void:
+func _rpc_sync_entity_health(data: PackedFloat32Array, boss_stamp := -1) -> void:
 	var i := 0
 	while i + 2 < data.size():
 		var eid := int(data[i])
@@ -1884,10 +1906,13 @@ func _rpc_sync_entity_health(data: PackedFloat32Array, boss_window := -1) -> voi
 		i += 3
 		if _entities.has(eid) and is_instance_valid(_entities[eid]):
 			var node: Node = _entities[eid]
+			if node == _boss:
+				if boss_stamp != _boss.get_attack_window_stamp():
+					continue
+				# 无序血量包可能晚于同一阶段的实体快照。
+				hp = minf(hp, _boss.get_network_health())
 			if node.has_method("apply_network_health"):
 				node.apply_network_health(hp, max_hp)
-			if node == _boss and boss_window >= 0 and boss_window < Boss.ATTACK_WINDOW_LABELS.size():
-				node.network_attack_window = boss_window as Boss.AttackWindow
 
 ## Host → Client：只同步带护盾实体的护盾值，避免所有实体同步包膨胀。
 @rpc("authority", "reliable", "call_remote")
@@ -1930,9 +1955,8 @@ func _batch_sync_entity_health() -> void:
 			if node.has_method("get_network_max_health"):
 				health_data.append(float(node.get_network_max_health()))
 	if health_data.size() > 0:
-		# Boss 的护盾与激光读数和同一份血量快照一起到达。
-		var boss_window: int = _boss.get_attack_window() if _has_active_boss() else -1
-		_rpc_sync_entity_health.rpc(health_data, boss_window)
+		var boss_stamp: int = _boss.get_attack_window_stamp() if _has_active_boss() else -1
+		_rpc_sync_entity_health.rpc(health_data, boss_stamp)
 
 ## 加入端的子弹只渲染。随已有位置包捎带一个确认落点，避免每发子弹单独通信。
 func register_projectile_impact(pos: Vector2, kind: Pool.Impact) -> void:
@@ -2078,51 +2102,60 @@ func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_
 	_pending_laser_spawns.append([pos.x, pos.y, angle, damage, owner_peer_id])
 
 
-func broadcast_boss_shield_create(pos: Vector2) -> void:
+func publish_boss_attack_window(boss: Boss) -> void:
+	if not GameState.game_running or boss != _boss or boss.is_queued_for_deletion():
+		return
+	var stamp := boss.get_attack_window_stamp()
+	var origin := boss.global_position if boss.get_attack_window() == Boss.AttackWindow.OPEN else boss._ultimate_laser_start
+	var target := boss._ultimate_laser_end
+	var age := boss.get_laser_visual_age()
+	_sync_boss_laser(stamp, origin, target, age, true)
 	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_create_boss_shield.rpc(pos.x, pos.y)
-
-func broadcast_boss_shield_destroy() -> void:
-	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_destroy_boss_shield.rpc()
+		_rpc_sync_boss_window.rpc(boss.entity_id, stamp, origin, target, age, boss.get_network_health())
 
 @rpc("authority", "reliable", "call_remote")
-func _rpc_create_boss_shield(pos_x: float, pos_y: float) -> void:
-	if _boss == null or not is_instance_valid(_boss):
+func _rpc_sync_boss_window(eid: int, stamp: int, origin: Vector2, target: Vector2, age: float, hp: float) -> void:
+	if not GameState.game_running or not _has_active_boss() or _boss.entity_id != eid:
 		return
-	if _boss.has_method("_create_shield_circle"):
-		_boss._create_shield_circle()
-
-@rpc("authority", "reliable", "call_remote")
-func _rpc_destroy_boss_shield() -> void:
-	if _boss == null or not is_instance_valid(_boss):
+	var previous: int = _boss.get_attack_window_stamp()
+	if stamp <= previous:
 		return
-	_boss._destroy_shield_circle()
+	_boss.apply_network_health(minf(hp, _boss.get_network_health()), _boss.get_network_max_health())
+	_boss.apply_network_attack_window(stamp)
+	_sync_boss_laser(stamp, origin, target, age, true)
+	if _boss.get_attack_window() == Boss.AttackWindow.OPEN and previous > stamp - Boss.WINDOWS_PER_CYCLE:
+		_boss.play_shield_release(origin)
 
-func broadcast_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
-	_show_boss_ultimate_laser_charge(pos, duration)
-	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_show_boss_ultimate_laser_charge.rpc(pos.x, pos.y, duration)
+func _sync_boss_laser(stamp: int, origin: Vector2, target: Vector2, age: float, live_edge: bool) -> void:
+	var window := Boss.window_from_stamp(stamp)
+	if window < Boss.AttackWindow.CHARGING:
+		return
+	var visual_stamp := stamp - 1 if window == Boss.AttackWindow.HOLD else stamp
+	if is_instance_valid(_boss_laser_visual) and not _boss_laser_visual.is_queued_for_deletion() and _boss_laser_stamp == visual_stamp:
+		return
+	_clear_boss_laser_visual()
+	_boss_laser_stamp = visual_stamp
+	if window == Boss.AttackWindow.CHARGING:
+		_boss_laser_visual = _show_boss_ultimate_laser_charge(origin, Boss.BOSS_ULTIMATE_LASER_CHARGE, age, live_edge)
+	else:
+		var visual := _boss_ultimate_laser_visual_script.new()
+		add_child(visual)
+		visual.setup_beam(origin, target, Boss.BOSS_ULTIMATE_LASER_TRAVEL, Boss.BOSS_ULTIMATE_LASER_WIDTH, Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS, age)
+		_boss_laser_visual = visual
 
-func broadcast_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
-	_show_boss_ultimate_laser_fire(from, to, travel_time, width, hold_duration)
-	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_show_boss_ultimate_laser_fire.rpc(from.x, from.y, to.x, to.y, travel_time, width, hold_duration)
+func _clear_boss_laser_visual() -> void:
+	if is_instance_valid(_boss_laser_visual):
+		_boss_laser_visual.queue_free()
+	_boss_laser_visual = null
+	_boss_laser_stamp = -1
 
-func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
-	SFX.play_boss_warning()
-	var visual := Node2D.new()
-	visual.set_script(_boss_ultimate_laser_visual_script)
+func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float, age := 0.0, play_warning := true) -> Node2D:
+	if play_warning:
+		SFX.play_boss_warning()
+	var visual := _boss_ultimate_laser_visual_script.new()
 	add_child(visual)
-	if visual.has_method("setup_charge"):
-		visual.setup_charge(pos, duration)
-
-func _show_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
-	var visual := Node2D.new()
-	visual.set_script(_boss_ultimate_laser_visual_script)
-	add_child(visual)
-	if visual.has_method("setup_beam"):
-		visual.setup_beam(from, to, travel_time, width, hold_duration)
+	visual.setup_charge(pos, duration, age)
+	return visual
 
 ## 每帧 flush 待发送激光
 func _flush_laser_spawns() -> void:
@@ -2177,14 +2210,6 @@ func _rpc_set_boss_bg(active: bool) -> void:
 		BGM.play_boss_bgm()
 	else:
 		BGM.play_bgm()
-
-@rpc("authority", "reliable", "call_remote")
-func _rpc_show_boss_ultimate_laser_charge(pos_x: float, pos_y: float, duration: float) -> void:
-	_show_boss_ultimate_laser_charge(Vector2(pos_x, pos_y), duration)
-
-@rpc("authority", "reliable", "call_remote")
-func _rpc_show_boss_ultimate_laser_fire(from_x: float, from_y: float, to_x: float, to_y: float, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
-	_show_boss_ultimate_laser_fire(Vector2(from_x, from_y), Vector2(to_x, to_y), travel_time, width, hold_duration)
 
 ## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
 ## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）

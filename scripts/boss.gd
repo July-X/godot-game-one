@@ -2,10 +2,12 @@ extends CharacterBody2D
 
 signal boss_died
 signal phase_changed(phase_name: String)
+signal shield_released
 
 enum State { IDLE, CIRCLE, ATTACK, RETREAT, ENRAGED }
 enum AttackWindow { UNKNOWN, OPEN, CHARGING, SWEEP, HOLD }
-const ATTACK_WINDOW_LABELS := ["同步中", "可攻击", "护盾中 · 激光蓄力", "护盾中 · 激光推进", "护盾中 · 激光持续"]
+const ATTACK_WINDOW_LABELS := ["同步中", "可攻击", "有盾 · 不掉血 · 激光蓄力", "有盾 · 不掉血 · 激光推进", "有盾 · 不掉血 · 激光持续"]
+const WINDOWS_PER_CYCLE := AttackWindow.HOLD - AttackWindow.OPEN + 1
 enum BossPhase { SUPPRESSION, RIFT, OVERLOAD }
 
 var _state: int = State.IDLE
@@ -24,7 +26,8 @@ var _shoot_angle_offset: float = 0.0
 var _circle_radius: float = 220.0
 var _knockback_tween: Tween = null
 var entity_id: int = 0
-var network_attack_window := AttackWindow.UNKNOWN
+var _network_window_stamp := -1
+var _finished_laser_cycles := 0
 
 func get_entity_id() -> int:
 	return entity_id
@@ -37,12 +40,31 @@ func get_network_max_health() -> float:
 
 func get_attack_window() -> AttackWindow:
 	if _is_network_ghost:
-		return network_attack_window
+		return window_from_stamp(_network_window_stamp)
 	if not _shield_active:
 		return AttackWindow.OPEN
 	if _ultimate_laser_charging:
 		return AttackWindow.CHARGING
 	return AttackWindow.SWEEP if _ultimate_laser_fire_timer > BOSS_ULTIMATE_LASER_HOLD_SECONDS else AttackWindow.HOLD
+
+static func window_from_stamp(stamp: int) -> AttackWindow:
+	if stamp < 0:
+		return AttackWindow.UNKNOWN
+	return (AttackWindow.OPEN + stamp % WINDOWS_PER_CYCLE) as AttackWindow
+
+func get_attack_window_stamp() -> int:
+	if _is_network_ghost:
+		return _network_window_stamp
+	return _finished_laser_cycles * WINDOWS_PER_CYCLE + get_attack_window() - AttackWindow.OPEN
+
+func apply_network_attack_window(stamp: int) -> void:
+	_network_window_stamp = stamp
+	queue_redraw()
+
+func get_laser_visual_age() -> float:
+	if _ultimate_laser_charging:
+		return BOSS_ULTIMATE_LASER_CHARGE - _ultimate_laser_charge_timer
+	return BOSS_ULTIMATE_LASER_TRAVEL + BOSS_ULTIMATE_LASER_HOLD_SECONDS - _ultimate_laser_fire_timer
 
 func get_network_level() -> int:
 	return _level
@@ -66,9 +88,6 @@ func apply_network_health(hp: float, max_hp: float) -> void:
 		_max_health = max_hp
 	_health = clampf(hp, 0.0, _max_health)
 	_update_phase_from_health(false)
-	if _health_bar:
-		_health_bar.max_value = _max_health
-		_health_bar.value = _health
 
 var _is_network_ghost: bool = false
 var _recent_hit_window: float = 0.0
@@ -93,7 +112,6 @@ var _dead: bool = false
 var _network_target_rotation: float = 0.0
 var _last_laser_hp_ratio: float = 1.0
 var _shield_active: bool = false
-var _boss_shield_circle: Node2D = null
 var _ultimate_laser_charging: bool = false
 var _ultimate_laser_firing: bool = false
 var _ultimate_laser_charge_timer: float = 0.0
@@ -139,19 +157,12 @@ var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
-@onready var _health_bar: ProgressBar = $HealthBar
-@onready var _label: Label = $Label
 
 func _apply_visual_state() -> void:
 	if _sprite:
 		_sprite.texture = SpriteFactory.create_boss_sprite(_sprite_variant_id)
 		_sprite.modulate = Color(1, 1, 1, 1)
 		_sprite.scale = Vector2(BOSS_VISUAL_SCALE, BOSS_VISUAL_SCALE)
-	if _health_bar:
-		_health_bar.max_value = _max_health
-		_health_bar.value = _health
-	if _label:
-		_label.text = "裂隙母舰 Lv%d" % _level
 
 func setup(level: int) -> void:
 	_level = level
@@ -196,8 +207,6 @@ func _physics_process(delta: float) -> void:
 		return
 	if _is_network_ghost:
 		global_rotation = lerp_angle(global_rotation, _network_target_rotation, 0.45)
-		if _health_bar:
-			_health_bar.value = _health
 		return
 	if not _target or not is_instance_valid(_target):
 		return
@@ -211,8 +220,6 @@ func _physics_process(delta: float) -> void:
 		_start_ultimate_laser()
 	if _ultimate_laser_charging or _ultimate_laser_firing:
 		_tick_ultimate_laser(delta)
-		if _health_bar:
-			_health_bar.value = _health
 		return
 	_update_phase_loops(delta)
 	_rush_cooldown = max(_rush_cooldown - delta, 0.0)
@@ -239,9 +246,6 @@ func _physics_process(delta: float) -> void:
 
 	_enforce_arena_bounds()
 	_resolve_corner_stuck(delta)
-
-	if _health_bar:
-		_health_bar.value = _health
 
 ## ── 状态切换 ────────────────────────────────────────────────
 
@@ -384,29 +388,24 @@ func _phase_speed_mult() -> float:
 			return 1.2
 	return 1.0
 
-func _create_shield_circle() -> void:
-	if _boss_shield_circle == null:
-		_boss_shield_circle = Node2D.new()
-		_boss_shield_circle.set_script(preload("res://scripts/shield_circle.gd"))
-		_boss_shield_circle.z_index = 3
-		_boss_shield_circle.position = Vector2(0, -12)
-		add_child(_boss_shield_circle)
-		_boss_shield_circle.setup(80.0, Color(0.35, 0.65, 1.0, 0.55))
-
-func _destroy_shield_circle() -> void:
-	if not is_instance_valid(_boss_shield_circle):
+func _draw() -> void:
+	if get_attack_window() < AttackWindow.CHARGING:
 		return
-	_boss_shield_circle.queue_free()
-	_boss_shield_circle = null
+	for side in 4:
+		var start := side * PI * 0.5 + 0.38
+		draw_arc(Vector2.ZERO, 72.0, start, start + 0.62, 14, Color("#729cb374"), 1.5, true)
+
+func play_shield_release(world_position: Vector2) -> void:
 	if not is_inside_tree() or is_queued_for_deletion() or not GameState.game_running:
 		return
-	# 光环只消费一次，碎片留在解除时的坐标，随战场退场。
+	# 解除后母舰会继续移动，碎片留在权威解除坐标。
 	var world := get_parent() as Node2D
 	var burst := preload("res://scripts/shield_shatter_burst.gd").new()
-	burst.position = world.to_local(global_position)
+	burst.position = world.to_local(world_position)
 	burst.z_index = -1
 	world.add_child(burst)
-	burst.setup(82.0, Color(0.35, 0.65, 1.0, 0.7), 24)
+	burst.setup_mothership_release()
+	shield_released.emit()
 
 func _should_start_ultimate_laser() -> bool:
 	if _dead or _ultimate_laser_charging or _ultimate_laser_firing:
@@ -425,20 +424,13 @@ func _start_ultimate_laser() -> void:
 	_ultimate_laser_firing = false
 	_ultimate_laser_charge_timer = BOSS_ULTIMATE_LASER_CHARGE
 	_ultimate_laser_fire_timer = 0.0
+	_ultimate_laser_start = global_position
 	_laser_dot_accumulator = 0.0
 	_velocity_blend = Vector2.ZERO
 	_enter_state(State.ATTACK, BOSS_ULTIMATE_LASER_CHARGE + BOSS_ULTIMATE_LASER_TRAVEL)
-	modulate = Color(1.4, 0.55, 0.45, 1.0)
-	## 创建护盾光晕
-	if _sprite:
-		_sprite.modulate = Color(0.65, 0.85, 1.2, 1.0)
-	_create_shield_circle()
-	var scene_shield := get_tree().current_scene
-	if scene_shield and scene_shield.has_method("broadcast_boss_shield_create"):
-		scene_shield.broadcast_boss_shield_create(global_position)
+	queue_redraw()
+	_publish_attack_window()
 	var scene := get_tree().current_scene
-	if scene and scene.has_method("broadcast_boss_ultimate_laser_charge"):
-		scene.broadcast_boss_ultimate_laser_charge(global_position, BOSS_ULTIMATE_LASER_CHARGE)
 	## 终局激光是全场最强预警：蓄力就给强震屏，让玩家的注意力被拽过来
 	if scene != null and scene.has_method("add_shake"):
 		scene.add_shake(scene.SHAKE_LASER_CHARGE)
@@ -447,30 +439,24 @@ func _tick_ultimate_laser(delta: float) -> void:
 	_face_target(delta)
 	if _ultimate_laser_charging:
 		_ultimate_laser_charge_timer -= delta
-		var pulse: float = 1.0 + sin(Time.get_ticks_msec() * 0.026) * 0.18
-		if _sprite:
-			_sprite.modulate = Color(pulse, 0.42 + pulse * 0.18, 0.38 + pulse * 0.12, 1.0)
 		if _ultimate_laser_charge_timer <= 0.0:
 			_fire_ultimate_laser()
 		return
 	if _ultimate_laser_firing:
+		var was_sweeping := _ultimate_laser_fire_timer > BOSS_ULTIMATE_LASER_HOLD_SECONDS
 		_ultimate_laser_fire_timer -= delta
 		if _ultimate_laser_fire_timer > 0.0:
 			_apply_continuous_laser_damage(delta)
+			if was_sweeping and _ultimate_laser_fire_timer <= BOSS_ULTIMATE_LASER_HOLD_SECONDS:
+				_publish_attack_window()
 		if _ultimate_laser_fire_timer <= 0.0:
 			_ultimate_laser_firing = false
 			_shield_active = false
-			## 销毁护盾光晕 + 广播
-			_destroy_shield_circle()
-			var scene_shield := get_tree().current_scene
-			if scene_shield and scene_shield.has_method("broadcast_boss_shield_destroy"):
-				scene_shield.broadcast_boss_shield_destroy()
+			_finished_laser_cycles += 1
+			queue_redraw()
+			play_shield_release(global_position)
+			_publish_attack_window()
 			_state_timer = 0.0
-			modulate = Color(1.0, 1.0, 1.0, 1.0)
-			if _sprite:
-				_sprite.modulate = Color(1.0, 1.0, 1.0, 1.0)
-			if _health_bar:
-				_health_bar.modulate = Color(1, 1, 1, 1)
 			_pick_state()
 
 func _fire_ultimate_laser() -> void:
@@ -484,9 +470,12 @@ func _fire_ultimate_laser() -> void:
 		dir = Vector2.DOWN
 	var screen: Vector2 = NetworkManager.battle_size(self)
 	_ultimate_laser_end = _ultimate_laser_start + dir.normalized() * screen.length() * 1.35
-	var scene := get_tree().current_scene
-	if scene and scene.has_method("broadcast_boss_ultimate_laser_fire"):
-		scene.broadcast_boss_ultimate_laser_fire(_ultimate_laser_start, _ultimate_laser_end, BOSS_ULTIMATE_LASER_TRAVEL, BOSS_ULTIMATE_LASER_WIDTH, BOSS_ULTIMATE_LASER_HOLD_SECONDS)
+	_publish_attack_window()
+
+func _publish_attack_window() -> void:
+	var battle := get_parent()
+	if battle and battle.has_method("publish_boss_attack_window"):
+		battle.publish_boss_attack_window(self)
 
 func _apply_continuous_laser_damage(delta: float) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
@@ -548,8 +537,6 @@ func _update_phase_from_health(emit_event: bool) -> void:
 	elif _phase == BossPhase.OVERLOAD:
 		_circle_radius = 210.0
 	modulate = Color(1.0, 1.0, 1.0, 1.0)
-	if _label:
-		_label.text = "%s Lv%d" % [get_phase_name(), _level]
 	if emit_event:
 		phase_changed.emit(get_phase_name())
 		## 阶段切换是节奏转折点，给中等震屏让玩家"感觉到局面变了"
@@ -855,8 +842,6 @@ func take_damage(amount: float = 1.0, _killer_peer_id: int = -1) -> void:
 	if applied <= 0.0:
 		return
 	if _shield_active:
-		## 激光期间无敌护罩吸收所有伤害
-		_hit_flash()
 		return
 	_health -= applied
 	if _fire_pressure_window > 0.0:
@@ -866,8 +851,6 @@ func take_damage(amount: float = 1.0, _killer_peer_id: int = -1) -> void:
 	_fire_pressure_window = BOSS_FIRE_PRESSURE_WINDOW
 	_hit_flash()
 	_hit_knockback()
-	if _health_bar:
-		_health_bar.value = max(_health, 0.0)
 	if _health <= 0:
 		die()
 

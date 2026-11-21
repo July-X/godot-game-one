@@ -377,7 +377,7 @@ func _verify_pending_boss() -> void:
 	if boss_ok:
 		_boss = _main._boss
 		_log("boss_variant=%d level=%d max_hp=%.0f" % [
-			_main._current_boss_variant_id, _boss._level, _boss._max_health])
+			_boss.get_sprite_variant_id(), _boss._level, _boss._max_health])
 
 
 ## 验证项 3 + 1：终局激光时序 + 内圈秒杀 + P2 存活

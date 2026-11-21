@@ -83,6 +83,8 @@ func _run() -> void:
 	_boss.reset_physics_interpolation()
 	_boss.take_damage(ceilf(_boss.get_network_max_health() * 0.26))
 	_fan(4)
+	await _at(472)
+	UpgradeDraft.offer_cards(1, CARDS)
 	await _at(492)
 	await _capture("charge")
 	_report("charge")
@@ -90,8 +92,6 @@ func _run() -> void:
 	while is_instance_valid(_boss) and not _boss._ultimate_laser_firing:
 		await get_tree().physics_frame
 	_move(Vector2.RIGHT, true)
-	await _at(583)
-	UpgradeDraft.offer_cards(1, CARDS)
 	await _at(598)
 	_fan(4)
 	await _at(622)
@@ -134,11 +134,21 @@ func _run() -> void:
 	await _at(805)
 	await _capture("laser-hold")
 	_report("laser_hold")
+	await _at(1310)
+	UpgradeDraft.offer_cards(1, CARDS)
+	while is_instance_valid(_boss) and _boss._shield_active and Engine.get_physics_frames() - _start < 1420:
+		await get_tree().physics_frame
+	await _at(Engine.get_physics_frames() - _start + 4)
+	await _capture("shield-release")
+	_report("shield_release")
 	await _at(1430)
+	await _capture("vulnerable")
+	_report("vulnerable")
 	if _verify:
 		_check("real_damage_was_observed", _hp_drops > 0)
 		_check("laser_has_ended", is_instance_valid(_boss) and not _boss._shield_active)
 		_check("open_vulnerability_label", _main._hud._boss_status_phase.text == "可攻击")
+		_check("vulnerable_uses_same_hp_bar", not _main._hud._boss_status_hatch.visible and _main._hud._boss_status_fill.color == Color("#e1827f"))
 	if is_instance_valid(_boss):
 		_boss.take_damage(_boss.get_network_health() + 1)
 	await _at(1510)
@@ -223,7 +233,7 @@ func _report(name: String) -> void:
 	var hud = _main._hud
 	var bar = hud._boss_status_root
 	var cards: Rect2 = hud._draft_panel.get_global_rect()
-	var boss_rect := bar.get_global_rect() as Rect2 if is_instance_valid(bar) else Rect2()
+	var boss_rect := bar.get_global_rect() as Rect2 if is_instance_valid(bar) and bar.visible else Rect2()
 	var laser := "off"
 	if is_instance_valid(_boss):
 		laser = "%s / %s / %.2f" % [_boss._ultimate_laser_charging, _boss._ultimate_laser_firing, _boss._ultimate_laser_fire_timer]
@@ -237,12 +247,22 @@ func _report(name: String) -> void:
 		_check("boss_and_cards_in_separate_rows", hud._draft_panel.visible and row.get_child_count() == 3 and boss_rect.has_area()
 			and boss_rect.end.y <= cards.position.y and get_viewport().get_visible_rect().encloses(cards))
 		_check("draft_has_no_focus", get_viewport().gui_get_focus_owner() == null and not get_tree().paused)
-		_check("countdown_max_10_seconds", hud._draft_time_bar.max_value == 10.0 and hud._draft_time_bar.value > 8.0)
+		_check("countdown_max_10_seconds", hud._draft_time_bar.max_value == 10.0 and absf(hud._draft_time_bar.value - 7.5) < 0.2)
 		if _mobile:
 			_check_safe_area()
 	if _verify and name in ["charge", "laser_and_draft", "laser_hold"]:
 		var phase := {"charge": "蓄力", "laser_and_draft": "推进", "laser_hold": "持续"}
-		_check("boss_window_" + name, hud._boss_status_phase.text == "护盾中 · 激光" + phase[name])
+		_check("boss_window_" + name, hud._boss_status_phase.text == "有盾 · 不掉血 · 激光" + phase[name])
+		_check("same_hp_fill_width_" + name, hud._boss_status_hatch.visible
+			and is_equal_approx(hud._boss_status_hatch.size.x, hud._boss_status_fill.size.x)
+			and is_equal_approx(hud._boss_status_fill.size.x, 500.0 * _boss.get_network_health() / _boss.get_network_max_health()))
+	if _verify and name == "charge":
+		var hit_circle := _boss.get_node("CollisionShape2D") as CollisionShape2D
+		_check("single_hp_bar_original_collision", not _boss.has_node("HealthBar") and not _boss.has_node("Label")
+			and hit_circle.shape.radius == 33.0 and _boss._sprite.scale.is_equal_approx(Vector2.ONE * (2.0 / 3.0)))
+	if _verify and name == "shield_release":
+		_check("one_release_in_boss_row", hud._boss_status_phase.text == "护盾解除 · 可攻击"
+			and not hud._boss_status_hatch.visible and hud._draft_panel.visible and boss_rect.end.y <= cards.position.y)
 
 func _check_safe_area() -> void:
 	var viewport := get_viewport()

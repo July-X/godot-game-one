@@ -2,6 +2,38 @@
 
 本项目的美术与音频**以程序化生成为主**，外部资产只覆盖少数关键形象。
 
+## 裂隙母舰可读性
+
+以 `SBH-Rift-Mothership-Design.png` 为造型参考。`python3 scripts/generate_assets/make_rift_mothership.py` 用 Pillow 重画肩甲、钢灰色层次和中央炮口。输出仍为 128×96 像素，场景保持原缩放与 33 单位碰撞圆。外翼使用较暗的冷灰，激光蓄力与推进的暖色留在原预警和光束里。
+
+### 复跑
+
+用 Godot 4.6.2 在同机截取两版。复现基线时，将本版的 `tests/battle_presentation_probe.gd` 复制到 `c26defe` 临时副本。候选版用 `verify` 校验顶部血条、选卡、输入和真实扣血。两版分别把输出写入已存在的目录。
+
+```bash
+godot --windowed --resolution 1280x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- capture /已有目录/16x9 verify
+godot --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- capture /已有目录/20x9 touch verify
+tests/run_probe.sh 18599 boss
+tests/run_probe.sh 18600
+tests/run_probe.sh 18601 feedback
+godot --headless res://tests/mobile_check.tscn
+godot --headless --fixed-fps 60 res://tests/combat_visual_probe.tscn
+```
+
+基线命令省去 `verify`。实拍的蓄力、推进、解除和可攻击分别取第 492、622、1345 和 1430 物理帧。测试脚本提交键盘或触屏事件，保留引擎的走位、碰撞和激光绘制。擦弹加速按墙钟衰减，后段计入的蓝色主炮弹数可不同。
+
+联机专项用真实 ENet 双进程，跑完一次完整激光。加入端先通过现有实体快照保留正在画的光束，再模拟光束绘制节点缺失并恢复当前进度。解除后重发一次解除、上一阶段、旧快照和其他实体编号，验证碎片和顶部提示只出现一次。受保护与可攻击阶段各用一次真实主炮碰撞，随后再击毁并拾取六件掉落。图形模式可分别用 `-- host <端口> capture <已有目录>` 与 `-- client <同端口> capture <已有目录>` 抓取两端画面。并排验收时，让两个窗口各有一部分可见。
+
+### 本机验收
+
+- `c26defe` 的双进程复现里，实体快照替换了同一艘母舰。顶部仍显示蓄力和护盾，舰体护盾却已消失。
+- 16:9 实拍通过 24/24，20:9 实拍通过 28/28。第 622 帧，两种画幅各抽样 3,734 个暖色弹幕像素和 25,871 个光束区域暖色像素。对应像素的坐标和颜色均与基线一致。母舰肩甲在光束外仍可辨认，顶部生命条和选卡互不重叠。
+- Boss 专项无窗口房主 47/47、加入端 43/43。双窗渲染房主 48/48、加入端 44/44。主炮碰撞时，有盾保持 936.67 生命值，解除后降为 928.67，加入端收到相同的扣血。每端只显示一次碎裂和解除，六件掉落的坐标、顺序、归属及奖励次数通过核对。
+- 常规联机 40/40，反馈联机 25/25，宽窄端轮换房主各 29/29。单人渲染专项 32/32，覆盖盾片与前景敌弹的同帧像素、碎片释放与击毁。桌面模拟触屏 13/13，战斗画面 21/21，导入及主场景启动通过。常规联机仍有已知的入场寻址消息，立即退出时仍可见引擎对象清理提示。
+- 桌面模拟触屏与键鼠输入、同机双进程联机均已覆盖。真人辨识与手机双机未验。
+
 ## 固定的生产假设
 
 - 游戏类型：2D 俯视角 Roguelike 弹幕射击
@@ -153,7 +185,7 @@ bash tests/run_probe.sh 17944
 
 | 资源 | 路径 | 说明 |
 |------|------|------|
-| Boss 贴图 | `assets/sprites/enemies/boss/boss_01.png`~`boss_05.png` | 每次出场轮换，避免连续重复 |
+| Boss 贴图 | `assets/sprites/enemies/boss/boss_01.png`~`boss_05.png` | 项目脚本生成，沿用出场轮换与阶段换型 |
 | 玩家等级外形 | `assets/sprites/player/variants/lv01.png`~`lv05.png` | 每 5 级一档 |
 | 技能图标 | `assets/sprites/ui/skill_{laser,skill,dash}.png` | HUD 技能槽，**规格见下节** |
 | 图标 | `assets/sprites/ui/icon.png` | 项目图标 |
@@ -201,7 +233,8 @@ P1 精修以 `3d960c3` 为对照，只在既有剪影内调整像素。用连续
 |------|------|
 | 玩家护盾环 | `shield_ring.gd` `draw_arc()` |
 | 普通命中 / 核心确认 | `hit_effect.gd` 在世界层级 −1 绘制 0.10 秒冰色火花或 0.30 秒金色断环。沿用 `Pool` 取用与释放，每次效果共用一个绘制节点。 |
-| 精英/Boss 护盾光晕 | `shield_circle.gd` |
+| 精英护盾光晕 | `shield_circle.gd` |
+| 母舰护盾细弧 | `boss.gd` 按权威激光阶段绘制 |
 | 破盾碎裂 | `shield_shatter_burst.gd` |
 | 激光光束 | `laser_bolt.gd` `_draw()` 三层线叠加 |
 | 闪电链 | `lightning_line.gd` 锯齿线 |
