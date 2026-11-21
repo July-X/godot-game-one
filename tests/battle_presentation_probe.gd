@@ -13,6 +13,7 @@ var _stick
 var _out := ""
 var _mobile := false
 var _verify := false
+var _safe_profile := "right"
 var _passed := 0
 var _failed := 0
 var _start := 0
@@ -36,6 +37,10 @@ func _run() -> void:
 	_out = args[1] if args.size() > 1 else ""
 	_mobile = args.has("touch")
 	_verify = args.has("verify")
+	if args.has("inset-left"):
+		_safe_profile = "left"
+	elif args.has("inset-rounded"):
+		_safe_profile = "rounded"
 	if DisplayServer.get_name() == "headless":
 		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 		get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
@@ -266,6 +271,23 @@ func _report(name: String) -> void:
 		cards if hud._draft_panel.visible else Rect2(), hud._draft_panel.visible and boss_rect.intersects(cards), laser])
 	if name == "laser_and_draft" and _verify:
 		var row := hud._draft_row as HBoxContainer
+		var skills: Rect2 = hud._skill_bar.get_global_rect()
+		var safe: Rect2 = hud._safe_rect
+		var slot := hud._skill_slots[0].button as Button
+		print("[SKILL_RECT] profile=%s mobile=%s safe=%s rect=%s margin=%s slot=%s gap=%d" %
+			[_safe_profile, _mobile, safe, skills, safe.end - skills.end, slot.size,
+				hud._skill_bar.get_theme_constant("separation")])
+		var margin := safe.end - skills.end
+		var expected_slot := Vector2(94, 94) if _mobile else Vector2(80, 80)
+		_check("skill_slots_keep_their_hitbox_and_gap", slot.size == expected_slot
+			and skills.size == Vector2(expected_slot.x * 3 + 16, expected_slot.y)
+			and hud._skill_bar.get_theme_constant("separation") == 8)
+		if _mobile:
+			var center_combat := Rect2(safe.position + safe.size * Vector2(.25, .17), safe.size * Vector2(.43, .55))
+			_check("thumb_clearance_leaves_center_and_cards_clear", margin.x > 18 and margin.y > 18
+				and safe.encloses(skills) and not skills.intersects(center_combat) and not skills.intersects(cards))
+		else:
+			_check("desktop_skill_margin_stays_at_18", margin == Vector2(18, 18))
 		_check("boss_and_cards_in_separate_rows", hud._draft_panel.visible and row.get_child_count() == 3 and boss_rect.has_area()
 			and boss_rect.end.y <= cards.position.y and get_viewport().get_visible_rect().encloses(cards))
 		_check("draft_centered_and_enlarged", cards.get_center().distance_to(hud._safe_rect.get_center()) < 1
@@ -314,7 +336,13 @@ func _check_safe_area() -> void:
 	_apply_safe_area(original)
 
 func _asymmetric_safe() -> Rect2:
-	return Rect2(Vector2(72, 34), get_viewport().get_visible_rect().size - Vector2(188, 102))
+	var size := get_viewport().get_visible_rect().size
+	match _safe_profile:
+		"left":
+			return Rect2(Vector2(116, 34), size - Vector2(188, 102))
+		"rounded":
+			return Rect2(Vector2(32, 26), size - Vector2(64, 78))
+	return Rect2(Vector2(72, 34), size - Vector2(188, 102))
 
 func _apply_safe_area(safe: Rect2) -> void:
 	_main._hud._layout_in_safe_area(safe)
@@ -349,6 +377,25 @@ func _exercise_touch_lifecycle() -> void:
 	_drag(0, card_point)
 	_touch(0, card_point, false)
 	_check("old_finger_cannot_choose_reward", UpgradeDraft.has_draft(1) and _stick._move_touch_id == -1)
+	_touch(0, edge, true)
+	_drag(0, edge + Vector2(84, 0))
+	var old_corner := safe.end - Vector2(22, 22)
+	_touch(1, old_corner, true)
+	_touch(1, old_corner, false)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check("old_skill_corner_has_no_touch_target", _player.can_dash() and GameState.get_laser_cooldown() == 0
+		and UpgradeDraft.has_draft(1) and _stick._move_touch_id == 0)
+	var skill: Button = hud._skill_slots[0].button
+	var skill_corner := skill.get_global_rect().end - Vector2(4, 4)
+	_touch(1, skill_corner, true)
+	_touch(1, skill_corner, false)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_check("second_finger_uses_shifted_skill_without_selecting_card", GameState.get_laser_cooldown() > 0
+		and UpgradeDraft.has_draft(1) and _stick._move_touch_id == 0
+		and motion.touch_move.is_equal_approx(Vector2(.75, 0)))
+	_touch(0, edge, false)
 	var narrow := Rect2(safe.position + Vector2(84, 0), Vector2(544, safe.size.y))
 	_apply_safe_area(narrow)
 	for i in 3:

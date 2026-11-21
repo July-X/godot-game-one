@@ -68,6 +68,7 @@ const BOSS_BONUS_DAMAGE_MAX: float = 20.0
 const BOSS_BONUS_MOVE_SPEED_MAX: float = 0.5
 const SKILL_SLOT_DESKTOP: Vector2 = Vector2(80, 80)
 const SKILL_SLOT_MOBILE: Vector2 = Vector2(94, 94)
+const SKILL_INSET_MOBILE := Vector2(48, 56)
 
 ## 图标资源缺失时的字形兜底（见 _create_skill_slot）
 const SKILL_GLYPH: Dictionary = {
@@ -478,12 +479,13 @@ func _position_draft_panel() -> void:
 	_draft_panel.position = Vector2(_safe_rect.get_center().x - _draft_panel.size.x * 0.5, y)
 
 func _layout_skill_bar() -> void:
-	var slot_size := SKILL_SLOT_MOBILE if _is_touch_platform() else SKILL_SLOT_DESKTOP
+	var touch := _is_touch_platform()
+	var slot_size := SKILL_SLOT_MOBILE if touch else SKILL_SLOT_DESKTOP
 	for slot in _skill_slots:
 		var btn: Button = slot.button
 		btn.custom_minimum_size = slot_size
 		btn.size = slot_size
-		slot.key.visible = not _is_touch_platform()
+		slot.key.visible = not touch
 		slot.icon.position = Vector2((slot_size.x - 42.0) * 0.5, (slot_size.y - 80.0) * 0.33 + 5.0)
 		slot.icon.size = Vector2(42, 41)
 		slot.name.position = Vector2(0, slot_size.y - 36)
@@ -493,7 +495,8 @@ func _layout_skill_bar() -> void:
 		slot.progress.position = Vector2(4, slot_size.y - 3)
 	_skill_bar.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_skill_bar.size = _skill_bar.get_combined_minimum_size()
-	_skill_bar.position = _safe_rect.end - _skill_bar.size - Vector2.ONE * EDGE_MARGIN
+	var inset := SKILL_INSET_MOBILE if touch else Vector2.ONE * EDGE_MARGIN
+	_skill_bar.position = _safe_rect.end - _skill_bar.size - inset
 
 func _get_design_canvas_size() -> Vector2:
 	return get_viewport().get_visible_rect().size
