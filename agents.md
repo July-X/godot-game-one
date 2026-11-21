@@ -98,7 +98,7 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 
 判定标准：**`[PROBE] ... VERDICT SUMMARY pass=N failed=0` 且两个进程退出码都是 0**，
 `run_probe.sh` 还会额外把 `SCRIPT ERROR` 和运行期 `ERROR:` 计入失败。
-当前共 40 项断言（房主 24 项、加入端 16 项），含两端的雨燕槽位和核心拾取去重。独立的混合画幅用例可用 `tests/run_probe.sh 7790 wide-host` 和 `wide-client` 复现，已知窄端看不到贴住宽端右界的队友。
+常规门禁共 40 项断言（房主 24 项、加入端 16 项），含两端的雨燕槽位和核心拾取去重。改联机战场还须运行 `tests/run_probe.sh 7790 wide-host` 与 `tests/run_probe.sh 7791 wide-client`，检查双方贴边移动、弹道和入场坐标。末尾追加已有截图目录可用两个图形进程捕获同一场景。
 
 **改任何难度数值后必须跑难度曲线门禁**（防止难度墙悄悄长回来）：
 

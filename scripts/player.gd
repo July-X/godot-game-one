@@ -254,13 +254,13 @@ func _physics_process(delta: float) -> void:
 			_tick_downed(delta)
 		## 倒地仍能挪动（移速 30%），但不能射击——不能动的救援目标没有博弈
 		_motion.update(delta, GameState.get_move_speed_multiplier()
-			* DOWNED_MOVE_MULTIPLIER, get_viewport_rect().size)
+			* DOWNED_MOVE_MULTIPLIER, NetworkManager.battle_size(self))
 		_feedback.update(delta)
 		return
 
 	## 闪避：Shift 触发，位移 + 无敌帧同时给
 	_consume_dash()
-	_motion.update(delta, GameState.get_move_speed_multiplier(), get_viewport_rect().size)
+	_motion.update(delta, GameState.get_move_speed_multiplier(), NetworkManager.battle_size(self))
 	if _motion.is_dashing():
 		## 冲刺期间强制无敌，且盖过受击后的 1 秒无敌计时
 		_invincible_timer = maxf(_invincible_timer, 0.05)

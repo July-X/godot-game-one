@@ -11,6 +11,8 @@ extends Node
 const DEFAULT_PORT: int = 7777
 ## 最大同时连接客户端数量（合作模式最多 1 个 Client）
 const MAX_CLIENTS: int = 1
+## 大厅开局协议的逻辑像素，世界原点为左上角。
+const LAN_BATTLE_SIZE := Vector2i(1280, 720)
 const TRANSPORT_ENET := "enet"
 const TRANSPORT_HARMONY := "harmony"
 
@@ -112,6 +114,11 @@ func is_online() -> bool:
 		return false
 	## 仅在“已连接”时视为在线，避免把 CONNECTING 误判为在线导致单机/输入链路错走联机分支。
 	return peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+## 窗口可以随时变化。联机世界在整个会话内都用开局协议的尺寸。
+func battle_size(world: CanvasItem) -> Vector2:
+	return Vector2(LAN_BATTLE_SIZE) if _session_active else world.get_viewport_rect().size
 
 
 ## 获取本机 peer_id（未联机时返回 1）

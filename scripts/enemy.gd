@@ -78,7 +78,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	## 屏幕边界反弹
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	var margin: float = 20.0
 	if global_position.x < margin or global_position.x > screen.x - margin:
 		velocity.x *= -0.8
@@ -135,7 +135,7 @@ func _physics_process(delta: float) -> void:
 func _draw() -> void:
 	if _warn_left <= 0.0 or _warn_dir.length() < 0.01:
 		return
-	var screen: Vector2 = get_viewport_rect().size
+	var screen: Vector2 = NetworkManager.battle_size(self)
 	## 线画到屏幕边缘为止，不画到无穷远（那样会变成一条贯穿全屏的亮线）
 	var to_edge: float = 2000.0
 	if absf(_warn_dir.x) > 0.01:

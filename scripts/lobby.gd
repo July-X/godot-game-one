@@ -146,7 +146,7 @@ func _on_start_pressed() -> void:
 	if not NetworkManager.is_host:
 		return
 	_stop_discovery_services()
-	_rpc_start_game.rpc()
+	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE)
 
 
 func _on_back_pressed() -> void:
@@ -157,8 +157,13 @@ func _on_back_pressed() -> void:
 
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_start_game() -> void:
+func _rpc_start_game(battle_size: Vector2i) -> void:
 	_stop_discovery_services()
+	if battle_size != NetworkManager.LAN_BATTLE_SIZE:
+		NetworkManager.disconnect_network()
+		_show_mode_select()
+		_status_label.text = "战场尺寸不兼容，请确认双方的游戏版本"
+		return
 	game_start_requested.emit()
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 

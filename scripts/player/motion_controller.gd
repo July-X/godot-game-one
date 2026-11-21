@@ -9,6 +9,7 @@ extends Node
 @export var move_speed: float = 260.0
 @export var friction: float = 500.0
 @export var mouse_sensitivity: float = 0.008
+const EDGE_MARGIN := 24.0
 
 var mouse_vel: Vector2 = Vector2.ZERO
 var mobile_vel: Vector2 = Vector2.ZERO
@@ -145,16 +146,15 @@ func _update_mobile(delta: float, speed_multiplier: float) -> void:
 
 
 func _clamp_to_bounds(screen_size: Vector2) -> void:
-	var margin: float = 24.0
-	if _player.global_position.x < margin:
-		_player.global_position.x = margin
+	if _player.global_position.x < EDGE_MARGIN:
+		_player.global_position.x = EDGE_MARGIN
 		_player.velocity.x = abs(_player.velocity.x) * 0.5
-	elif _player.global_position.x > screen_size.x - margin:
-		_player.global_position.x = screen_size.x - margin
+	elif _player.global_position.x > screen_size.x - EDGE_MARGIN:
+		_player.global_position.x = screen_size.x - EDGE_MARGIN
 		_player.velocity.x = -abs(_player.velocity.x) * 0.5
-	if _player.global_position.y < margin:
-		_player.global_position.y = margin
+	if _player.global_position.y < EDGE_MARGIN:
+		_player.global_position.y = EDGE_MARGIN
 		_player.velocity.y = abs(_player.velocity.y) * 0.5
-	elif _player.global_position.y > screen_size.y - margin:
-		_player.global_position.y = screen_size.y - margin
+	elif _player.global_position.y > screen_size.y - EDGE_MARGIN:
+		_player.global_position.y = screen_size.y - EDGE_MARGIN
 		_player.velocity.y = -abs(_player.velocity.y) * 0.5

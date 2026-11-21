@@ -34,7 +34,7 @@ func _physics_process(delta: float) -> void:
 		return
 	global_position += _direction * _speed * delta
 	rotation += _rotation_speed * delta
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	var margin: float = 80.0
 	if global_position.x < -margin or global_position.x > screen.x + margin or global_position.y < -margin or global_position.y > screen.y + margin:
 		if NetworkManager.is_online() and multiplayer.is_server():

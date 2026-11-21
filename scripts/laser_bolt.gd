@@ -55,7 +55,7 @@ func _physics_process(delta: float) -> void:
 	if _lifetime <= 0:
 		queue_free()
 
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	if not _has_bounced:
 		var bounced: bool = false
 		if global_position.x < 20:

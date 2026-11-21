@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 双进程 headless 联机回归门禁。
 #
-#   tests/run_probe.sh [端口] [feedback|wide-host|wide-client]
+#   tests/run_probe.sh [端口] [feedback|wide-host|wide-client] [已有截图目录]
 #
 # 做三件人工流程做不到的事：
 #   1. 自动收口两个进程的退出码（探针断言失败 → 非零退出）
@@ -22,6 +22,24 @@ case "$CASE" in
   feedback) SCENE=res://tests/feedback_lan_probe.tscn ;;
   *) echo "用法: $0 [端口] [feedback|wide-host|wide-client]" >&2; exit 2 ;;
 esac
+HOST_DISPLAY=(--headless)
+CLIENT_DISPLAY=(--headless)
+PROBE_ARGS=("$CASE")
+if [[ $# -ge 3 ]]; then
+  if [[ "$CASE" != wide-* || ! -d "$3" ]]; then
+    echo "截图需要 wide-host 或 wide-client，以及一个已有目录" >&2
+    exit 2
+  fi
+  PROBE_ARGS+=("$(cd "$3" && pwd)")
+  host_size=1280x720
+  client_size=1600x720
+  if [[ "$CASE" == wide-host ]]; then
+    host_size=1600x720
+    client_size=1280x720
+  fi
+  HOST_DISPLAY=(--windowed --resolution "$host_size" --audio-driver Dummy)
+  CLIENT_DISPLAY=(--windowed --resolution "$client_size" --audio-driver Dummy)
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"
 HOST_LOG="$LOG_DIR/host.log"
@@ -36,11 +54,11 @@ GODOT="${GODOT:-godot}"
 echo "[probe] port=$PORT log_dir=$LOG_DIR"
 cd "$ROOT" || exit 2
 
-"$GODOT" --headless --path . "$SCENE" -- host "$PORT" "$CASE" \
+"$GODOT" "${HOST_DISPLAY[@]}" --path . "$SCENE" -- host "$PORT" "${PROBE_ARGS[@]}" \
 	> "$HOST_LOG" 2>&1 &
 HOST_PID=$!
 sleep 1
-"$GODOT" --headless --path . "$SCENE" -- client "$PORT" "$CASE" \
+"$GODOT" "${CLIENT_DISPLAY[@]}" --path . "$SCENE" -- client "$PORT" "${PROBE_ARGS[@]}" \
 	> "$CLIENT_LOG" 2>&1 &
 CLIENT_PID=$!
 

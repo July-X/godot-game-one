@@ -316,7 +316,7 @@ func _tick_attack(delta: float) -> void:
 func _tick_retreat(delta: float) -> void:
 	var spd: float = 420.0 * (1.5 if _state == State.ENRAGED else 1.0)
 	var away: Vector2 = global_position.direction_to(_target.global_position) * -1.0
-	var center: Vector2 = get_viewport_rect().size * 0.5
+	var center: Vector2 = NetworkManager.battle_size(self) * 0.5
 	var to_center: Vector2 = global_position.direction_to(center)
 	var edge_bias: float = _get_edge_bias()
 	var move_dir: Vector2 = (away * (1.0 - edge_bias) + to_center * edge_bias).normalized()
@@ -470,7 +470,7 @@ func _fire_ultimate_laser() -> void:
 	var dir: Vector2 = _ultimate_laser_start.direction_to(aim_point)
 	if dir.length_squared() <= 0.001:
 		dir = Vector2.DOWN
-	var screen: Vector2 = get_viewport_rect().size
+	var screen: Vector2 = NetworkManager.battle_size(self)
 	_ultimate_laser_end = _ultimate_laser_start + dir.normalized() * screen.length() * 1.35
 	var scene := get_tree().current_scene
 	if scene and scene.has_method("broadcast_boss_ultimate_laser_fire"):
@@ -558,7 +558,7 @@ func _pick_new_strafe_bias() -> void:
 		_strafe_bias = Vector2(randf_range(-30.0, 30.0), randf_range(-12.0, 24.0))
 		_feint_timer = randf_range(BOSS_FEINT_INTERVAL_MIN, BOSS_FEINT_INTERVAL_MAX)
 		return
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	_strafe_bias = Vector2(randf_range(-screen.x * 0.10, screen.x * 0.10), randf_range(-screen.y * 0.04, screen.y * 0.08))
 	_feint_timer = randf_range(BOSS_FEINT_INTERVAL_MIN, BOSS_FEINT_INTERVAL_MAX)
 
@@ -695,7 +695,7 @@ func _do_sweep_barrage(delta: float, spd: float) -> void:
 	_cruise_towards(_ideal_standoff_position(), 0.55, delta)
 	if _shoot_timer <= 0:
 		var lanes := 7
-		var screen := get_viewport_rect().size
+		var screen := NetworkManager.battle_size(self)
 		var y := clampf(global_position.y + 40.0, 120.0, screen.y - 140.0)
 		var sweep_idx := _burst_step % lanes
 		for i in range(lanes):
@@ -719,7 +719,7 @@ func _do_charge(delta: float, spd: float) -> void:
 		tween.tween_property(self, "modulate", Color(1, 1, 1, 1), 0.1)
 	else:
 		move_and_slide()
-		var screen := get_viewport_rect().size
+		var screen := NetworkManager.battle_size(self)
 		if global_position.x < 20 or global_position.x > screen.x - 20 or global_position.y < 20 or global_position.y > screen.y - 20:
 			velocity = Vector2.ZERO
 			_enter_state(State.CIRCLE, randf_range(0.5, 0.9))
@@ -783,7 +783,7 @@ func _spawn_powerup_fragment(type: String, angle: float, radius: float, assigned
 ## ── 受击 ────────────────────────────────────────────────────
 
 func _clamp_to_arena(pos: Vector2) -> Vector2:
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	return Vector2(
 		clampf(pos.x, ARENA_MARGIN_X, screen.x - ARENA_MARGIN_X),
 		clampf(pos.y, ARENA_MARGIN_Y, screen.y - ARENA_MARGIN_Y)
@@ -793,7 +793,7 @@ func _enforce_arena_bounds() -> void:
 	global_position = _clamp_to_arena(global_position)
 
 func _get_edge_bias() -> float:
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	var near_x: bool = global_position.x <= ARENA_MARGIN_X + 28.0 or global_position.x >= screen.x - ARENA_MARGIN_X - 28.0
 	var near_y: bool = global_position.y <= ARENA_MARGIN_Y + 28.0 or global_position.y >= screen.y - ARENA_MARGIN_Y - 28.0
 	if near_x and near_y:
@@ -810,7 +810,7 @@ func _resolve_corner_stuck(delta: float) -> void:
 	else:
 		_corner_stuck_time = max(_corner_stuck_time - delta * 2.0, 0.0)
 	if _corner_stuck_time >= 0.3:
-		var center: Vector2 = get_viewport_rect().size * 0.5
+		var center: Vector2 = NetworkManager.battle_size(self) * 0.5
 		var nudge: Vector2 = global_position.direction_to(center) * (210.0 * delta)
 		global_position = _clamp_to_arena(global_position + nudge)
 		_enter_state(State.CIRCLE, randf_range(0.55, 1.0))
@@ -838,7 +838,7 @@ func _apply_fireline_dodge() -> void:
 	_fire_pressure_window = 0.0
 
 func _score_dodge_position(pos: Vector2) -> float:
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	var margin_x: float = min(pos.x - ARENA_MARGIN_X, screen.x - ARENA_MARGIN_X - pos.x)
 	var margin_y: float = min(pos.y - ARENA_MARGIN_Y, screen.y - ARENA_MARGIN_Y - pos.y)
 	var edge_space: float = min(margin_x, margin_y)

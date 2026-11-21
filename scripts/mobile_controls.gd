@@ -73,7 +73,7 @@ func _update_move_vector(current_pos: Vector2) -> void:
 ## 写死 550 会让摇杆悬在屏幕中间偏上，拇指够不到、也会和右下角技能条打架。
 ## 所以默认贴底左，距离边距固定，这样任何比例下都在拇指自然落点。
 func _calc_joystick_center() -> Vector2:
-	var size: Vector2 = get_viewport().size
+	var size := get_viewport().get_visible_rect().size
 	var margin_x: float = joystick_radius + 48.0
 	var margin_y: float = joystick_radius + 72.0
 	var center_x: float = clampf(base_offset.x, margin_x, maxf(size.x - margin_x, margin_x))

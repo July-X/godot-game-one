@@ -155,7 +155,7 @@ func _physics_process(delta: float) -> void:
 	_lifetime -= delta
 
 	## 屏幕外裁剪：超出屏幕一定距离后回收
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	var margin: float = 60.0
 
 	if _is_player_bullet:

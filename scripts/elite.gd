@@ -490,7 +490,7 @@ func _spawn_rewards() -> void:
 				scene.register_powerup_entity(pu, type)
 
 func _screen_clamp() -> void:
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	var margin: float = 60.0
 	if global_position.x < margin:
 		global_position.x = margin

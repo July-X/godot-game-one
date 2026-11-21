@@ -70,7 +70,7 @@ func _physics_process(delta: float) -> void:
 			global_position += dying_dir * _speed * delta * 0.5
 
 	if _state != MissileState.DYING:
-		var screen := get_viewport_rect().size
+		var screen := NetworkManager.battle_size(self)
 		if global_position.x < -30 or global_position.x > screen.x + 30 or global_position.y < -30 or global_position.y > screen.y + 30:
 			queue_free()
 			return

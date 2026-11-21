@@ -789,12 +789,17 @@ godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 
 | 访问口 | 替代原来写死的 |
 |---|---|
-| `_screen_center_x()` | 7 处 `Vector2(640, ...)`（精英/Boss 入场、玩家出生点） |
+| `NetworkManager.battle_size(world)`、`_screen_center_x()` | 世界边界与入场中心。单机取当前逻辑视口，联机取开局协议尺寸 |
 | `_screen_span_x()` | 背景装饰散布范围 `1180` / `1500` |
 | `_center_camera_on_viewport()` | `main.tscn` 里 `Camera2D(640, 360)`，监听 `size_changed` |
 
-`Backdrop` 位于独立 CanvasLayer（layer = −1），子节点 `BgColor` 锚定视口四边。世界中的视差星空在它上方，Boss 进退和两端染色共用 `_rpc_set_boss_bg`。移动端摇杆贴左下角并监听 `size_changed`。
-混合画幅的世界边界仍按各自视口计算。运行 `tests/run_probe.sh 7790 wide-host` 或 `wide-client` 可独立复现，目前窄端的队友可见性断言失败。后续共享战斗矩形方案见 `docs/Development_Plan.md`。
+`Backdrop` 的底色和三层视差星空覆盖整块本地画布。Boss 进退和两端染色共用 `_rpc_set_boss_bg`。界面在独立的 CanvasLayer 上布局，摇杆贴左下角并监听 `size_changed`。
+
+双人局以世界左上角 (0, 0) 为原点。房主通过可靠的开局消息发送协议尺寸 1280×720，加入端确认后进入战斗。玩家中心可到 (24, 24) 至 (1256, 696)，主炮首次反弹距边 10，普通敌弹飞出边界 60 后回收。导演、陨石、精英、Boss 和双方的弹道副本使用同一矩形。房主接收玩家位置时也执行边界检查。
+
+相机看向 (640, 360)。在 1600×720 的画布上，世界 x=0 和 x=1280 分别映射到画布 x=160 和 x=1440；在 1280×720 上分别为 0 和 1280。战斗绘制裁到世界矩形，宽屏侧边可显示背景与界面。鼠标惯性和摇杆使用方向，指针瞄准通过相机变换取世界坐标。两端共用世界坐标同步，无需传输窗口尺寸或屏幕偏移。
+
+客户端载入后立即请求玩家快照，补发按经过的时间计时。两端同时生成素材时，渲染帧数无法代表网络已等待的时间。断线回退单机时即恢复本地战场和相机，再按原流程重载。
 
 ### 18.3 触摸入口
 
@@ -805,6 +810,8 @@ godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 | 移动 | `mobile_controls.gd` 摇杆 | `_unhandled_input`，按钮消费掉的触摸不会漏进摇杆 |
 
 Android 和 iOS 入场时先创建摇杆，再创建 HUD 并绑定受本机控制的玩家。技能按钮接收触摸后，其余触摸交给摇杆的 `_unhandled_input`。桌面只创建 HUD。
+
+摇杆圆心与触摸事件使用本地逻辑画布。比如窗口为 960×600 时，1280×800 画布按 0.75 倍显示，物理点 (183, 412.5) 对应逻辑点 (244, 550)，即圆心右侧 84 单位。
 
 `hud.gd` 的 `_get_design_canvas_size()` 读**真实可视矩形**而不是
 ProjectSettings 的设计尺寸——后者只在"视口恰好等于设计尺寸"时成立。

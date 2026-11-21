@@ -6,6 +6,8 @@
 ## 单机兼容：NetworkManager.is_online() 为 false 时走原有单人逻辑。
 extends Node2D
 
+const MotionController = preload("res://scripts/player/motion_controller.gd")
+
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _laser_scene = preload("res://scenes/entities/laser_bolt.tscn")
@@ -185,10 +187,6 @@ func _ready() -> void:
 	_camera_shake = _camera_shake_script.new()
 	_camera_shake.name = "CameraShake"
 	add_child(_camera_shake)
-	_center_camera_on_viewport()
-	## 视口尺寸会变（手机横竖屏、窗口缩放、canvas_items+expand 的比例适配）。
-	## 相机必须跟着走，否则画面会偏出可视区——看起来就是"不是全屏，
-	## 右边黑一块"。用 size_changed 而不是每帧检查，成本为零。
 	if get_viewport() and not get_viewport().size_changed.is_connected(_center_camera_on_viewport):
 		get_viewport().size_changed.connect(_center_camera_on_viewport)
 	set_process(true)
@@ -197,6 +195,7 @@ func _ready() -> void:
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_create_parallax_background()
+	_center_camera_on_viewport()
 	if OS.has_feature("android") or OS.has_feature("ios"):
 		_spawn_mobile_controls()
 	_spawn_hud()
@@ -232,21 +231,13 @@ func _ready() -> void:
 			await get_tree().process_frame
 			_request_player_sync.rpc_id(1)
 			var my_id := multiplayer.get_unique_id()
-			var node: Node = null
-			for _attempt in 60:
-				node = get_node_or_null(str(my_id))
-				if node:
-					break
-				await get_tree().process_frame
-			if node == null:
+			# 两端同时载入时帧率不同，按网络等待时间检查，避免补帧期间误报掉队。
+			await get_tree().create_timer(1.0, true, false, true).timeout
+			if NetworkManager.is_online() and not has_node(str(my_id)):
 				push_warning("[Main] 同步后未找到本地玩家节点，向 Host 请求补生成（peer_id=%d）" % my_id)
 				_request_spawn_self.rpc_id(1, my_id)
-				for _retry in 60:
-					node = get_node_or_null(str(my_id))
-					if node:
-						break
-					await get_tree().process_frame
-				if node == null:
+				await get_tree().create_timer(2.0, true, false, true).timeout
+				if NetworkManager.is_online() and not has_node(str(my_id)):
 					push_error("[Main] 仍未找到本地玩家节点（peer_id=%d），本机将无法输入/开火" % my_id)
 	else:
 		## 单机模式：原有逻辑
@@ -309,6 +300,7 @@ static func _build_star_tile(count: int, size_min: int, size_max: int,
 
 func _create_parallax_background() -> void:
 	_bg_color.color = Palette.BG_BASE
+	var scenery: Node = $Backdrop if NetworkManager.is_online() else self
 
 	## 星空从「每颗星一个 Sprite2D」改为「每层一张平铺贴图」。
 	## 旧实现是 180+90+35 = 305 个节点、305 张各自独立的 2~12px 贴图，
@@ -335,15 +327,15 @@ func _create_parallax_background() -> void:
 		var def: Dictionary = layer_defs[i]
 		var sprite := Sprite2D.new()
 		sprite.texture = star_tiles[i]
-		## 平铺需要纹理重复；region 覆盖「一屏 + 一个贴图边长」，
-		## 滚动时露出的下一圈正好补上移出的部分
+		## 联机画布预留一个滚动周期，保证扩展区始终有星星。
 		sprite.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 		sprite.region_enabled = true
 		sprite.region_rect = Rect2(0, 0, STAR_FIELD_TILE * 4, STAR_FIELD_TILE * 3)
+		if scenery != self:
+			sprite.offset = -Vector2.ONE * STAR_FIELD_TILE
 		sprite.centered = false
-		sprite.position = Vector2.ZERO
 		sprite.z_index = int(def.z)
-		add_child(sprite)
+		scenery.add_child(sprite)
 		_bg_layers.append({nodes = [sprite], speed = float(def.speed)})
 
 
@@ -390,7 +382,7 @@ func _create_parallax_background() -> void:
 		nebula.texture = ImageTexture.create_from_image(img)
 		nebula.position = Vector2(randf_range(-200.0, _screen_span_x() + 200.0), randf_range(-200.0, 900.0))
 		nebula.z_index = -6 + randi() % 3
-		add_child(nebula)
+		scenery.add_child(nebula)
 		_nebulas.append(nebula)
 
 	for i in range(3):
@@ -425,7 +417,7 @@ func _create_parallax_background() -> void:
 		planet.texture = ImageTexture.create_from_image(img)
 		planet.position = Vector2(randf_range(100.0, _screen_span_x() - 100.0), randf_range(100.0, 620.0))
 		planet.z_index = -4
-		add_child(planet)
+		scenery.add_child(planet)
 		_planets.append(planet)
 
 func _start_bgm() -> void:
@@ -441,7 +433,7 @@ func _spawn_player() -> void:
 
 
 func _get_networked_player_spawn_position(p_peer_id: int) -> Vector2:
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	if p_peer_id == 1:
 		return Vector2(screen.x * 0.32, screen.y * 0.7)
 	return Vector2(screen.x * 0.68, screen.y * 0.7)
@@ -680,6 +672,7 @@ func _fallback_to_single_player(message: String = "") -> void:
 		_show_death_marquee_text(message, MODE_SWITCH_PROMPT_HOLD_SECONDS)
 	_clear_network_runtime_state()
 	NetworkManager.disconnect_network()
+	_center_camera_on_viewport()
 	call_deferred("_reload_as_single_player_clean", reload_delay)
 
 func _clear_network_runtime_state() -> void:
@@ -819,7 +812,7 @@ func _tick_wave_director(delta: float) -> void:
 		return
 	var alive: int = get_tree().get_nodes_in_group("enemies").size()
 	var orders: Array = _wave_director.advance(delta, GameState.level, alive,
-		get_viewport_rect().size, ENEMY_SCREEN_CAP)
+		NetworkManager.battle_size(self), ENEMY_SCREEN_CAP)
 	for order: Dictionary in orders:
 		_spawn_enemy_at(int(order["type"]), order["pos"])
 	_refresh_wave_phase_hud()
@@ -937,15 +930,9 @@ func _apply_player_interpolation(delta: float) -> void:
 		pnode.global_position = pnode.global_position.lerp(_player_target_positions[pid], alpha)
 
 
-## 屏幕水平中心。
-##
-## 这些位置以前全部写死 640（= 1280 / 2）。在桌面 1280×720 上恰好正确，
-## 但改成 canvas_items + expand 之后，手机高屏手机的视口宽度会大于 1280，
-## 写死的 640 就不再是中心——精英和 Boss 会从偏左的位置入场。
-## 做成访问口而不是常量，理由和 `_enemy_speed_cap()` 一样：
-## 视口尺寸变了，出怪点必须跟着变，而不是各处各记一个魔法数字。
+## 玩家、精英和 Boss 共用战场中心入场。
 func _screen_center_x() -> float:
-	return get_viewport_rect().size.x * 0.5
+	return NetworkManager.battle_size(self).x * 0.5
 
 
 ## 可视区宽度。背景装饰（行星 / 星云）的横向散布范围用它，
@@ -955,17 +942,38 @@ func _screen_span_x() -> float:
 	return get_viewport_rect().size.x
 
 
-## 把相机摆到可视区正中。
-##
-## 场景里 Camera2D 原本写死在 (640, 360)，那只是 1280×720 的中心。
-## 相机只偏移 `offset`（震屏用），不改变 `position`，
-## 所以这里改 position 不会和 camera_shake.gd 打架。
+## 单机跟随本地视口中心；联机换窗口时只扩大背景取景。
 func _center_camera_on_viewport() -> void:
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam == null:
 		return
 	var size := get_viewport_rect().size
-	cam.position = size * 0.5
+	var field := NetworkManager.battle_size(self)
+	var online := NetworkManager.is_online()
+	# 只裁战斗物体。独立画布上的星空与 HUD 仍可显示在边缘以外。
+	RenderingServer.canvas_item_set_custom_rect(get_canvas_item(), online, Rect2(Vector2.ZERO, field))
+	RenderingServer.canvas_item_set_clip(get_canvas_item(), online)
+	cam.position = field * 0.5
+	cam.force_update_scroll()
+	if online:
+		for layer in _bg_layers:
+			for tile: Sprite2D in layer.nodes:
+				tile.region_rect.size = size + Vector2.ONE * STAR_FIELD_TILE
+	queue_redraw()
+
+
+func _draw() -> void:
+	if not NetworkManager.is_online():
+		return
+	var field := NetworkManager.battle_size(self)
+	var view := get_viewport_rect().size
+	var edge := Color(0.42, 0.58, 0.76, 0.36)
+	if view.x > field.x + 1.0:
+		draw_line(Vector2(0.5, 0), Vector2(0.5, field.y), edge, 1)
+		draw_line(Vector2(field.x - 0.5, 0), Vector2(field.x - 0.5, field.y), edge, 1)
+	if view.y > field.y + 1.0:
+		draw_line(Vector2(0, 0.5), Vector2(field.x, 0.5), edge, 1)
+		draw_line(Vector2(0, field.y - 0.5), Vector2(field.x, field.y - 0.5), edge, 1)
 
 
 ## 敌速上限：优先取本机玩家的真实极速，玩家节点没就绪时用兜底常量。
@@ -1143,7 +1151,7 @@ func _rpc_request_powerup_magnet(entity_id: int) -> void:
 func _spawn_asteroid() -> void:
 	var asteroid = _asteroid_scene.instantiate()
 	var side := randi() % 4
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	match side:
 		0: asteroid.position = Vector2(randf_range(60, screen.x - 60), -40)
 		1: asteroid.position = Vector2(randf_range(60, screen.x - 60), screen.y + 40)
@@ -1243,7 +1251,7 @@ func _show_elite_warning() -> void:
 	warning.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	warning.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	warning.position = Vector2(0, 300)
-	warning.size = Vector2(get_viewport_rect().size.x, 60)
+	warning.size = Vector2(NetworkManager.battle_size(self).x, 60)
 	warning.z_index = 100
 	add_child(warning)
 	var tween := create_tween()
@@ -1602,7 +1610,7 @@ func _show_death_marquee() -> void:
 
 func _show_death_marquee_text(msg: String, hold_seconds: float = DEATH_MARQUEE_HOLD_SECONDS) -> void:
 	var banner := Label.new()
-	var screen := get_viewport_rect().size
+	var screen := NetworkManager.battle_size(self)
 	banner.text = "☠  " + msg + "  ☠"
 	banner.add_theme_font_size_override("font_size", 24)
 	banner.add_theme_color_override("font_color", Color(1.0, 0.3, 0.2, 1.0))
@@ -2239,7 +2247,11 @@ func _rpc_report_player_state(p_peer_id: int, pos_x: float, pos_y: float, rot: f
 		if _player_report_rejected <= 3:
 			print("[SYNC] 上报被拒 p_peer_id=%d sender=%d" % [p_peer_id, sender])
 		return
-	_apply_remote_player_state(p_peer_id, Vector2(pos_x, pos_y), rot)
+	var pos := Vector2(pos_x, pos_y)
+	if not pos.is_finite() or not is_finite(rot):
+		return
+	var margin := Vector2.ONE * MotionController.EDGE_MARGIN
+	_apply_remote_player_state(p_peer_id, pos.clamp(margin, NetworkManager.battle_size(self) - margin), rot)
 
 
 ## 收到过几次客户端坐标上报。联机探针靠它区分"客户端到底有没有在发"，
