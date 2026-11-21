@@ -82,10 +82,21 @@ func _check(label: String, ok: bool, detail := "") -> void:
 		failed += 1
 	print("[feedback] ", label, " pass=", ok, " ", detail)
 
+func _record_hit_playbacks(seen: Dictionary) -> void:
+	for voice: AudioStreamPlayer in SFX._players:
+		if voice.stream in SFX._hit_streams and voice.playing:
+			var playback := voice.get_stream_playback()
+			if playback != null:
+				seen[playback] = true
+
 func _stress() -> void:
-	# 先填满共享池，再把受击和预警夹在两批同帧命中之间。
+	# 命中音只有 45 毫秒，创建预警时就可能播完。按播放实例计数，排除进场前的余音。
+	var seen := {}
+	_record_hit_playbacks(seen)
+	var previous := seen.size()
 	for i in 24:
 		main.emit_hit_feedback(main.SHAKE_HIT, 0.0, true)
+		_record_hit_playbacks(seen)
 	player.take_damage(GameState.get_shield_layers(player.peer_id) + 1)
 	var hurt := _voices(SFX._stream_player_hurt)
 	var first: AudioStreamPlayback = hurt[0].get_stream_playback() if hurt else null
@@ -95,13 +106,12 @@ func _stress() -> void:
 	main.broadcast_boss_ultimate_laser_charge(Vector2(940, 132), 1.2)
 	for i in 24:
 		main.emit_hit_feedback(main.SHAKE_HIT, 0.0, true)
+		_record_hit_playbacks(seen)
 	var still_playing := _voices(SFX._stream_player_hurt)
 	var intact: bool = first != null and not still_playing.is_empty() and still_playing[0].get_stream_playback() == first
 	_check("hurt_survives_24_hits", intact, "hurt voices=%d" % still_playing.size())
-	var hits := 0
-	for stream in SFX._hit_streams:
-		hits += _voices(stream).size()
-	_check("coalesced_hits", hits == 1, "hit voices=%d" % hits)
+	var hits := seen.size() - previous
+	_check("coalesced_hits", hits == 1, "new hit playbacks=%d" % hits)
 	var warnings := _voices(SFX.get("_stream_boss_warning"))
 	_check("charge_warning", warnings.size() == 1, "warning voices=%d" % warnings.size())
 
