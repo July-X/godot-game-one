@@ -156,6 +156,22 @@ bash tests/run_probe.sh 17943 feedback
 bash tests/run_probe.sh 17944
 ```
 
+### 静止命中特效的出生坐标
+
+静止命中效果以调用方提供的世界坐标为准。主炮接触点、溅射目标当时的位置和房主确认的历史接触点，在效果入树前换算成场景局部坐标。该节点关闭物理插值。火花留在原位，随镜头取景。冰白、护盾、普通敌机图集和核心金环沿用各自的图样、时长与层级。
+
+Godot 4.6.2 在同一平移和缩放的父节点下，以每秒 120 帧渲染两次远隔接触、盾面火花和普通敌机图集。目标与取景均逐帧移动。基线 `0acdea8` 的两处冰白火花和盾面火花都在首帧出现在父节点原点，第二次冰白火花的首帧中心约为 `(62,42)`，该帧接触点为 `(413,200)`。修复后的首帧中心约为 `(413,201)`，四组全程落点与释放为 8/8。同龄像素与武器接触检查为 29/29，包含玩家扣血、直击、激光、导弹和溅射。真实双进程反馈门禁，房主 13/13、加入端 14/14。加入端的场景有偏移，房主将精英的历史接触包延后 100 毫秒发送，期间目标移位。两端在同一世界落点创建火花。
+
+```bash
+out=$(mktemp -d)
+godot --windowed --resolution 1280x720 --fixed-fps 120 --audio-driver Dummy \
+    res://tests/impact_scope_probe.tscn -- anchors "$out"
+godot --windowed --resolution 1280x720 --fixed-fps 60 --audio-driver Dummy res://tests/impact_scope_probe.tscn
+bash tests/run_probe.sh 18753 feedback
+```
+
+这组桌面样本复现了偏位机制。玩家反馈中的当时画面与手机上的表现待验。
+
 手机双机、手机屏幕上的辨识度及真人盲测尚未验收。回退时执行 `git revert <本批提交 SHA>`。
 
 ## 视觉方向

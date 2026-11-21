@@ -1,6 +1,7 @@
 extends "res://tests/lan_probe.gd"
 ## 观察实际启动的音频回放。把重发分隔几个混音周期，误播就会独立计数。
 const Player = preload("res://scripts/player.gd")
+const HIT := "res://scenes/effects/hit_effect.tscn"
 
 var _break_playbacks := {}
 var _elite_deaths := {}
@@ -9,6 +10,7 @@ var _normal_hits := {}
 var _player_hurts := {}
 var _shield_hits := {}
 var _contact_modes := {}
+var _contact_births: Array[Vector2] = []
 const MOB_CONTACT := Vector2(250, 200)
 const SHIELD_CONTACT := Vector2(430, 180)
 const ELITE_CONTACT := Vector2(434, 180)
@@ -18,8 +20,8 @@ func _process(_delta: float) -> void:
 	if not _watch:
 		return
 	for fx in Pool._active:
-		if Pool._active[fx] == "hit_effect" and fx.position in [MOB_CONTACT, SHIELD_CONTACT, ELITE_CONTACT]:
-			_contact_modes[fx.position] = [fx._ordinary_enemy, fx._shield_hit]
+		if Pool._active[fx] == "hit_effect" and fx.global_position in [MOB_CONTACT, SHIELD_CONTACT, ELITE_CONTACT]:
+			_contact_modes[fx.global_position] = [fx._ordinary_enemy, fx._shield_hit]
 	for voice in SFX.get_children():
 		if not voice.playing:
 			continue
@@ -60,6 +62,11 @@ func _run() -> void:
 		var ready := await _wait_until(_cond_both_players, 8.0)
 		_check("two_players", ready, "")
 		if ready:
+			if _role == "client":
+				_main.position = Vector2(67, 41)
+			_main.child_entered_tree.connect(func(node: Node) -> void:
+				if node.scene_file_path == HIT:
+					_contact_births.append(node.global_position))
 			_watch = true
 			_main._player.set_physics_process(false)
 			if _role == "host":
@@ -81,16 +88,21 @@ func _run() -> void:
 			_check("mob_atlas", _contact_modes.get(MOB_CONTACT) == [true, false], str(_contact_modes))
 			_check("shield_original", _contact_modes.get(SHIELD_CONTACT) == [false, true], str(_contact_modes))
 			_check("exposed_elite_original", _contact_modes.get(ELITE_CONTACT) == [false, false], str(_contact_modes))
+			_check("contact_is_anchored_at_birth",
+				[MOB_CONTACT, SHIELD_CONTACT, ELITE_CONTACT].all(_contact_births.has), str(_contact_births))
 			await _wait_seconds(0.25)
 	get_tree().quit(_summarize())
 
-func _contact(target: Node2D, point: Vector2) -> void:
+func _contact(target: Node2D, point: Vector2, sync_delay := 0.0) -> void:
 	var shot := Pool.acquire("bullet", preload("res://scenes/entities/bullet.tscn"))
 	_main.add_child(shot)
 	shot.setup(point, 0.0, 1, true, 1, 660.0, 1)
 	shot.monitoring = false # 该发由下一行交付一次接触。
 	shot._on_body_entered(target)
-	_main._batch_sync_entity_positions()
+	if sync_delay > 0:
+		_main._entity_sync_timer = sync_delay
+	else:
+		_main._batch_sync_entity_positions()
 
 func _break_twice() -> void:
 	await _wait_seconds(0.4)
@@ -126,7 +138,9 @@ func _break_twice() -> void:
 	await _wait_seconds(0.16)
 	elite.take_damage(int(maximum), 1)
 	await _wait_seconds(0.24)
-	_contact(elite, ELITE_CONTACT)
+	# 同步历史落点时，目标已换位置。加入端仍要在原接触点生成火花。
+	_contact(elite, ELITE_CONTACT, 0.10)
+	elite.global_position += Vector2(110, 0)
 	await _wait_seconds(0.16)
 	_main._rpc_spawn_elite.rpc(eid, 1.0)
 	_main._rpc_elite_shield_destroyed.rpc(eid)

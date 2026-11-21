@@ -40,9 +40,10 @@ func contact_for(target: Node) -> Impact:
 	return Impact.ORDINARY_ENEMY if target.is_in_group("ordinary_enemies") else Impact.LEGACY
 
 func spawn_hit(pos: Vector2, kind: Impact) -> void:
+	var world := get_tree().current_scene
 	var hit := acquire("hit_effect", preload("res://scenes/effects/hit_effect.tscn"))
-	get_tree().current_scene.add_child(hit)
-	hit.global_position = pos
+	hit.position = world.to_local(pos) if world is Node2D else pos
+	world.add_child(hit)
 	match kind:
 		Impact.ORDINARY_ENEMY: hit.start_ordinary_hit()
 		Impact.SHIELD: hit.start_shield_hit()

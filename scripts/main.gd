@@ -1775,8 +1775,8 @@ func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2, confirm
 		_hud.show_pickup_toast(powerup_type, world_pos)
 	if powerup_type == "core" and confirmed:
 		var ring = Pool.acquire("core_pickup", _hit_effect_scene)
+		ring.position = to_local(world_pos)
 		add_child(ring)
-		ring.global_position = world_pos
 		ring.start_core_pickup()
 
 func on_local_boss_reward_feedback(_reward_type: String) -> void:

@@ -15,6 +15,8 @@ var _shield_hit := false
 var _ordinary_enemy := false
 
 func _ready() -> void:
+	# 静止特效没有需要插值的路径，出生点也没有上一帧。
+	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF
 	reset()
 
 func start_core_pickup() -> void:
@@ -26,13 +28,11 @@ func start_shield_hit() -> void:
 func start_ordinary_hit() -> void:
 	start()
 	_ordinary_enemy = true
-	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF
 
 func start(core_pickup := false, shield_hit := false) -> void:
 	_core_pickup = core_pickup
 	_shield_hit = shield_hit
 	_ordinary_enemy = false
-	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_INHERIT
 	_duration = CORE_SECONDS if core_pickup else HIT_SECONDS
 	_age = 0.0
 	show()

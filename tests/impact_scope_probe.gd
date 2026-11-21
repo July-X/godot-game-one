@@ -21,6 +21,9 @@ func _run() -> void:
 		push_error("ImpactScopeProbe requires a graphical renderer")
 		get_tree().quit(2)
 		return
+	if args.has("anchors"):
+		await _anchors()
+		return
 	seed(1121)
 	main = MAIN.instantiate()
 	get_tree().root.add_child(main)
@@ -82,6 +85,57 @@ func _run() -> void:
 		splash._splash_damage([target])
 		await _sample("splash_mob" if target == mob else "splash_boss",
 				"ordinary-3681e25" if target == mob else "legacy-0939598")
+	print("[scope] SUMMARY pass=%d failed=%d" % [passed, failed])
+	get_tree().quit(1 if failed else 0)
+
+func _anchors() -> void:
+	var world := Node2D.new()
+	world.position = Vector2(62, 41)
+	world.scale = Vector2(1.1, 0.9)
+	get_tree().root.add_child(world)
+	get_tree().current_scene = world
+	canvas.size = Vector2i(512, 288)
+	canvas.world_2d = world.get_world_2d()
+	canvas.transparent_bg = true
+	canvas.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(canvas)
+	var target := Node2D.new()
+	world.add_child(target)
+	for entry in [
+		["legacy-left", Vector2(154, 128), Pool.Impact.LEGACY],
+		["legacy-right", Vector2(413, 200), Pool.Impact.LEGACY],
+		["shield", Vector2(206, 151), Pool.Impact.SHIELD],
+		["atlas", Vector2(390, 184), Pool.Impact.ORDINARY_ENEMY],
+	]:
+		var label: String = entry[0]
+		var contact: Vector2 = entry[1]
+		var lit := 0
+		var misplaced := 0
+		var expired := true
+		target.global_position = contact
+		for frame in 16:
+			await get_tree().process_frame
+			if frame == 0:
+				Pool.spawn_hit(target.global_position, entry[2])
+			target.global_position += Vector2(3, -2)
+			# Move the view without resetting the spawned particle's interpolation.
+			canvas.canvas_transform = Transform2D(0, Vector2(-frame * 2, frame))
+			await RenderingServer.frame_post_draw
+			var picture := canvas.get_texture().get_image()
+			var bounds := picture.get_used_rect()
+			var point := Vector2i(canvas.canvas_transform * contact)
+			if bounds.has_area():
+				lit += 1
+				var allowed := Rect2i(point - Vector2i(17, 17), Vector2i(35, 35))
+				misplaced += int(not allowed.encloses(bounds))
+				expired = expired and frame < 13
+			print("[anchor] %s,%d,%d,%d,%d,%d,%d,%d" % [
+				label, frame, point.x, point.y, bounds.position.x, bounds.position.y, bounds.size.x, bounds.size.y])
+			if args.size() >= 2 and frame in [0, 1, 5, 11, 15]:
+				if picture.save_png(args[1].path_join("%s-%02d.png" % [label, frame])) != OK:
+					_check(label + "_capture", false)
+		_check(label + "_position", lit >= 10 and misplaced == 0)
+		_check(label + "_released", expired and not Pool._active.values().has("hit_effect"))
 	print("[scope] SUMMARY pass=%d failed=%d" % [passed, failed])
 	get_tree().quit(1 if failed else 0)
 
