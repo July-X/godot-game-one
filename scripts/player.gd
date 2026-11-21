@@ -220,7 +220,7 @@ func _connect_signals() -> void:
 	_rebuild_shields()
 	# 摇杆先于玩家挂在战斗场景；入场时 current_scene 可能还在切换。
 	var mc := get_parent().get_node_or_null("MobileControls")
-	if mc and is_multiplayer_authority():
+	if mc and _is_locally_controlled_player():
 		_motion.mobile_mode = true
 		mc.move_input.connect(_motion.handle_mobile_move)
 

@@ -1,6 +1,9 @@
 extends Node
 
 const TITLE := "res://scenes/ui/title_screen.tscn"
+const SOLO := "res://scenes/main.tscn"
+const TRIAL_A := "res://scenes/first_card_trial_a.tscn"
+const TRIAL_B := "res://scenes/first_card_trial_b.tscn"
 const TrialGame := preload("res://scripts/first_card_trial.gd")
 const SafeArea := preload("res://scripts/battle_safe_area.gd")
 var passed := 0
@@ -13,9 +16,13 @@ func _ready() -> void:
 func _run() -> void:
 	var window := get_window()
 	var wide := DisplayServer.get_name() == "headless" or window.size.aspect() > 1.9
-	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
 	window.content_scale_size = Vector2i(1600 if wide else 1280, 720)
+	if DisplayServer.get_name() == "headless":
+		window.size = Vector2i(2400, 1080)
+	if not (OS.has_feature("android") or OS.has_feature("ios")):
+		get_tree().node_added.connect(_prepare_mobile_scene)
 	_check("normal_launch_without_user_args", OS.get_cmdline_user_args().is_empty())
 	get_tree().current_scene = null
 	get_tree().change_scene_to_file(TITLE)
@@ -58,7 +65,7 @@ func _run() -> void:
 	await _key(KEY_ENTER)
 	title.get_node("TrialChoices/B").grab_focus()
 	await _key(KEY_ENTER)
-	var keyboard_trial := await _wait_for_scene("res://scenes/first_card_trial_b.tscn") as TrialGame
+	var keyboard_trial := await _wait_for_scene(TRIAL_B) as TrialGame
 	if keyboard_trial == null:
 		return
 	_check("keyboard_can_choose_version", keyboard_trial._show_action_hint and UpgradeDraft.has_draft(1))
@@ -67,10 +74,21 @@ func _run() -> void:
 	if title == null:
 		return
 	_check("mouse_can_return_to_title", title.get_node("BtnFirstCard").visible)
+	await _tap(title.get_node("BtnSingle"))
+	var solo := await _wait_for_scene(SOLO)
+	if solo == null:
+		return
+	await _start_steering(solo, "solo", Vector2.RIGHT)
+	_release_stick(solo, "solo")
 	_finish()
 
+func _prepare_mobile_scene(node: Node) -> void:
+	if node.scene_file_path in [SOLO, TRIAL_A, TRIAL_B]:
+		# 模拟手机先创建摇杆再创建飞机，实际信号由玩家入场逻辑绑定。
+		node._spawn_mobile_controls()
+
 func _play_version(variant: String) -> bool:
-	var path := "res://scenes/first_card_trial_%s.tscn" % variant.to_lower()
+	var path := TRIAL_A if variant == "A" else TRIAL_B
 	var trial := await _wait_for_scene(path) as TrialGame
 	if trial == null:
 		return false
@@ -81,14 +99,23 @@ func _play_version(variant: String) -> bool:
 	_check(variant + "_same_first_offer", state == opening_state and state[0] == trial.get_viewport_rect().size * Vector2(.50, .78)
 		and state[1] == 2 and state[2] == 0 and state[4] == trial.FIRST_OFFER and float(draft.get("left", 0)) > 9.8
 		and not trial._action_hint.visible and trial.trial_tick == -1)
+	await _start_steering(trial, variant + "_draft", Vector2.LEFT)
+	_check(variant + "_draft_only_moves", trial.trial_tick == -1 and UpgradeDraft.has_draft(1)
+		and get_tree().get_nodes_in_group("player_bullets").is_empty()
+		and get_tree().get_nodes_in_group("enemies").is_empty())
 	var card: Button = trial._hud._draft_row.get_child(0)
-	await _tap(card)
+	var before_choice: Vector2 = trial._player.global_position
+	await _tap(card, 1)
 	if not await _at(trial, 4):
 		return false
 	_check(variant + "_tap_selects_card_once", UpgradeDraft.get_draft(1).get("source") == "tap"
 		and GameState.get_card_stacks(1) == {"pierce": 1} and not trial._hud._draft_panel.visible)
 	_check(variant + "_hint_only_after_selection", trial._action_hint.visible == (variant == "B")
 		and not get_tree().paused and trial._recording)
+	_check_steering(trial, variant + "_held_through_choice", before_choice, Vector2.LEFT, 1.0)
+	_release_stick(trial, variant)
+	await _start_steering(trial, variant + "_repress", Vector2.UP)
+	_release_stick(trial, variant + "_repress")
 	if not await _at(trial, trial.END_TICK):
 		return false
 	var before := trial.get_instance_id()
@@ -100,6 +127,39 @@ func _play_version(variant: String) -> bool:
 		and trial._show_action_hint == (variant == "B") and not trial._action_hint.visible)
 	await _tap(trial.get_node("TrialUI/Options/Back"))
 	return true
+
+func _start_steering(scene: Node, label: String, direction: Vector2) -> void:
+	var stick = scene.get_node("MobileControls")
+	var center: Vector2 = stick._joystick_center
+	var origin: Vector2 = scene._player.global_position
+	_touch(center, true, 0)
+	var drag := InputEventScreenDrag.new()
+	drag.index = 0
+	drag.position = get_viewport().get_final_transform() * (center + direction * 84.0)
+	_send_touch_event(drag)
+	for i in 18:
+		await get_tree().physics_frame
+	_check_steering(scene, label, origin, direction, 20.0)
+
+func _check_steering(scene: Node, label: String, origin: Vector2, direction: Vector2, min_distance: float) -> void:
+	var stick = scene.get_node("MobileControls")
+	var player = scene._player
+	var move: Vector2 = direction * 0.75
+	var cap: Vector2 = stick._knob_node.get_rect().get_center()
+	_check(label + "_cap_follows_finger", stick._move_touch_id == 0 and stick._move_vector.is_equal_approx(move)
+		and cap.is_equal_approx(stick._joystick_center + direction * 84.0))
+	var travel: Vector2 = player.global_position - origin
+	var nose: Vector2 = Vector2.UP.rotated(player.global_rotation)
+	_check(label + "_pilot_moves_and_turns", player._motion.mobile_mode and player._motion.touch_move.is_equal_approx(move)
+		and travel.dot(direction) > min_distance and nose.dot(direction) > 0.99)
+	print("[ENTRY] ", label, " stick=", stick._move_vector, " player_input=", player._motion.touch_move, " travel=", travel, " nose=", nose)
+
+func _release_stick(scene: Node, label: String) -> void:
+	var stick = scene.get_node("MobileControls")
+	_touch(stick._joystick_center, false, 0)
+	_check(label + "_release_zeros_stick", stick._move_touch_id == -1 and stick._move_vector == Vector2.ZERO
+		and scene._player._motion.touch_move == Vector2.ZERO
+		and stick._knob_node.get_rect().get_center().is_equal_approx(stick._joystick_center))
 
 func _wait_for_scene(path: String, previous := 0) -> Node:
 	for i in 100:
@@ -122,17 +182,23 @@ func _at(trial: TrialGame, tick: int) -> bool:
 	_finish()
 	return false
 
-func _tap(button: Button) -> void:
-	var at := get_viewport().get_final_transform() * button.get_global_rect().get_center()
+func _tap(button: Button, index := 0) -> void:
+	var at := button.get_global_rect().get_center()
 	for pressed in [true, false]:
-		var touch := InputEventScreenTouch.new()
-		touch.index = 0
-		touch.position = at
-		touch.pressed = pressed
-		# _parse_input_event 走项目自带的触摸转鼠标，覆盖标准按钮的真实输入路径。
-		Input.parse_input_event(touch)
-		Input.flush_buffered_events()
+		_touch(at, pressed, index)
 		await get_tree().process_frame
+
+func _touch(at: Vector2, pressed: bool, index: int) -> void:
+	var touch := InputEventScreenTouch.new()
+	touch.index = index
+	touch.position = get_viewport().get_final_transform() * at
+	touch.pressed = pressed
+	_send_touch_event(touch)
+
+func _send_touch_event(event: InputEvent) -> void:
+	# 真正走视口的缩放、触摸分发与鼠标合成。
+	Input.parse_input_event(event)
+	Input.flush_buffered_events()
 
 func _key(code: Key) -> void:
 	var event := InputEventKey.new()

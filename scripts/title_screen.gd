@@ -12,10 +12,10 @@ func _ready() -> void:
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_start_blink()
-	_btn_single.pressed.connect(_on_single_pressed)
+	# 触摸合成的鼠标释放仍会访问触发按钮，等 GUI 处理结束后再切场景。
+	_btn_single.pressed.connect(_on_single_pressed, CONNECT_DEFERRED)
 	_btn_multi.pressed.connect(_on_multiplayer_pressed)
 	_btn_first_card.pressed.connect(_show_trial_choices.bind(true))
-	# 触摸合成的鼠标释放仍会访问触发按钮，等 GUI 处理结束后再切场景。
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/Back.pressed.connect(_show_trial_choices.bind(false))
