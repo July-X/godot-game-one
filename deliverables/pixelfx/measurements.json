@@ -1,0 +1,71 @@
+{
+  "frames": 140,
+  "matching_foreground_pixels": {
+    "A": 4096,
+    "B": 2611
+  },
+  "coincident_centers": {
+    "34": [
+      640,
+      320
+    ],
+    "66": [
+      640,
+      300
+    ]
+  },
+  "frames_without_effects": 100,
+  "visible_hit": [
+    32,
+    33,
+    34,
+    35,
+    36,
+    37
+  ],
+  "visible_death": [
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72
+  ],
+  "first_changed_bounds_A_B": {
+    "32": [
+      [
+        0,
+        0,
+        3,
+        3
+      ],
+      [
+        635,
+        316,
+        647,
+        330
+      ]
+    ],
+    "64": [
+      [
+        0,
+        0,
+        12,
+        12
+      ],
+      [
+        633,
+        292,
+        654,
+        330
+      ]
+    ]
+  },
+  "identical_protected_modes": [
+    "shield",
+    "core"
+  ]
+}

@@ -279,7 +279,7 @@ func _spawn_explosion() -> void:
 
 func play_death_feedback() -> void:
 	var exp = _explosion_scene.instantiate()
-	exp.setup_combat(0.15, 0.82, 23.0)
+	exp.setup_ordinary_death()
 	get_tree().current_scene.add_child(exp)
 	exp.global_position = global_position
 	SFX.play_enemy_death()

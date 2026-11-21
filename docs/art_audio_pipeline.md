@@ -15,6 +15,57 @@
 
 双进程运行 `bash tests/run_probe.sh 7855 feedback` 可核对房主及加入端的命中、两次破盾、击毁和 P2 受击。精英当前的回盾计时器只重置计时，用例通过既有护盾快照注入正值，以覆盖第二次破盾。无窗口实时时钟检查可运行 `godot --headless res://tests/combat_feedback_probe.tscn -- realtime audio-tail`，等待受击声在连续开火中自然播完。
 
+## 普通命中与普通敌机击毁的 PixelFX 对照
+
+采用 B。左侧 A 是 `09395981e6d8ea47e28e3824f9b376170ca9b2d6`。在同一轮三机交火中，B 的冰蓝火花标在弹体接触处，敌机消失时，暖色亮闪从机体中心散成几块碎片。横穿两处的橙红敌弹都能沿原轨迹追踪。视频前 2.33 秒按原速和原倍率播放，后半段把单次反馈放慢到四分之一速，并另取隐藏敌弹图像的两次渲染展示火花和碎片本身。[同屏视频](../deliverables/pixelfx/ordinary-feedback-ab.mp4) · [前景敌弹与关闭特效的同帧对照](../deliverables/pixelfx/projectile-overlap.png)
+
+| 原倍率检查 | Godot 4.6.2 桌面实拍，每秒 60 帧 |
+| --- | --- |
+| 接触与退场 | F032 命中 `(640,320)`，B 当帧在接触处亮起，F037 为末帧。F064 普通敌机在 `(640,300)` 击毁，B 的碎片在 F072 后消失。对应 100、150 毫秒。A 的两次起帧都曾画在屏幕左上角。B 为这两种静止特效关闭出生位置插值。 |
+| 连续交火 | 固定 8 次开火及接触，击毁 4 架。A、B、关闭特效及各自隐藏敌弹图像的 6 组录像，每组 140 帧。逐帧的敌弹和特效坐标相同。100 个没有特效节点的时刻，A、B 和关闭特效的全屏像素相同。 |
+| 前景遮挡 | F034 敌弹中心与接触点重合，F066 与击毁中心重合。用隐藏敌弹的同帧找出弹体下方确有特效的位置。A 的 4,096 个、B 的 2,611 个重叠像素样本，各自都与关闭特效时的前景颜色完全相同。 |
+| 释放与重启 | 8 次命中、4 次击毁均退场。当前 `Pool.release` 会注销并释放节点。另将同一节点依次切换为普通、护盾、核心、普通，与新节点同帧逐像素比对。护盾和核心也分别与 A 比对。 |
+
+**素材与运行时**　命中取自 `bullet-impact` 的开头。以实际火花 `(116,60)` 为中心裁切、旋转四分之一圈，落在 31×31 小格的 `(15,15)`。上游的默认锚点 `(116,84)` 在接触点下方 24 像素。击毁取自 `big-explosion` 的初闪和受光碎块，按俯视角向四周散开。游戏只读取六帧和九帧的透明图集，缺少图集时沿用原先的程序绘制。图集可用 Node.js、Python 和 Pillow 在仓库根目录离线重建，命令为 `node scripts/generate_assets/make_pixelfx.mjs /path/to/pixelfx`。Android 资源包随图集附带授权与署名。[上游固定版本](https://github.com/patch-gg/pixelfx/tree/5294518ce7c72e48b6100a744596e0acf57f2826) · [MIT 授权与原始 NOTICE](../assets/sprites/explosion/PixelFX-LICENSE.txt)
+
+**复跑**　下列命令在本仓库根目录运行，需要 Git LFS（大文件存储）中的素材已下载。A 导出到临时目录，两版使用同一份夹具。夹具在指定帧调用正式子弹接触回调，危险弹按正常物理步进飞行。六组图像只切换绘制，碰撞回调和时间线相同。
+
+```bash
+out=$(mktemp -d)
+mkdir -p "$out"/{baseline,A,B,OFF,A-clear,B-clear,OFF-clear}
+git archive 0939598 | tar -x -C "$out/baseline"
+cp tests/pixelfx_probe.{gd,tscn} "$out/baseline/tests/"
+godot --headless --path "$out/baseline" --import
+godot --headless --path . --import
+take() {
+    local project=$1 name=$2
+    shift 2
+    godot --path "$project" --windowed --resolution 1280x720 --fixed-fps 60 --audio-driver Dummy \
+        res://tests/pixelfx_probe.tscn -- capture "$out/$name" "$@"
+}
+take "$out/baseline" A
+take . B
+take . OFF off
+take "$out/baseline" A-clear hide-bullets
+take . B-clear hide-bullets
+take . OFF-clear off hide-bullets
+python3 tests/compare_pixelfx.py "$out"
+```
+
+回归在配有 Radeon Pro 5300M 的 MacBook 上完成。无窗口检查通过战斗画面 21/21、战斗反馈 14/14、PixelFX 事件与释放 14/14。每组实拍另做 3 项同节点重启的像素断言，共 17/17。移去两张图集的独立副本里，程序绘制的普通火花和击毁也与 A 的对应像素吻合。[逐帧测量结果](../deliverables/pixelfx/measurements.json)
+
+双进程局域网回归中，常规房主 24/24、加入端 16/16，反馈房主 9/9、加入端 10/10，四个进程均退出 0。一次建房遇到本机 7897 端口占用，换到空闲端口后完成复跑。
+
+```bash
+godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
+godot --headless --fixed-fps 60 --path . res://tests/combat_feedback_probe.tscn
+godot --headless --fixed-fps 60 --path . res://tests/pixelfx_probe.tscn
+bash tests/run_probe.sh 17943 feedback
+bash tests/run_probe.sh 17944
+```
+
+手机双机、手机屏幕上的辨识度及真人盲测尚未验收。回退时执行 `git revert <本批提交 SHA>`。
+
 ## 视觉方向
 
 - **基础参考**：Contra / Metal Slug 时代的街机可读性

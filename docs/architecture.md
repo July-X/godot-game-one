@@ -69,6 +69,7 @@
 │   │   └── action_router.gd        # 输入分发│   ├── enemy.gd / elite.gd / boss.gd
 │   ├── bullet.gd / laser_bolt.gd / homing_missile.gd / asteroid.gd
 │   ├── powerup.gd / explosion.gd / hit_effect.gd / screen_shake.gd
+│   ├── generate_assets/make_pixelfx.mjs # 离线生成普通火花和普通敌机击毁图集，供上述特效脚本读取
 │   ├── laser_bolt.gd / lightning_line.gd   # 激光与闪电链绘制
 │   ├── shield_ring.gd         # 玩家护盾环 draw_arc
 │   ├── shield_circle.gd       # 精英/Boss 护盾圆形光晕
@@ -83,6 +84,7 @@
 │   ├── wave_probe.gd          # 波次编排门禁（节奏形状不塌陷）
 │   ├── combat_visual_probe.gd / .tscn   # 战斗画面、拾取时序、炮口和可选录帧
 │   ├── combat_feedback_probe.gd / .tscn # 固定事件的有声回放和反馈门禁
+│   ├── pixelfx_probe.gd / .tscn、compare_pixelfx.py # 普通命中与击毁的逐帧实拍及弹体像素比对
 │   ├── feedback_lan_probe.gd / .tscn    # 双端两次破盾、销毁及消息重发
 │   ├── mixed_viewport_probe.gd / .tscn  # 双进程混合画幅边界用例
 │   ├── curve_probe.tscn / wave_probe.tscn

@@ -1,7 +1,8 @@
 extends Node2D
 
 const FRAME_INTERVAL: float = 0.06
-
+const ORDINARY_PATH := "res://assets/sprites/explosion/ordinary_death.png"
+static var _ordinary_strip: Texture2D = load(ORDINARY_PATH) if ResourceLoader.exists(ORDINARY_PATH) else null
 static var _cached_frames: Array[ImageTexture] = []
 
 @onready var _sprite: Sprite2D = $Sprite2D
@@ -11,6 +12,14 @@ var _frame_index: int = 0
 var _combat_duration := 0.0
 var _debris_radius := 0.0
 
+func setup_ordinary_death() -> void:
+	setup_combat(0.15, 0.82, 0.0 if _ordinary_strip else 23.0)
+	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF
+	if _ordinary_strip:
+		var sprite: Sprite2D = $Sprite2D
+		sprite.texture = _ordinary_strip
+		sprite.hframes = 9
+
 func setup_combat(duration: float, size: float, debris_radius := 0.0) -> void:
 	_combat_duration = duration
 	_debris_radius = debris_radius
@@ -18,6 +27,8 @@ func setup_combat(duration: float, size: float, debris_radius := 0.0) -> void:
 	z_index = -1
 
 func _ready() -> void:
+	if _sprite.hframes > 1:
+		return
 	if _cached_frames.is_empty():
 		_cached_frames = SpriteFactory.create_explosion_frames()
 	if not _cached_frames.is_empty():
@@ -26,7 +37,7 @@ func _ready() -> void:
 		_sprite.texture = _cached_frames[_frame_index]
 
 func _process(delta: float) -> void:
-	if _cached_frames.is_empty():
+	if _sprite.texture == null:
 		queue_free()
 		return
 	_frame_timer += delta
@@ -36,8 +47,11 @@ func _process(delta: float) -> void:
 			queue_free()
 		else:
 			# 击毁从已经展开的帧起播，与几根细线的命中火花区分。
-			var frame := _frame_index + int(progress * (_cached_frames.size() - _frame_index))
-			_sprite.texture = _cached_frames[frame]
+			if _sprite.hframes > 1:
+				_sprite.frame = mini(int(progress * _sprite.hframes), _sprite.hframes - 1)
+			else:
+				var frame := _frame_index + int(progress * (_cached_frames.size() - _frame_index))
+				_sprite.texture = _cached_frames[frame]
 			_sprite.modulate.a = 1.0 - progress * progress
 			if _debris_radius > 0.0:
 				queue_redraw()

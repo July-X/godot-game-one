@@ -88,10 +88,11 @@ godot-game-one/
 
 ## 美术与音频
 
-全部**程序化生成**，不依赖外部资源：
+游戏直接使用仓库内的贴图和程序化音源。
 
 - **贴图**：`scripts/sprite_factory.gd` 生成玩家/敌人/精英/子弹/道具/爆炸序列帧/星空
 - **例外**：Boss（`boss_01`~`boss_05`）与玩家等级外形（`lv01`~`lv05`）使用仓库 AI 生成的 PNG
+- 普通命中和普通敌机击毁使用离线生成的 PixelFX 图集。冰蓝火花标记接触处，暖色碎片标记击毁中心。[实拍与素材归属](./docs/art_audio_pipeline.md#普通命中与普通敌机击毁的-pixelfx-对照)
 - **音效**：`scripts/sfx_manager.gd` 程序化合成 8-bit 风格音效
 - **BGM**：`scripts/bgm_manager.gd` 程序化合成正弦波主题音乐
 
