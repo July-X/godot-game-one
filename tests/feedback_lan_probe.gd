@@ -1,5 +1,7 @@
 extends "res://tests/lan_probe.gd"
 ## 观察实际启动的音频回放。把重发分隔几个混音周期，误播就会独立计数。
+const Player = preload("res://scripts/player.gd")
+
 var _break_playbacks := {}
 var _elite_deaths := {}
 var _normal_deaths := {}
@@ -43,6 +45,10 @@ func _run() -> void:
 	var online := err == OK and await _wait_until(NetworkManager.is_online, 8.0)
 	_check("online", online, error_string(err))
 	if online:
+		# 两名玩家共用受击音，从机体进树起隔离自然碰撞，避免把其他伤害算给 P2。
+		get_tree().node_added.connect(func(node: Node) -> void:
+			if node is Player:
+				node.set_collision_layer_value(1, false))
 		_enter_main_scene()
 		var ready := await _wait_until(_cond_both_players, 8.0)
 		_check("two_players", ready, "")
@@ -58,7 +64,8 @@ func _run() -> void:
 					var destroyed := await _wait_until(_cond_elite_gone, 6.0)
 					_check("elite_despawned", destroyed, "")
 			await _wait_seconds(0.25)
-			_check("two_break_sounds", _break_playbacks.size() == 2, str(_break_playbacks.size()))
+			_check("two_break_sounds", _break_playbacks.size() == 2,
+				"%d（第二次为合成回盾）" % _break_playbacks.size())
 			_check("one_elite_death", _elite_deaths.size() == 1, str(_elite_deaths.size()))
 			_check("one_normal_death", _normal_deaths.size() == 1, str(_normal_deaths.size()))
 			_check("ordinary_impact", not _normal_hits.is_empty(), str(_normal_hits.size()))
@@ -83,8 +90,15 @@ func _break_twice() -> void:
 	shot._on_body_entered(mob)
 	_main._batch_sync_entity_positions()
 	await _wait_seconds(0.16)
+	# 让一发足以穿盾的真实敌弹经过 P1，检验受击音计数只来自受控的 P2 扣血。
+	var p1: Node2D = _main._players[1]
+	var hp_before := GameState.get_current_health(1)
+	var stray_damage := GameState.get_shield_layers(1) + 1
+	mob._spawn_enemy_bullet(p1.global_position, PI / 2, stray_damage, mob.SPEED_SLOW, Color.WHITE)
 	mob.take_damage(100, 1)
 	await _wait_seconds(0.14)
+	var hp_after := GameState.get_current_health(1)
+	_check("p1_ignores_stray_bullet", hp_after == hp_before, "%d -> %d" % [hp_before, hp_after])
 	_main._rpc_despawn_entity.rpc(mob_id, true)
 	_main._spawn_elite()
 	var elite: Node = _main._elite
