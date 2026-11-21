@@ -24,7 +24,10 @@ const ACTION_HINTS := {
 	"graze_focus": {"text": "等扇弹，沿弹幕外缘飞", "start": RETREAT_TICK - 90, "end": VOLLEYS[0] + 24},
 }
 
+enum TrialVariant { COMMAND_LINE, A, B }
+
 @export var from_draft := false
+@export var playtest_variant := TrialVariant.COMMAND_LINE
 @onready var _action_hint: Label = $Backdrop/ActionHint
 var trial_tick := -1
 var next_order := 0
@@ -45,16 +48,21 @@ func _ready() -> void:
 	super._ready()
 	UpgradeDraft.clear_drafts()
 	var args := OS.get_cmdline_user_args()
-	from_draft = from_draft or "--from-draft" in args
-	_show_action_hint = "--trial-hint" in args
-	_log_enabled = "--trial-log" in args
+	var from_menu := playtest_variant != TrialVariant.COMMAND_LINE
+	from_draft = from_draft or from_menu or "--from-draft" in args
+	_show_action_hint = playtest_variant == TrialVariant.B if from_menu else "--trial-hint" in args
+	_log_enabled = from_menu or "--trial-log" in args
 	if _show_action_hint:
 		get_viewport().size_changed.connect(_layout_action_hint)
 		get_window().focus_entered.connect(_layout_action_hint)
 	$TrialUI/Options.hide()
 	$TrialUI/Options/Power.pressed.connect(_choose_power.bind("tap"))
-	$TrialUI/Options/Retry.pressed.connect(_restart)
-	$TrialUI/Options/Back.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn"))
+	$TrialUI/Options/Retry.pressed.connect(func():
+		if is_inside_tree():
+			_restart(), CONNECT_DEFERRED)
+	$TrialUI/Options/Back.pressed.connect(func():
+		if is_inside_tree():
+			get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn"), CONNECT_DEFERRED)
 	UpgradeDraft.card_chosen.connect(_start_trial)
 	if from_draft:
 		_player.position = get_viewport_rect().size * Vector2(.50, .78)

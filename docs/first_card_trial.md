@@ -1,6 +1,8 @@
 # 首卡后的第一波
 
-从标题页进「首卡试飞」，按平时的方式移动和开火。第十次击杀升到二级，场上残敌和子弹退场，已掉落的道具、玩家位置和成长保留。此时可以读完卡面，再按 1、2、3 或点卡。按 4 或点「数值对照」可以改选威力卡。十秒未操作会自动选第一张。
+从标题页点「首卡试飞」，选择「试飞 A」或「试飞 B」。两版都直接到同一个首选画面。按 1、2、3 或点卡，按 4 或点「数值对照」可选威力卡。十秒未操作会自动选第一张。片段结束可重试同版，返回标题后可换版。
+
+直接运行原试飞场景时仍从一级开始。第十次击杀升到二级，场上残敌和子弹退场，已掉落的道具、玩家位置和成长保留。固定片段结束后恢复普通导演。
 
 ## 同一波，四种走法
 
@@ -17,7 +19,7 @@
 
 ## 行动提示对照
 
-A 沿用现有卡面和流程。B 由 `--trial-hint` 开启。顶部中央只有一行文字，位于战斗物体下层，随本机安全区定位。贯穿和溅射在确认后第 1 至 179 帧可见。擦弹在第 188 至 361 帧可见，跨过原有扇弹预告和第一轮发射。威力卡无提示，重试从原选卡画面开始。
+两版在确认前使用相同的卡面和起点。B 的顶部中央只有一行文字，位于战斗物体下层，随本机安全区定位。贯穿和溅射在确认后第 1 至 179 帧可见。擦弹在第 188 至 361 帧可见，跨过原有扇弹预告和第一轮发射。A 和威力卡无提示。直接运行场景也可用 `--trial-hint` 开启 B 的提示。
 
 | 卡 | B 版行动提示 |
 | --- | --- |
@@ -25,7 +27,7 @@ A 沿用现有卡面和流程。B 由 `--trial-hint` 开启。顶部中央只有
 | 溅射弹头 | 去右侧等敌机靠拢 |
 | 擦弹专注 | 等扇弹，沿弹幕外缘飞 |
 
-试飞可用 `--trial-log` 输出 `[TRIAL_EVENT]`。以确认帧为零，记录选择来源 `key`、`tap` 或 `timeout`，以及提示起止、首次结果和本波结束。贯穿以同一实弹经过两架不同靶机为准，溅射以原伤害分支确实扣到邻机的生命为准，擦弹读实际新增层数。擦弹的固定边缘航迹还与同路威力卡比对。失血累计从确认算起，治疗不冲销已失去的生命，护盾损失另按原规则处理。结束记录的 `result_tick=-1` 代表这波没有观察到特有效果。事件留在本机终端，真人记录可用[首张卡试玩单](first_card_playtest.md)。
+菜单试飞输出本地 `[TRIAL_EVENT]`，直接运行场景时用 `--trial-log` 开启。以确认帧为零，记录选择来源 `key`、`tap` 或 `timeout`，以及提示起止、首次结果和本波结束。贯穿以同一实弹经过两架不同靶机为准，溅射以原伤害分支确实扣到邻机的生命为准，擦弹读实际新增层数。擦弹的固定边缘航迹还与同路威力卡比对。失血累计从确认算起，治疗不冲销已失去的生命，护盾损失另按原规则处理。结束记录的 `result_tick=-1` 代表这波没有观察到特有效果。[首张卡试玩单](first_card_playtest.md)
 
 ### 本机结果
 
@@ -42,6 +44,12 @@ Mac 上用 Godot 4.6.2 复跑。16:9 的原八组 A/B 对照共 4,400 个战斗�
 普通局与试飞各自的按键、超时四条流程，加上 B 版试飞的两条流程，均到达首只 Boss 的首次实弹受伤。B 版超时实例在第 415 帧开卡，第 1014 帧自动选贯穿，日志记为 `timeout`。完整流程继续使用原导演和实时时间机制。常规联机 40/40、反馈联机 25/25、桌面移动端交互门禁 13/13，项目导入和主场景启动通过。
 
 所有走位与输入由脚本驱动。真人能否在看到提示后找对时机、自己说出效果，留给试玩。手机触屏尚未实测。
+
+### 标题入口回归
+
+无游戏参数启动，宽屏无窗口通过 19 项，1280×720 和 1600×720 真窗口各通过 20 项。探针从标题实际发送触摸事件，走项目的触摸转鼠标链路，核对选版、取消、同一个首选位置与十秒倒计时、点按来源、同版重试及返回换版。也复跑了键盘选择、鼠标返回和带不对称边距的安全区。两个画幅各通过 12 项双指输入及清理检查。
+
+原固定路线再次比对 12 对、6,600 帧，敌机、弹道、走位及四张卡的结果一致。普通局和完整试飞的六条流程都来到首只 Boss 的首次实伤。移动端交互 13/13、常规联机 40/40、项目载入和主场景运行通过。以上输入来自 Mac 模拟。
 
 ## 原版首卡、精英和 Boss 的时间
 
@@ -79,6 +87,9 @@ godot --path . res://scenes/first_card_trial.tscn -- --from-draft
 # 原八组路线逐对比较 A/B，宽屏复跑四组，另跑按键、超时、触摸和重试
 python3 tests/run_first_card_probe.py /tmp/first-card-results
 
+# 走实际标题入口，使用项目的触摸转鼠标路径，无游戏参数
+godot --headless --fixed-fps 60 --path . res://tests/first_card_entry_probe.tscn
+
 # 同一起点的短试玩，分别从选卡开始
 godot --path . res://scenes/first_card_trial.tscn -- --from-draft --trial-log
 godot --path . res://scenes/first_card_trial.tscn -- --from-draft --trial-log --trial-hint
@@ -104,3 +115,18 @@ godot --path . --windowed --resolution 1280x720 --fixed-fps 60 \
 godot --headless --fixed-fps 60 --path . res://tests/first_card_timing.tscn -- input /tmp/stock-a.csv
 godot --headless --fixed-fps 60 --path . res://tests/first_card_timing.tscn -- input /tmp/stock-b.csv
 ```
+
+## Android 调试导出
+
+1. 使用 Godot 4.6.2 及匹配的导出模板。Android SDK（软件开发工具包）路径指向本机 SDK 根目录，Java SDK 路径指向 JDK 17。本机分别使用 `~/Library/Android/sdk` 和 `~/.sdkman/candidates/java/17.0.4-oracle`，构建工具是 SDK 35、Build Tools 35.0.1 和模板自带的 Gradle 8.11.1。[Godot 4.6 Android 环境](https://docs.godotengine.org/en/4.6/tutorials/export/exporting_for_android.html)
+2. 在项目导出窗口选择已有的 `Android` 预设，使用 Gradle Build、`arm64-v8a` 和 APK 格式。新工作目录若缺少 `android/build/gradlew`，先安装对应版本的 Android 构建模板。保留仓库定制的 `AndroidManifest.xml` 与 `HarmonyNearbyGamePlugin.kt`，装完模板后核对两份文件。[Gradle 构建模板](https://docs.godotengine.org/en/4.6/tutorials/export/android_gradle_build.html)
+3. 导出时选择 Debug，并写到新路径。已配好环境后，也可在项目根目录执行下面的命令。
+
+```sh
+trial_apk_dir="$(mktemp -d "${TMPDIR:-/tmp}/space-bullet-hell-trial.XXXXXX")"
+godot --headless --path . --export-debug Android "$trial_apk_dir/Space-Bullet-Hell-Trial-AB-debug.apk"
+```
+
+本机导出验证使用临时项目副本和独立 Godot.app。把 `_sc_` 放在副本 Godot.app 的同级目录，Godot 4.6.2 会从同级 `editor_data` 读配置与模板。将 JDK 17 和 SDK 路径写入该目录的编辑器设置，导出进程也使用同一 JDK 17。现有 APK、全局 Godot 设置和 SDKMAN 的 Java 默认链接均已核对。[Godot 4.6.2 路径实现](https://github.com/godotengine/godot/blob/4.6.2-stable/editor/file_system/editor_paths.cpp#L122-L157)
+
+调试 APK（Android 安装包）已导出并通过 ZIP 完整性和 `apksigner` 验签。包名 `com.gamedev.spacebullethell`，版本 `1.1.0`，最低 API 24、目标 API 35。包内确认有桌面启动入口 `MAIN/LAUNCHER`、标题及 A/B 两个场景。验证包使用临时调试证书，覆盖手机已有同名应用时需沿用原签名。手机安装、启动和真人试玩留给现场验收。[Android 签名要求](https://developer.android.com/studio/publish/app-signing)

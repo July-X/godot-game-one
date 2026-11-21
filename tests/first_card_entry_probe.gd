@@ -1,0 +1,172 @@
+extends Node
+
+const TITLE := "res://scenes/ui/title_screen.tscn"
+const TrialGame := preload("res://scripts/first_card_trial.gd")
+const SafeArea := preload("res://scripts/battle_safe_area.gd")
+var passed := 0
+var failed := 0
+var opening_state: Array
+
+func _ready() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	var window := get_window()
+	var wide := DisplayServer.get_name() == "headless" or window.size.aspect() > 1.9
+	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
+	window.content_scale_size = Vector2i(1600 if wide else 1280, 720)
+	_check("normal_launch_without_user_args", OS.get_cmdline_user_args().is_empty())
+	get_tree().current_scene = null
+	get_tree().change_scene_to_file(TITLE)
+	var title := await _wait_for_scene(TITLE)
+	if title == null:
+		return
+	await _tap(title.get_node("BtnFirstCard"))
+	var choices: VBoxContainer = title.get_node("TrialChoices")
+	_check("neutral_menu_opens", choices.visible and not title.get_node("BtnSingle").visible
+		and choices.get_node("A").text == "试飞 A" and choices.get_node("B").text == "试飞 B")
+	var view := get_viewport().get_visible_rect()
+	var safe := Rect2(Vector2(76, 24), view.size - Vector2(110, 96))
+	var screen := get_viewport().get_screen_transform() * safe
+	title._layout_trial_choices(SafeArea.from_display(get_viewport(), screen))
+	await get_tree().process_frame
+	_check("chooser_inside_inset", safe.encloses(choices.get_global_rect())
+		and safe.encloses(choices.get_node("A").get_global_rect()) and safe.encloses(choices.get_node("B").get_global_rect()))
+	await _tap(choices.get_node("Back"))
+	_check("touch_cancel_restores_title", get_tree().current_scene == title and not choices.visible and title.get_node("BtnSingle").visible)
+	title.get_node("BtnFirstCard").grab_focus()
+	await _key(KEY_ENTER)
+	_check("keyboard_can_open_chooser", choices.visible)
+	await _key(KEY_W)
+	_check("chooser_holds_during_single_shortcut", get_tree().current_scene == title and choices.visible)
+	await _key(KEY_ESCAPE)
+	_check("keyboard_cancel_restores_title", get_tree().current_scene == title and not choices.visible)
+
+	for variant in ["A", "B"]:
+		await _tap(title.get_node("BtnFirstCard"))
+		if variant == "A":
+			await _capture_chooser()
+		await _tap(title.get_node("TrialChoices/" + variant))
+		if not await _play_version(variant):
+			return
+		title = await _wait_for_scene(TITLE)
+		if title == null:
+			return
+		_check(variant + "_return_clears_chooser", not title.get_node("TrialChoices").visible and title.get_node("BtnFirstCard").visible)
+	title.get_node("BtnFirstCard").grab_focus()
+	await _key(KEY_ENTER)
+	title.get_node("TrialChoices/B").grab_focus()
+	await _key(KEY_ENTER)
+	var keyboard_trial := await _wait_for_scene("res://scenes/first_card_trial_b.tscn") as TrialGame
+	if keyboard_trial == null:
+		return
+	_check("keyboard_can_choose_version", keyboard_trial._show_action_hint and UpgradeDraft.has_draft(1))
+	await _mouse_click(keyboard_trial.get_node("TrialUI/Options/Back"))
+	title = await _wait_for_scene(TITLE)
+	if title == null:
+		return
+	_check("mouse_can_return_to_title", title.get_node("BtnFirstCard").visible)
+	_finish()
+
+func _play_version(variant: String) -> bool:
+	var path := "res://scenes/first_card_trial_%s.tscn" % variant.to_lower()
+	var trial := await _wait_for_scene(path) as TrialGame
+	if trial == null:
+		return false
+	var draft := UpgradeDraft.get_draft(1)
+	var state := [trial._player.position, GameState.level, GameState.total_kills, GameState.get_current_health(1), draft.get("cards")]
+	if variant == "A":
+		opening_state = state
+	_check(variant + "_same_first_offer", state == opening_state and state[0] == trial.get_viewport_rect().size * Vector2(.50, .78)
+		and state[1] == 2 and state[2] == 0 and state[4] == trial.FIRST_OFFER and float(draft.get("left", 0)) > 9.8
+		and not trial._action_hint.visible and trial.trial_tick == -1)
+	var card: Button = trial._hud._draft_row.get_child(0)
+	await _tap(card)
+	if not await _at(trial, 4):
+		return false
+	_check(variant + "_tap_selects_card_once", UpgradeDraft.get_draft(1).get("source") == "tap"
+		and GameState.get_card_stacks(1) == {"pierce": 1} and not trial._hud._draft_panel.visible)
+	_check(variant + "_hint_only_after_selection", trial._action_hint.visible == (variant == "B")
+		and not get_tree().paused and trial._recording)
+	if not await _at(trial, trial.END_TICK):
+		return false
+	var before := trial.get_instance_id()
+	await _tap(trial.get_node("TrialUI/Options/Retry"))
+	trial = await _wait_for_scene(path, before) as TrialGame
+	if trial == null:
+		return false
+	_check(variant + "_retry_keeps_variant", trial.trial_tick == -1 and UpgradeDraft.has_draft(1)
+		and trial._show_action_hint == (variant == "B") and not trial._action_hint.visible)
+	await _tap(trial.get_node("TrialUI/Options/Back"))
+	return true
+
+func _wait_for_scene(path: String, previous := 0) -> Node:
+	for i in 100:
+		await get_tree().process_frame
+		var scene := get_tree().current_scene
+		if is_instance_valid(scene) and scene.scene_file_path == path and scene.get_instance_id() != previous:
+			await get_tree().process_frame
+			return scene
+	_check("loaded_" + path, false)
+	_finish()
+	return null
+
+func _at(trial: TrialGame, tick: int) -> bool:
+	var deadline := Engine.get_physics_frames() + 700
+	while trial.trial_tick < tick and Engine.get_physics_frames() < deadline:
+		await get_tree().physics_frame
+	if trial.trial_tick >= tick:
+		return true
+	_check("reached_tick_%d" % tick, false)
+	_finish()
+	return false
+
+func _tap(button: Button) -> void:
+	var at := get_viewport().get_final_transform() * button.get_global_rect().get_center()
+	for pressed in [true, false]:
+		var touch := InputEventScreenTouch.new()
+		touch.index = 0
+		touch.position = at
+		touch.pressed = pressed
+		# _parse_input_event 走项目自带的触摸转鼠标，覆盖标准按钮的真实输入路径。
+		Input.parse_input_event(touch)
+		Input.flush_buffered_events()
+		await get_tree().process_frame
+
+func _key(code: Key) -> void:
+	var event := InputEventKey.new()
+	event.keycode = code
+	event.pressed = true
+	get_viewport().push_input(event, true)
+	event = event.duplicate()
+	event.pressed = false
+	get_viewport().push_input(event, true)
+	await get_tree().process_frame
+
+func _mouse_click(button: Button) -> void:
+	for pressed in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = pressed
+		event.position = button.get_global_rect().get_center()
+		get_viewport().push_input(event, true)
+		await get_tree().process_frame
+
+func _capture_chooser() -> void:
+	var output := OS.get_environment("SBH_ENTRY_CAPTURE")
+	if output.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	await RenderingServer.frame_post_draw
+	_check("captured_chooser", get_viewport().get_texture().get_image().save_png(output) == OK)
+
+func _check(label: String, ok: bool) -> void:
+	if ok:
+		passed += 1
+	else:
+		failed += 1
+	print("[ENTRY] ", label, " pass=", ok)
+
+func _finish() -> void:
+	print("[TRIAL] VERDICT pass=", passed, " failed=", failed)
+	get_tree().quit(0 if failed == 0 else 1)

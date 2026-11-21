@@ -93,6 +93,7 @@ def compare(directory):
     for label, extra in [("16x9", []), ("20x9", ["--wide"])]:
         run("first_card_controls_probe", ["--trial-hint", "--trial-log", "--from-draft", *extra],
             directory / f"controls-{label}.log")
+    run("first_card_entry_probe", [], directory / "entry.log")
 
 
 if __name__ == "__main__":
