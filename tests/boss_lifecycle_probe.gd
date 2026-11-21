@@ -5,6 +5,7 @@ const POWERUP = preload("res://scenes/entities/powerup.tscn")
 const TARGET := Vector2(608, 270)
 const ITEMS := ["core", "heal", "speed", "power", "core", "heal"]
 const BossModel = preload("res://scripts/boss.gd")
+const LaserModel = preload("res://scripts/boss_ultimate_laser_visual.gd")
 
 var bursts: Array[int] = []
 var burst_origin := Vector2.ZERO
@@ -109,6 +110,8 @@ func _shield_cycle() -> bool:
 		return false
 	var shield_hp: float = _boss.get_network_health()
 	_check("hud_shield_charge", await _wait_until(_hud_says.bind("有盾 · 不掉血 · 激光蓄力"), 1.5), "")
+	if _role == "client":
+		await _restore_laser_stage("charge", LaserModel.VisualMode.CHARGE, 0.20)
 	if _role != "client":
 		charge_snapshot = _main._boss_snapshot(_boss)
 		_shoot_at_boss()
@@ -124,11 +127,27 @@ func _shield_cycle() -> bool:
 			return false
 	if NetworkManager.is_online():
 		await _capture_boss_and_cards()
+	await _wait_seconds(0.22)
+	_check("sweep_nose_points_along_beam_after_pilot_moves", _faces_laser_beam(), str(_boss.global_rotation))
 	_check("hud_shield_hold", await _wait_until(_hud_says.bind("有盾 · 不掉血 · 激光持续"), 4.0), "")
+	var hold: LaserModel = _main._boss_laser_visual
+	_check("hold_has_full_beam", is_instance_valid(hold) and hold._mode == LaserModel.VisualMode.BEAM
+		and hold._age >= BossModel.BOSS_ULTIMATE_LASER_TRAVEL, "")
+	if _role == "client":
+		await _restore_laser_stage("hold", LaserModel.VisualMode.BEAM, BossModel.BOSS_ULTIMATE_LASER_TRAVEL + 0.18)
+	_check("hold_nose_points_along_beam", _faces_laser_beam(), str(_boss.global_rotation))
+	if _role == "client":
+		# 按原有接收入口注入一次滞后的瞄准角。
+		var locked_heading: float = _boss._network_target_rotation
+		_boss.apply_network_rotation(_boss.global_rotation + PI * 0.5)
+		_check("late_rotation_cannot_steer_firing_boss", _faces_laser_beam()
+			and is_equal_approx(_boss._network_target_rotation, locked_heading), str(_boss.global_rotation))
 	_check("health_remains_shielded", _has_boss_shield() and _boss.get_network_health() == shield_hp, str(shield_hp))
 	if not _require("shield_ended", await _wait_until(func(): return is_instance_valid(_boss) and not _has_boss_shield(), 13)):
 		return false
 	_boss.set_physics_process(false)
+	var cooling: LaserModel = _main._boss_laser_visual
+	_check("open_replaces_danger_with_cooling", is_instance_valid(cooling) and cooling._mode == LaserModel.VisualMode.COOLING, "")
 	_check("hud_release_cue", await _wait_until(_hud_says.bind("护盾解除 · 可攻击"), 0.25), "")
 	if _role == "host":
 		var eid: int = _boss.entity_id
@@ -141,6 +160,8 @@ func _shield_cycle() -> bool:
 	if _role == "client":
 		_check("duplicates_and_old_snapshot_delivered", await _wait_until(func(): return authority_release_at != Vector2.INF, 0.25), "")
 		_check("old_packets_keep_same_unshielded_boss", is_same(_boss, _main._boss) and not _has_boss_shield(), "")
+		_check("old_packets_do_not_relight_laser", not is_instance_valid(_main._boss_laser_visual)
+			or (is_same(cooling, _main._boss_laser_visual) and cooling._mode == LaserModel.VisualMode.COOLING), "")
 	_check("one_visible_burst_and_cue", bursts.size() == 1 and release_cues == 1, str(bursts))
 	if bursts.size() == 1:
 		var fx = instance_from_id(bursts[0])
@@ -151,6 +172,7 @@ func _shield_cycle() -> bool:
 			if _role == "solo" and DisplayServer.get_name() != "headless":
 				await _read_pixels(fx)
 	await _wait_seconds(0.65)
+	_check("cooling_expires", not is_instance_valid(cooling) and not is_instance_valid(_main._boss_laser_visual), "")
 	_check("one_burst_released", bursts.size() == 1 and not is_instance_id_valid(bursts[0]), str(bursts))
 	_check("hud_attack_window_open", _hud_says("可攻击") and not _main._hud._boss_status_hatch.visible, "")
 	if _role != "client":
@@ -171,6 +193,30 @@ func _shield_cycle() -> bool:
 
 func _has_boss_shield() -> bool:
 	return is_instance_valid(_boss) and _boss.get_attack_window() >= BossModel.AttackWindow.CHARGING
+
+func _faces_laser_beam() -> bool:
+	var beam: LaserModel = _main._boss_laser_visual
+	if not is_instance_valid(beam) or beam._mode != LaserModel.VisualMode.BEAM:
+		return false
+	var axis := beam._beam_start.direction_to(beam._beam_end)
+	return axis.dot(Vector2.UP.rotated(_boss.global_rotation)) > 0.9999
+
+func _restore_laser_stage(label: String, mode: LaserModel.VisualMode, min_age: float) -> void:
+	var ready := await _wait_until(func():
+		var visual: LaserModel = _main._boss_laser_visual
+		return is_instance_valid(visual) and visual._mode == mode and visual._age >= min_age, 1.0)
+	if not ready:
+		_check("resnapshot_restores_" + label, false, "stage did not reach sampling age")
+		return
+	var before: LaserModel = _main._boss_laser_visual
+	var before_age := before._age
+	var origin := before.global_position
+	_main._clear_boss_laser_visual()
+	var synced := await _resnapshot()
+	var restored: LaserModel = _main._boss_laser_visual
+	_check("resnapshot_restores_" + label, synced and is_instance_valid(restored)
+		and restored._mode == mode and restored._age >= before_age - 0.10
+		and restored.global_position.is_equal_approx(origin), "")
 
 func _check_mid_beam_snapshot() -> bool:
 	if not _require("beam_in_flight_before_resync", await _wait_until(func():
@@ -308,6 +354,13 @@ func _alternate_death() -> void:
 				pickup.queue_free()
 			_check("overload_supply_still_immediate", supplies == ["heal", "speed", "power", "heal"], str(supplies))
 			await get_tree().process_frame
+			_boss._start_ultimate_laser()
+			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_CHARGE + 0.01)
+			var active: LaserModel = _main._boss_laser_visual
+			_check("active_beam_before_bomb", is_instance_valid(active) and active._mode == LaserModel.VisualMode.BEAM, "")
+			_boss.boss_died.connect(func():
+				_check("boss_death_removes_beam_immediately", not is_instance_valid(_main._boss_laser_visual)
+					and (not is_instance_valid(active) or not active.visible), ""))
 			var bomb = POWERUP.instantiate()
 			_main.add_child(bomb)
 			recording = true
@@ -322,7 +375,9 @@ func _alternate_death() -> void:
 			_boss._start_ultimate_laser()
 			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_CHARGE + 0.01)
 			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_TRAVEL + _boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS + 0.01)
+			var cooling: LaserModel = _main._boss_laser_visual
 			_check("live_shards_before_exit", bursts.size() == 1, str(bursts.size()))
+			_check("cooling_before_exit", is_instance_valid(cooling) and cooling._mode == LaserModel.VisualMode.COOLING, "")
 			_boss.boss_died.connect(func():
 				if _role == "game-over":
 					_main._player.force_kill()
@@ -334,6 +389,7 @@ func _alternate_death() -> void:
 			_check("battle_ended_or_changed", ended, "")
 			_check("no_late_loot", drops.is_empty() and get_tree().get_nodes_in_group("powerups").is_empty(), str(drops.size()))
 			_check("no_shards_after_exit", bursts.size() == 1 and not is_instance_id_valid(bursts[0]), "")
+			_check("no_laser_after_exit", not is_instance_valid(cooling), "")
 
 func _reward_count(id: int) -> int:
 	return roundi(GameState.get_laser_cd_bonus(id) + GameState.get_extra_bullet_count(id) +

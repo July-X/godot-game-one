@@ -77,6 +77,9 @@ func get_sprite_variant_id() -> int:
 	return _sprite_variant_id
 
 func apply_network_rotation(rot: float) -> void:
+	# 推进与持续阶段的朝向由可靠光束坐标锁定。
+	if _is_network_ghost and get_attack_window() >= AttackWindow.SWEEP:
+		return
 	_network_target_rotation = rot
 	if not _is_network_ghost:
 		return
@@ -457,8 +460,8 @@ func _start_ultimate_laser() -> void:
 		scene.add_shake(scene.SHAKE_LASER_CHARGE)
 
 func _tick_ultimate_laser(delta: float) -> void:
-	_face_target(delta)
 	if _ultimate_laser_charging:
+		_face_target(delta)
 		_ultimate_laser_charge_timer -= delta
 		if _ultimate_laser_charge_timer <= 0.0:
 			_fire_ultimate_laser()
@@ -491,7 +494,13 @@ func _fire_ultimate_laser() -> void:
 		dir = Vector2.DOWN
 	var screen: Vector2 = NetworkManager.battle_size(self)
 	_ultimate_laser_end = _ultimate_laser_start + dir.normalized() * screen.length() * 1.35
+	face_laser_direction(dir)
 	_publish_attack_window()
+
+func face_laser_direction(direction: Vector2) -> void:
+	global_rotation = direction.angle() + PI * 0.5
+	_network_target_rotation = global_rotation
+	reset_physics_interpolation()
 
 func _publish_attack_window() -> void:
 	var battle := get_parent()

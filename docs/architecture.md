@@ -75,7 +75,7 @@
 │   ├── shield_circle.gd       # 精英/Boss 护盾圆形光晕
 │   ├── shield_shatter_burst.gd # 破盾碎裂特效
 │   ├── cooldown_overlay.gd    # 技能/激光冷却覆盖层（单文件，含两种形态）
-│   ├── boss_ultimate_laser_visual.gd # 终局激光程序化视觉
+│   ├── boss_ultimate_laser_visual.gd / boss_laser_beam.gdshader # 终局激光阶段、束段和端帽
 │   ├── hud.gd / title_screen.gd / lobby.gd / mobile_controls.gd
 ├── tests/
 │   ├── lan_probe.gd           # 双进程 headless 联机回归探针
@@ -88,6 +88,7 @@
 │   ├── impact_scope_probe.gd / .tscn # 真实扣血与各武器接触，对照历史图形帧
 │   ├── feedback_lan_probe.gd / .tscn    # 双端两次破盾、销毁及消息重发
 │   ├── boss_dodge_probe.gd / .tscn      # 单人侧移轨迹、入场接管与双端 P2 施压
+│   ├── boss_laser_visual_probe.gd / .tscn # 束段判定、前景像素与收束的图形回归
 │   ├── mixed_viewport_probe.gd / .tscn  # 双进程混合画幅边界用例
 │   ├── curve_probe.tscn / wave_probe.tscn
 ├── docs/

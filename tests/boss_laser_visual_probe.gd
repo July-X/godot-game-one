@@ -1,0 +1,161 @@
+extends Node
+
+const Boss = preload("res://scripts/boss.gd")
+const Laser = preload("res://scripts/boss_ultimate_laser_visual.gd")
+const BULLET := preload("res://scenes/entities/bullet.tscn")
+const START := Vector2(123, 134)
+const END := Vector2(471, 254)
+const AGE := 0.89
+const DURATION := Boss.BOSS_ULTIMATE_LASER_TRAVEL + Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS
+const OUTER := Boss.BOSS_ULTIMATE_LASER_WIDTH * 0.5
+const INNER := OUTER * Boss.ULTIMATE_LASER_INNER_RATIO
+
+class Pilot extends Node2D:
+	var hp := 50
+	func force_kill() -> void:
+		hp = 0
+	func take_damage(amount: int) -> void:
+		hp -= amount
+
+var _view := SubViewport.new()
+var _world := Node2D.new()
+var _boss: Boss
+var _laser: Laser
+var _passed := 0
+var _failed := 0
+
+func _ready() -> void:
+	_run.call_deferred()
+
+func _run() -> void:
+	if DisplayServer.get_name() == "headless":
+		push_error("BossLaserVisualProbe requires a graphical renderer")
+		get_tree().quit(2)
+		return
+	_view.size = Vector2i(624, 368)
+	_view.world_2d = World2D.new()
+	_view.transparent_bg = true
+	_view.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(_view)
+	_world.position = Vector2(71, 33)
+	_view.add_child(_world)
+	_boss = preload("res://scenes/entities/boss.tscn").instantiate()
+	_world.add_child(_boss)
+	_boss.hide()
+	_boss.set_physics_process(false)
+	_boss._ultimate_laser_start = START
+	_boss._ultimate_laser_end = END
+	_boss._ultimate_laser_firing = true
+	_laser = Laser.new()
+	_world.add_child(_laser)
+	_laser.setup_beam(START, END, Boss.BOSS_ULTIMATE_LASER_TRAVEL, Boss.BOSS_ULTIMATE_LASER_WIDTH, Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS)
+	_laser.authority_boss = _boss
+
+	_set_age(0.0)
+	_check("zero_length_has_no_pixels", not (await _frame()).get_used_rect().has_area())
+	_set_age(AGE)
+	var advancing := await _frame()
+	_check("advancing_uses_authority_age", is_equal_approx(_laser._age, _boss.get_laser_visual_age()))
+	var tip := START.lerp(END, AGE / Boss.BOSS_ULTIMATE_LASER_TRAVEL)
+	_check_capsule("advancing", advancing, tip)
+	_check_damage(tip)
+	await _check_foreground(tip)
+	_set_age(DURATION - 0.04)
+	_check_capsule("late_hold", await _frame(), END)
+	_set_age(DURATION)
+	_check("expired_age_has_no_danger", not (await _frame()).get_used_rect().has_area())
+	_check("finish_once", _laser.finish_beam() and not _laser.finish_beam())
+	var ember_rect := (await _frame()).get_used_rect()
+	_check("cooling_only_near_origin", ember_rect.has_area() and Rect2i(Vector2i(START) - Vector2i(65, 65),
+		Vector2i(131, 131)).encloses(ember_rect))
+	await get_tree().create_timer(0.30).timeout
+	_check("cooling_releases_visual", not is_instance_valid(_laser) and not (await _frame()).get_used_rect().has_area())
+	print("[LASER-VISUAL] SUMMARY pass=%d failed=%d" % [_passed, _failed])
+	get_tree().quit(1 if _failed else 0)
+
+func _set_age(age: float) -> void:
+	_boss._ultimate_laser_fire_timer = DURATION - age
+
+func _frame() -> Image:
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	return _view.get_texture().get_image()
+
+func _check_capsule(label: String, frame: Image, tip: Vector2) -> void:
+	var axis := START.direction_to(END)
+	var across := axis.orthogonal()
+	for landmark in [[START, -axis, "source_cap"], [tip, axis, "tip_cap"],
+			[START.lerp(tip, 0.5), across, "right_side"], [START.lerp(tip, 0.5), -across, "left_side"]]:
+		var matches := true
+		for offset in [INNER - 2, INNER + 2, OUTER - 2, OUTER + 2]:
+			var pixel := Vector2i(landmark[0] + landmark[1] * offset)
+			var distance := _boss._distance_to_beam_center(Vector2(pixel) + Vector2(0.5, 0.5))
+			var opacity := frame.get_pixelv(pixel).a
+			var band := 0 if distance < 0.0 else (2 if distance <= INNER else 1)
+			matches = matches and int(opacity > 0.05) + int(opacity >= 0.80) == band
+		_check(label + "_" + landmark[2], matches)
+	var rect := frame.get_used_rect()
+	var outside := 0
+	for y in range(rect.position.y, rect.end.y):
+		for x in range(rect.position.x, rect.end.x):
+			if frame.get_pixel(x, y).a > 0.05 and _boss._distance_to_beam_center(Vector2(x + 0.5, y + 0.5)) < 0.0:
+				outside += 1
+	_check(label + "_no_pixels_in_safe_area", outside == 0)
+
+func _check_damage(tip: Vector2) -> void:
+	var pilot := Pilot.new()
+	_world.add_child(pilot)
+	pilot.add_to_group("player")
+	for row in [[INNER - 0.5, 0], [INNER + 0.5, 40], [OUTER - 0.5, 40], [OUTER + 0.5, 50]]:
+		pilot.hp = 50
+		pilot.global_position = tip + START.direction_to(END) * row[0]
+		_boss._laser_dot_accumulator = 0
+		_boss._apply_continuous_laser_damage(1.0)
+		_check("tip_at_%.1f_receives_%d_damage" % [row[0], 50 - row[1]], pilot.hp == row[1])
+	pilot.free()
+
+func _check_foreground(tip: Vector2) -> void:
+	var bullets: Array[Node2D] = []
+	for center in [START.lerp(tip, 0.45), tip + START.direction_to(END) * 33.0]:
+		var bullet := BULLET.instantiate() as Node2D
+		_world.add_child(bullet)
+		bullet.setup(center, PI * 0.5, 1.0, false, 1, 0.0)
+		bullet.set_physics_process(false)
+		bullets.append(bullet)
+	var ship := Sprite2D.new()
+	ship.texture = preload("res://assets/sprites/player/swift_p1.png")
+	_world.add_child(ship)
+	ship.global_position = START.lerp(tip, 0.65) + START.direction_to(tip).orthogonal() * 28.0
+	ship.hide()
+	_laser.hide()
+	var bullets_only := await _frame()
+	_laser.show()
+	_check_opaque_pixels("opaque_enemy_bullets_stay_in_front", bullets_only, await _frame())
+	for bullet in bullets:
+		bullet.free()
+
+	ship.show()
+	_laser.hide()
+	var ship_only := await _frame()
+	_laser.show()
+	_check_opaque_pixels("opaque_pilot_stays_in_front", ship_only, await _frame())
+	ship.free()
+
+func _check_opaque_pixels(label: String, before: Image, during: Image) -> void:
+	var rect := before.get_used_rect()
+	var count := 0
+	var unchanged := true
+	for y in range(rect.position.y, rect.end.y):
+		for x in range(rect.position.x, rect.end.x):
+			var pixel := before.get_pixel(x, y)
+			if pixel.a >= 0.999:
+				count += 1
+				unchanged = unchanged and pixel == during.get_pixel(x, y)
+	_check(label, count > 20 and unchanged)
+
+func _check(label: String, ok: bool) -> void:
+	if ok:
+		_passed += 1
+	else:
+		_failed += 1
+	print("[LASER-VISUAL] %s pass=%s" % [label, ok])

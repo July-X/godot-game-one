@@ -1,92 +1,116 @@
 extends Node2D
 
-enum VisualMode { CHARGE, BEAM }
+const Boss = preload("res://scripts/boss.gd")
+const BEAM_SHADER := preload("res://scripts/boss_laser_beam.gdshader")
+const EMBER := Color("#f16c36")
+const AMBER := Color("#ffb86b")
+const PIXEL := Vector2.ONE * 2.0
+const COOL_SECONDS := 0.22
+enum VisualMode { CHARGE, BEAM, COOLING }
 
-var _mode: int = VisualMode.CHARGE
-var _age: float = 0.0
-var _duration: float = 1.0
-var _travel_time: float = 0.8
-var _beam_start: Vector2 = Vector2.ZERO
-var _beam_end: Vector2 = Vector2.ZERO
-var _beam_width: float = 96.0
+var authority_boss: Boss
+var _mode := VisualMode.CHARGE
+var _age := 0.0
+var _duration := 0.0
+var _travel_time := 0.0
+var _beam_start := Vector2.ZERO
+var _beam_end := Vector2.ZERO
+var _beam_width := 0.0
+
+func _ready() -> void:
+	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF
+	z_index = -2
 
 func setup_charge(pos: Vector2, duration: float, age := 0.0) -> void:
 	_mode = VisualMode.CHARGE
 	global_position = pos
-	_duration = maxf(duration, 0.1)
+	_duration = duration
 	_age = age
-	z_index = 85
 
 func setup_beam(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float, age := 0.0) -> void:
 	_mode = VisualMode.BEAM
-	global_position = Vector2.ZERO
+	global_position = from
+	global_rotation = from.angle_to_point(to)
 	_beam_start = from
 	_beam_end = to
-	_travel_time = maxf(travel_time, 0.05)
-	_duration = _travel_time + maxf(hold_duration, 0.0) + 0.35
-	_beam_width = maxf(width, 12.0)
+	_travel_time = travel_time
+	_duration = travel_time + hold_duration
+	_beam_width = width
 	_age = age
-	z_index = 86
+	var beam := ShaderMaterial.new()
+	beam.shader = BEAM_SHADER
+	beam.set_shader_parameter("outer_radius", width * 0.5)
+	beam.set_shader_parameter("core_radius", width * 0.5 * Boss.ULTIMATE_LASER_INNER_RATIO)
+	material = beam
+
+func advance_to_age(age: float) -> void:
+	_age = maxf(age, _age)
+
+func finish_beam() -> bool:
+	if _mode != VisualMode.BEAM:
+		return false
+	# 抢在下一次重绘前关掉缓存中的光束矩形。
+	(material as ShaderMaterial).set_shader_parameter("beam_open", false)
+	_mode = VisualMode.COOLING
+	_age = 0.0
+	_duration = COOL_SECONDS
+	queue_redraw()
+	return true
 
 func _process(delta: float) -> void:
-	_age += delta
-	queue_redraw()
-	if _age >= _duration:
+	if _mode != VisualMode.COOLING and is_instance_valid(authority_boss):
+		_age = authority_boss.get_laser_visual_age()
+	else:
+		_age += delta
+	if _mode != VisualMode.BEAM and _age >= _duration:
 		queue_free()
+	queue_redraw()
 
 func _draw() -> void:
-	if _mode == VisualMode.CHARGE:
-		_draw_charge()
-	else:
-		_draw_beam()
+	match _mode:
+		VisualMode.CHARGE: _draw_charge()
+		VisualMode.BEAM: _draw_beam()
+		VisualMode.COOLING:
+			material = null
+			_draw_cooling()
 
 func _draw_charge() -> void:
-	var t := clampf(_age / _duration, 0.0, 1.0)
-	var pulse := 0.5 + 0.5 * sin(_age * 24.0)
-	var radius := lerpf(24.0, 86.0, t)
-	var alpha := lerpf(0.28, 0.92, t)
-	draw_circle(Vector2.ZERO, radius * (1.0 + pulse * 0.08), Color(1.0, 0.12, 0.05, alpha * 0.22))
-	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 96, Color(1.0, 0.24, 0.12, alpha), 5.0)
-	draw_arc(Vector2.ZERO, radius * 0.62, -_age * 5.0, TAU - _age * 5.0, 96, Color(1.0, 0.82, 0.34, alpha), 3.0)
-	draw_circle(Vector2.ZERO, 10.0 + pulse * 5.0, Color(1.0, 0.92, 0.55, alpha))
+	var level := clampf(_age / _duration, 0.0, 1.0)
+	var time := floorf(_age * 30.0) / 30.0
+	for i in 28:
+		var amount := fposmod(time * (1.25 + (i % 5) * 0.17) + i * 0.618, 1.0)
+		var axis := Vector2.from_angle(i * 2.4 + amount * 0.32)
+		var radius := lerpf(14.0, lerpf(53.0, 75.0, level) + (i % 3) * 7.0, 1.0 - amount)
+		var alpha := sin(amount * PI) * lerpf(0.72, 1.0, level)
+		for step in 3:
+			var center := (axis * (radius + step * 4.0)).snapped(PIXEL)
+			var tone := AMBER if step == 0 else EMBER
+			draw_rect(Rect2(center - PIXEL, PIXEL * 2.0), Color(tone, alpha / (1.0 + step)))
+	# 从舰体后方出光，让外沿随收能逐渐变暖。
+	var halo := 28.0 + level * 14.0
+	draw_circle(Vector2.ZERO, halo + 8.0, Color(EMBER, 0.05 + level * 0.10))
+	draw_circle(Vector2.ZERO, halo, Color(EMBER, 0.10 + level * 0.16))
+	# 晚段的短亮点加快，外缘维持同样的低亮度。
+	var beat := fposmod(time * time * 1.6, 1.0)
+	for i in 12:
+		var arc := i * TAU / 12.0 + time * 0.9
+		var radius := lerpf(56.0, 31.0, beat)
+		var point := (Vector2.from_angle(arc) * radius).snapped(PIXEL)
+		draw_rect(Rect2(point, PIXEL), Color(AMBER, level * (1.0 - beat) * 0.72))
 
 func _draw_beam() -> void:
-	var travel_ratio := clampf(_age / _travel_time, 0.0, 1.0)
-	var fade := 1.0
-	if _age > _travel_time:
-		fade = 1.0 - clampf((_age - _travel_time) / maxf(_duration - _travel_time, 0.01), 0.0, 1.0)
-	## 推进阶段：rect 向前伸长；持续阶段：满长度
-	var beam_len := _beam_start.distance_to(_beam_end)
-	var current_len := beam_len * travel_ratio if _age < _travel_time else beam_len
-	var dir := (_beam_end - _beam_start).normalized()
-	if dir.length_squared() <= 0.001:
-		dir = Vector2.DOWN
-	var perp := Vector2(-dir.y, dir.x)
-	var rect_end := _beam_start + dir * current_len
-	## 用多个窄矩形拼成渐变宽束（深红中心→浅红边缘）
-	var slices: int = 36
-	for i in range(slices):
-		var t := (float(i) + 0.5) / float(slices)  ## -0.5~0.5 归一化到横向偏移比例
-		var offset := (t - 0.5) * _beam_width
-		var edge_ratio: float = abs(t - 0.5) * 2.0  ## 0=中心, 1=边缘
-		var r: float = 1.0
-		var g: float = lerpf(0.04, 0.35, edge_ratio)
-		var b: float = lerpf(0.02, 0.25, edge_ratio)
-		var col := Color(r, g, b, 0.7 * fade)
-		var slice_w: float = _beam_width / float(slices) * 1.2
-		if slice_w < 1.0:
-			continue
-		var slice_hw := slice_w * 0.5
-		var p1 := _beam_start + perp * (offset - slice_hw)
-		var p2 := _beam_start + perp * (offset + slice_hw)
-		var p3 := rect_end + perp * (offset + slice_hw)
-		var p4 := rect_end + perp * (offset - slice_hw)
-		draw_colored_polygon(PackedVector2Array([p1, p2, p3, p4]), col)
-	## 中心高亮光柱
-	var core_w: float = _beam_width * 0.08
-	var core_col := Color(1.0, 0.96, 0.68, 0.7 * fade)
-	var cp1 := _beam_start + perp * (-core_w)
-	var cp2 := _beam_start + perp * core_w
-	var cp3 := rect_end + perp * core_w
-	var cp4 := rect_end + perp * (-core_w)
-	draw_colored_polygon(PackedVector2Array([cp1, cp2, cp3, cp4]), core_col)
+	var path_length := _beam_start.distance_to(_beam_end) * clampf(_age / _travel_time, 0.0, 1.0)
+	if path_length * path_length <= 0.001 or _age >= _duration:
+		return
+	var beam := material as ShaderMaterial
+	var radius := _beam_width * 0.5
+	beam.set_shader_parameter("path_length", path_length)
+	beam.set_shader_parameter("age", _age)
+	draw_rect(Rect2(-radius, -radius, path_length + 2.0 * radius, _beam_width), Color.WHITE)
+
+func _draw_cooling() -> void:
+	var heat := 1.0 - clampf(_age / _duration, 0.0, 1.0)
+	for i in 11:
+		var radius := 31.0 + (i % 4) * 5.0 + 14.0 * (1.0 - heat)
+		var center := (Vector2.from_angle(i * 2.4) * radius).snapped(PIXEL)
+		draw_rect(Rect2(center, PIXEL * (2.0 if i % 3 == 0 else 1.0)), Color(EMBER, 0.62 * heat))

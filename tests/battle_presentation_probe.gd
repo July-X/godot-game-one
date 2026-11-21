@@ -92,6 +92,9 @@ func _run() -> void:
 	while is_instance_valid(_boss) and not _boss._ultimate_laser_firing:
 		await get_tree().physics_frame
 	_move(Vector2.RIGHT, true)
+	await _at(586)
+	await _capture("laser-tip")
+	_report("laser_tip")
 	await _at(598)
 	_fan(4)
 	await _at(622)

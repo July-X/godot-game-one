@@ -1743,8 +1743,6 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary
 		_boss.set_sprite_variant(variant_id)
 		_boss._apply_visual_state()
 	_boss.apply_network_attack_window(stamp)
-	if stamp > previous and _boss.get_attack_window() == Boss.AttackWindow.OPEN:
-		_clear_boss_laser_visual()
 	_sync_boss_laser(stamp, snapshot.from, snapshot.to, snapshot.age, false)
 
 ## Host → Client：生成掉落物幽灵副本
@@ -2127,23 +2125,36 @@ func _rpc_sync_boss_window(eid: int, stamp: int, origin: Vector2, target: Vector
 
 func _sync_boss_laser(stamp: int, origin: Vector2, target: Vector2, age: float, live_edge: bool) -> void:
 	var window := Boss.window_from_stamp(stamp)
+	var has_visual := is_instance_valid(_boss_laser_visual) and not _boss_laser_visual.is_queued_for_deletion()
 	if window < Boss.AttackWindow.CHARGING:
+		if has_visual and _boss_laser_stamp == stamp:
+			return
+		if live_edge and has_visual and _boss_laser_visual.finish_beam():
+			_boss_laser_stamp = stamp
+		else:
+			_clear_boss_laser_visual()
 		return
 	var visual_stamp := stamp - 1 if window == Boss.AttackWindow.HOLD else stamp
-	if is_instance_valid(_boss_laser_visual) and not _boss_laser_visual.is_queued_for_deletion() and _boss_laser_stamp == visual_stamp:
+	if has_visual and _boss_laser_stamp == visual_stamp:
+		_boss_laser_visual.advance_to_age(age)
 		return
 	_clear_boss_laser_visual()
 	_boss_laser_stamp = visual_stamp
 	if window == Boss.AttackWindow.CHARGING:
 		_boss_laser_visual = _show_boss_ultimate_laser_charge(origin, Boss.BOSS_ULTIMATE_LASER_CHARGE, age, live_edge)
 	else:
+		if _boss._is_network_ghost:
+			_boss.face_laser_direction(target - origin)
 		var visual := _boss_ultimate_laser_visual_script.new()
 		add_child(visual)
 		visual.setup_beam(origin, target, Boss.BOSS_ULTIMATE_LASER_TRAVEL, Boss.BOSS_ULTIMATE_LASER_WIDTH, Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS, age)
 		_boss_laser_visual = visual
+	if is_instance_valid(_boss) and not _boss._is_network_ghost:
+		_boss_laser_visual.authority_boss = _boss
 
 func _clear_boss_laser_visual() -> void:
 	if is_instance_valid(_boss_laser_visual):
+		_boss_laser_visual.hide()
 		_boss_laser_visual.queue_free()
 	_boss_laser_visual = null
 	_boss_laser_stamp = -1

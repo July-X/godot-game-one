@@ -2,6 +2,34 @@
 
 本项目的美术与音频**以程序化生成为主**，外部资产只覆盖少数关键形象。
 
+## 终局激光的像素表现
+
+参考固定版本的 PixelFX `arcane/arcane-beam` 明暗分层及 `lightning/charge-up` 向内收束。制作以 Godot 中的一倍画面为准，确认蓄力收向母舰、推进尖端轮廓、持续束的低亮边带，以及解除后的短余烬。[PixelFX 固定版本](https://github.com/patch-gg/pixelfx/tree/5294518ce7c72e48b6100a744596e0acf57f2826)
+
+游戏使用原生 CanvasItem 与着色器绘制。PixelFX 样片用于配色和动作参考。单个束段按到最近点的距离着色，外圈半径 55、内圈半径 16.5，起点和尖端各有圆端帽。阶梯色块和流动亮纹只在束内变化。房主及单人逐帧读取伤害时钟，加入端以阶段消息和现有快照中的时间为起点本地播放。两端用同一对束段坐标锁住开火后的舰首，加入端在此期间忽略迟到的普通角度更新。收到实时解除时关掉整束，舰体附近的余烬在 0.22 秒内消失。补到已结束的阶段时直接清除旧画面。
+
+Godot 4.6.2 以 `b451652` 作基线。同一脚本、种子和视口按第 492、586、805、1345 物理帧对照蓄力、推进尖端、持续和收束。16:9 为 1280×720，20:9 为 1600×720。两版样本的激光时序、机体位置和生命值匹配。收束后的部分蓝色主炮数量受擦弹增益的墙钟衰减影响。三轮制作先对齐形状，再降低外带亮度并加分段流光，最后校准蓄力、出光与短余烬的明暗。
+
+图形探针 22/22。斜向束在推进和接近持续结束时逐点检查内外圈、两端帽及安全区，敌弹和雨燕的不透明像素保持原色。实际伤害函数在尖端验证了 16.0 单位秒杀、17.0 和 54.5 单位各每秒扣 10 点、55.5 单位无伤。单人生命周期 32/32。双进程本机 ENet 回环的 Boss 门禁为房主 52/52、加入端 52/52，包含蓄力、推进与持续的实体快照恢复，以及开火后玩家移开、旧朝向更新不能转动舰首。炸弹击败、结算与换场时，激光节点随原生命周期清理。
+
+真实图形双进程中，房主 1280×720 和加入端 1600×720 各 53/53。双方都录到推进光束、对齐的舰首和选卡叠层。常规联机 40/40，反馈联机 27/27。
+
+在基线和当前版本运行同一份 `battle_presentation_probe.gd`。基线可以用 `git archive b451652` 解到临时目录，复制该脚本并导入。截图和录像写入各自的已有输出目录。
+
+```bash
+godot --windowed --resolution 1280x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- capture /已有目录/16x9 verify
+godot --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- capture /已有目录/20x9 touch verify
+godot --windowed --resolution 800x480 --fixed-fps 60 --audio-driver Dummy res://tests/boss_laser_visual_probe.tscn
+godot --headless --path . res://tests/boss_lifecycle_probe.tscn -- solo
+bash tests/run_probe.sh 18826 boss
+bash tests/run_probe.sh 18827
+bash tests/run_probe.sh 18823 feedback
+```
+
+单人中断用同一生命周期场景的 `bomb`、`game-over` 和 `scene-exit` 参数复跑。实拍由脚本驱动，20:9 的触摸是桌面模拟。手机与真实网络抖动下的显示待验。
+
 ## 裂隙母舰可读性
 
 以 `SBH-Rift-Mothership-Design.png` 为造型参考。`python3 scripts/generate_assets/make_rift_mothership.py` 用 Pillow 重画肩甲、钢灰色层次和中央炮口。输出仍为 128×96 像素，场景保持原缩放与 33 单位碰撞圆。外翼使用较暗的冷灰，激光蓄力与推进的暖色留在原预警和光束里。
@@ -254,7 +282,7 @@ P1 精修以 `3d960c3` 为对照，只在既有剪影内调整像素。用连续
 | 破盾碎裂 | `shield_shatter_burst.gd` |
 | 激光光束 | `laser_bolt.gd` `_draw()` 三层线叠加 |
 | 闪电链 | `lightning_line.gd` 锯齿线 |
-| 终局激光 | `boss_ultimate_laser_visual.gd` 36 段渐变切片 |
+| 终局激光 | `boss_ultimate_laser_visual.gd` 绘制蓄力和余烬，`boss_laser_beam.gdshader` 绘制圆端帽与两圈危险边界 |
 
 ## 音频
 
