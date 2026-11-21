@@ -45,6 +45,11 @@ func _input(event: InputEvent) -> void:
 			_update_move_vector(event.position)
 			get_viewport().set_input_as_handled()
 
+func disable_for_results() -> void:
+	_release_move_touch()
+	set_process_input(false)
+	hide()
+
 func _release_move_touch() -> void:
 	if _move_touch_id == -1:
 		return

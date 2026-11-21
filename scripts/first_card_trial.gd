@@ -83,7 +83,7 @@ func _on_level_up(new_level: int) -> void:
 	for group in ["enemies", "asteroids", "enemy_bullets", "player_bullets"]:
 		for unit in get_tree().get_nodes_in_group(group):
 			unit.queue_free()
-	_player.set_physics_process(false)
+	_player.trial_draft_movement_only = true
 	_player.set_process_unhandled_input(false)
 	_player.on_level_up()
 	$TrialUI/Options.show()
@@ -121,7 +121,7 @@ func _start_trial(pid: int, card: String, _index: int) -> void:
 			_player._graze_area.area_entered.connect(_observe_graze)
 		_log_trial("choice", {"source": UpgradeDraft.get_draft(pid).source, "hp": _hp_last})
 	$TrialUI/Options.hide()
-	_player.set_physics_process(true)
+	_player.trial_draft_movement_only = false
 	_player.set_process_unhandled_input(true)
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -184,6 +184,9 @@ func _physics_process(_delta: float) -> void:
 			return
 		_player.set_physics_process(false)
 		_player.set_process_unhandled_input(false)
+		var stick := get_node_or_null("MobileControls")
+		if stick != null:
+			stick.disable_for_results()
 		_hud.set_wave_phase("试飞结束", Color.LIGHT_CYAN)
 		$TrialUI/Options/Power.hide()
 		$TrialUI/Options/Retry.show()

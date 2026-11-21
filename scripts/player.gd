@@ -104,6 +104,8 @@ var _action_router: Node
 var _motion: Node
 var _combat: Node
 var _feedback: Node
+## 首卡试飞的选卡阶段：允许触摸走位，但不运行战斗、技能或冷却。
+var trial_draft_movement_only: bool = false
 
 var _pickup_area: Area2D
 var _graze_area: Area2D = null
@@ -233,6 +235,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
+		return
+	if trial_draft_movement_only:
+		if _motion.mobile_mode:
+			_motion.update(delta, GameState.get_move_speed_multiplier(), NetworkManager.battle_size(self))
+			_feedback.update(delta)
 		return
 	var mp_active := _is_multiplayer_session_active()
 	var locally_controlled := _is_locally_controlled_player()

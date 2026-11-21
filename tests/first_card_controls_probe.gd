@@ -11,9 +11,10 @@ func _ready() -> void:
 
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
-	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
 	get_window().content_scale_size = Vector2i(1600 if "--wide" in args else 1280, 720)
+	get_window().size = Vector2i(2400 if "--wide" in args else 1920, 1080)
 	trial = TRIAL.instantiate()
 	get_tree().root.add_child(trial)
 	get_tree().current_scene = trial
@@ -32,6 +33,12 @@ func _run() -> void:
 	var card_button: Button = trial._hud._draft_row.get_child(1)
 	var start_x: float = trial._player.position.x
 	_touch(0, stick._joystick_center - Vector2(95, 0), true)
+	for i in 14:
+		await get_tree().physics_frame
+	_check("pilot_moves_before_first_choice_without_starting_combat",
+		trial._player.position.x < start_x - 20.0 and UpgradeDraft.has_draft(1)
+		and trial.trial_tick == -1 and not hint.visible and get_tree().get_nodes_in_group("player_bullets").is_empty())
+	start_x = trial._player.position.x
 	_touch(1, card_button.get_global_rect().get_center(), true)
 	_touch(1, card_button.get_global_rect().get_center(), false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -43,8 +50,8 @@ func _run() -> void:
 	var left_x: float = trial._player.position.x
 	var drag := InputEventScreenDrag.new()
 	drag.index = 0
-	drag.position = stick._joystick_center + Vector2(95, 0)
-	get_viewport().push_input(drag, true)
+	drag.position = get_viewport().get_final_transform() * (stick._joystick_center + Vector2(95, 0))
+	get_viewport().push_input(drag)
 	if not await _at(70):
 		return
 	_check("held_finger_can_move_right", stick._move_touch_id == 0 and trial._player.position.x > left_x + 25)
@@ -58,16 +65,22 @@ func _run() -> void:
 		if arg.begins_with("--capture=") and DisplayServer.get_name() != "headless":
 			await RenderingServer.frame_post_draw
 			_check("capture", get_viewport().get_texture().get_image().save_png(arg.trim_prefix("--capture=")) == OK)
-	_touch(0, drag.position, false)
+	_touch(0, stick._joystick_center + Vector2(95, 0), false)
 	_check("release_stops_touch_input", stick._move_touch_id == -1 and trial._player._motion.touch_move == Vector2.ZERO)
 
+	trial._player._invincible_timer = 0.0
+	GameState.set_shield_layers(1, 0)
 	var hp := GameState.get_current_health(1)
+	var loss := trial._hp_lost
 	trial._player.take_damage(2.0)
 	GameState.heal(2, 1)
-	_check("cumulative_loss_survives_heal", GameState.get_current_health(1) == hp and trial._hp_lost == 2)
+	_check("cumulative_loss_survives_heal", GameState.get_current_health(1) == hp and trial._hp_lost == loss + 2)
+	_touch(0, stick._joystick_center + Vector2(60, 0), true)
 	if not await _at(trial.END_TICK):
 		return
 	var retry: Button = trial.get_node("TrialUI/Options/Retry")
+	_check("results_hide_and_release_the_stick", not stick.visible and not stick.is_processing_input()
+		and stick._move_touch_id == -1 and trial._player._motion.touch_move == Vector2.ZERO)
 	_check("hint_ended_before_retry", not hint.visible and retry.is_visible_in_tree() and not trial._recording)
 	await get_tree().process_frame
 	var click := InputEventMouseButton.new()
@@ -115,9 +128,9 @@ func _at(tick: int) -> bool:
 func _touch(index: int, at: Vector2, pressed: bool) -> void:
 	var event := InputEventScreenTouch.new()
 	event.index = index
-	event.position = at
+	event.position = get_viewport().get_final_transform() * at
 	event.pressed = pressed
-	get_viewport().push_input(event, true)
+	get_viewport().push_input(event)
 
 func _check(label: String, ok: bool) -> void:
 	if ok:
