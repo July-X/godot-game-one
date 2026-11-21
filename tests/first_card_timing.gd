@@ -24,6 +24,10 @@ var fixed_births := 0
 var director_resumed := false
 var elite_hit := false
 var slice_end_kills := -1
+var run_seed := RUN_SEED
+var protect_pilot := true
+var stop_at_first_hit := true
+var choice_key := KEY_2
 
 func _ready() -> void:
 	# Headless 的默认窗口是方形，固定逻辑视口才能与录屏逐帧对照。
@@ -48,17 +52,18 @@ func _start() -> void:
 	timeout_mode = args[0] == "timeout"
 	observed_trial = game.has_method("_start_trial")
 	trace.store_csv_line(["event", "tick", "order", "formation", "enemy_type", "x", "y", "scheduled_tick", "nominal_due_tick"])
-	seed(RUN_SEED)
-	game._wave_director._rng.seed = RUN_SEED
-	UpgradeDraft._rng.seed = RUN_SEED
+	seed(run_seed)
+	game._wave_director._rng.seed = run_seed
+	UpgradeDraft._rng.seed = run_seed
 	start_tick = Engine.get_physics_frames()
-	game._player._invincible_timer = 10000.0
+	if protect_pilot:
+		game._player._invincible_timer = 10000.0
 	get_tree().node_added.connect(_birth)
 	GameState.elite_spawn_requested.connect(func(): _event("elite_request"))
 	GameState.boss_spawn_requested.connect(func(_level): _event("boss_request"))
 	UpgradeDraft.draft_opened.connect(_opened)
 	UpgradeDraft.card_chosen.connect(_chosen)
-	_event("start", "seed=%d director_seed=%d draft_seed=%d viewport=%s" % [RUN_SEED, RUN_SEED, RUN_SEED, game.get_viewport_rect().size])
+	_event("start", "seed=%d director_seed=%d draft_seed=%d viewport=%s" % [run_seed, run_seed, run_seed, game.get_viewport_rect().size])
 
 func _tick() -> int:
 	return Engine.get_physics_frames() - start_tick
@@ -104,7 +109,7 @@ func _physics_process(_delta: float) -> void:
 		player.rotation = player.global_position.angle_to_point(target.global_position) + PI / 2
 	if not timeout_mode and opened_tick >= 0 and _tick() - opened_tick >= 45:
 		var key := InputEventKey.new()
-		key.keycode = KEY_2
+		key.keycode = choice_key
 		key.pressed = true
 		scripted_key = true
 		get_viewport().push_input(key)
@@ -129,10 +134,7 @@ func _process(_delta: float) -> void:
 			watched.erase(id)
 			continue
 		var info: Dictionary = watched[id]
-		var collider: CollisionShape2D = unit.get_node("CollisionShape2D")
-		var bounds: Rect2 = collider.global_transform * collider.shape.get_rect()
-		var damage_enabled: bool = info.kind == "elite" or not unit._shield_active
-		if not info.in_view and damage_enabled and not collider.disabled and get_viewport().get_visible_rect().intersects(bounds):
+		if not info.in_view and _can_hit_in_view(unit, info.kind):
 			info.in_view = true
 			_event(info.kind + "_attackable_in_view")
 		var hp: float = unit.get_network_health()
@@ -143,16 +145,21 @@ func _process(_delta: float) -> void:
 			_event(info.kind + "_first_damage")
 			if info.kind == "elite":
 				elite_hit = true
-			if info.kind == "boss":
+			if info.kind == "boss" and stop_at_first_hit:
 				var ok: bool = first_choice and elite_seen and elite_hit and info.in_view and director_births > 0 and not failed
 				if observed_trial:
 					ok = ok and fixed_births == game.ORDERS.size() and slice_end_kills >= 10 and director_resumed
 				_event("verdict", "pass=%s schedules=%d births=%d pending=%d fixed=%d resumed=%s" % [ok, next_order, director_births, pending.size(), fixed_births, director_resumed])
 				trace.flush()
 				get_tree().quit(0 if ok else 1)
-	if _tick() > 60 * 600 or not GameState.game_running:
+	if _tick() > 60 * 600 or (stop_at_first_hit and not GameState.game_running):
 		_event("deadline")
 		get_tree().quit(1)
+
+func _can_hit_in_view(unit: Node2D, kind: String) -> bool:
+	var collider: CollisionShape2D = unit.get_node("CollisionShape2D")
+	var bounds: Rect2 = collider.global_transform * collider.shape.get_rect()
+	return (kind == "elite" or not unit._shield_active) and not collider.disabled and get_viewport().get_visible_rect().intersects(bounds)
 
 func _birth(node: Node) -> void:
 	var path := node.scene_file_path
