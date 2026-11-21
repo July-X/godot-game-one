@@ -85,9 +85,9 @@ func _splash_damage(enemies: Array) -> void:
 		if not is_instance_valid(e) or not e.has_method("take_damage"):
 			continue
 		if e is Node2D and (e as Node2D).global_position.distance_to(origin) <= _splash_radius:
-			var shielded := _hits_shield(e)
+			var impact := _impact_for(e)
 			e.take_damage(_damage * 0.5, owner_peer_id)
-			Pool.spawn_hit((e as Node2D).global_position, shielded)
+			Pool.spawn_hit((e as Node2D).global_position, impact)
 
 func setup(pos: Vector2, angle: float, damage: float, is_player: bool, level: int = 1, speed: float = 600.0, owner_id: int = -1) -> void:
 	global_position = pos
@@ -195,18 +195,18 @@ func _on_body_entered(body: Node2D) -> void:
 	if _is_player_bullet:
 		## 多人：Client 子弹击中本地幽灵敌人 → 报告 Host
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
-			var shielded := _hits_shield(body)
+			var impact := _impact_for(body)
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if body.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
 						attacker_peer = multiplayer.get_unique_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
-				_spawn_hit(shielded)
+				_spawn_hit(impact)
 				_recycle()
 			else:
 				body.take_damage(_damage, owner_peer_id)
-				_spawn_hit(shielded)
+				_spawn_hit(impact)
 				if _resolve_hit(body):
 					_recycle()
 	else:
@@ -215,7 +215,7 @@ func _on_body_entered(body: Node2D) -> void:
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				var pid: int = body.peer_id
 				GameState._rpc_report_player_hit.rpc_id(1, maxi(1, int(round(_damage))), pid)
-				_spawn_hit()
+				_spawn_hit(Pool.Impact.LEGACY)
 				_recycle()
 			else:
 				var source: String = "弹幕子弹"
@@ -225,7 +225,7 @@ func _on_body_entered(body: Node2D) -> void:
 					source = "散弹子弹"
 				GameState.death_message = "被 " + source + " 击落"
 				body.take_damage(_damage)
-				_spawn_hit()
+				_spawn_hit(Pool.Impact.LEGACY)
 				_recycle()
 
 func _on_area_entered(area: Area2D) -> void:
@@ -236,33 +236,35 @@ func _on_area_entered(area: Area2D) -> void:
 	if _is_player_bullet:
 		if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
 			var enemy := area.get_parent()
-			var shielded := _hits_shield(enemy)
+			var impact := _impact_for(enemy)
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if enemy.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
 						attacker_peer = multiplayer.get_unique_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
-				_spawn_hit(shielded)
+				_spawn_hit(impact)
 				_recycle()
 			else:
 				enemy.take_damage(_damage, owner_peer_id)
-				_spawn_hit(shielded)
+				_spawn_hit(impact)
 				if _resolve_hit(enemy):
 					_recycle()
 
-func _hits_shield(target: Node) -> bool:
-	return target.has_method("has_impact_shield") and target.has_impact_shield()
+func _impact_for(target: Node) -> Pool.Impact:
+	if target.has_method("has_impact_shield") and target.has_impact_shield():
+		return Pool.Impact.SHIELD
+	return Pool.contact_for(target)
 
-func _spawn_hit(shielded := false) -> void:
+func _spawn_hit(impact: Pool.Impact) -> void:
 	## 日常命中的反馈：极轻的震屏 + 命中音。
 	## 这里最容易犯的错是给太重——自动射击每秒钟能命中十几次，
 	## 一旦每次都震，连击时画面会持续抖，弹幕反而看不清。
 	## 所以强度压到 0.06，并把"手感"主要交给命中音的连击升调。
 	var scene := get_tree().current_scene
 	if scene != null and scene.has_method("emit_hit_feedback"):
-		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, _is_player_bullet and not shielded)
-	Pool.spawn_hit(global_position, shielded)
+		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, _is_player_bullet and impact != Pool.Impact.SHIELD)
+	Pool.spawn_hit(global_position, impact)
 	if _is_player_bullet and NetworkManager.is_online() and multiplayer.is_server():
 		if scene and scene.has_method("register_projectile_impact"):
-			scene.register_projectile_impact(global_position, shielded)
+			scene.register_projectile_impact(global_position, impact)

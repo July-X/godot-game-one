@@ -32,7 +32,7 @@ border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.2, 0.2, 0.25, 1.0)
 
-[node name="Enemy" type="CharacterBody2D"]
+[node name="Enemy" type="CharacterBody2D" groups=["ordinary_enemies"]]
 collision_layer = 4
 collision_mask = 3
 script = ExtResource("1")

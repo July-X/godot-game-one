@@ -64,7 +64,7 @@ func _run() -> void:
 	var hit = Pool.acquire("hit_effect", HIT)
 	main.add_child(hit)
 	hit.position = Vector2(290, 154)
-	hit.start()
+	hit.start_ordinary_hit()
 	_check("one_core_and_toast", Pool._active.values().count("core_pickup") == 1
 		and main._hud._active_pickup_toasts.size() == 1)
 	var toasts: Array = main._hud._active_pickup_toasts

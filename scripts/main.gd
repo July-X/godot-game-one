@@ -2081,9 +2081,13 @@ func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
 @rpc("authority", "unreliable", "call_remote")
 func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat32Array()) -> void:
 	if impact.size() == 3:
-		var shielded: bool = impact[2] > 0.0
-		Pool.spawn_hit(Vector2(impact[0], impact[1]), shielded)
-		if not shielded:
+		var kind := Pool.Impact.LEGACY
+		if impact[2] == Pool.Impact.ORDINARY_ENEMY:
+			kind = Pool.Impact.ORDINARY_ENEMY
+		elif impact[2] == Pool.Impact.SHIELD:
+			kind = Pool.Impact.SHIELD
+		Pool.spawn_hit(Vector2(impact[0], impact[1]), kind)
+		if kind != Pool.Impact.SHIELD:
 			SFX.play_hit_confirm(SHAKE_HIT)
 	var i := 0
 	while i + ENTITY_SYNC_STRIDE - 1 < data.size():
@@ -2162,9 +2166,9 @@ func _batch_sync_entity_health() -> void:
 		_rpc_sync_entity_health.rpc(health_data)
 
 ## 加入端的子弹只渲染。随已有位置包捎带一个确认落点，避免每发子弹单独通信。
-func register_projectile_impact(pos: Vector2, shielded: bool) -> void:
+func register_projectile_impact(pos: Vector2, kind: Pool.Impact) -> void:
 	if _pending_impact.is_empty():
-		_pending_impact = PackedFloat32Array([pos.x, pos.y, float(shielded)])
+		_pending_impact = PackedFloat32Array([pos.x, pos.y, float(kind)])
 
 func _batch_sync_entity_positions() -> void:
 	if _entities.is_empty() and _pending_impact.is_empty():

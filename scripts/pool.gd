@@ -33,14 +33,20 @@ func acquire(type_name: String, _scene: PackedScene) -> Node:
 	node.tree_exiting.connect(func(): _active.erase(node), CONNECT_ONE_SHOT)
 	return node
 
-func spawn_hit(pos: Vector2, shielded := false) -> void:
+## 位置包沿用三元组。旧包的 0 无目标信息，只有显式的 -1 才选普通敌机图集。
+enum Impact { LEGACY = 0, SHIELD = 1, ORDINARY_ENEMY = -1 }
+
+func contact_for(target: Node) -> Impact:
+	return Impact.ORDINARY_ENEMY if target.is_in_group("ordinary_enemies") else Impact.LEGACY
+
+func spawn_hit(pos: Vector2, kind: Impact) -> void:
 	var hit := acquire("hit_effect", preload("res://scenes/effects/hit_effect.tscn"))
 	get_tree().current_scene.add_child(hit)
 	hit.global_position = pos
-	if shielded:
-		hit.start_shield_hit()
-	else:
-		hit.start()
+	match kind:
+		Impact.ORDINARY_ENEMY: hit.start_ordinary_hit()
+		Impact.SHIELD: hit.start_shield_hit()
+		_: hit.start()
 
 ## 回收单个节点
 func release(node: Node) -> void:

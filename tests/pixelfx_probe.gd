@@ -114,13 +114,14 @@ func _process(_delta: float) -> void:
 		_check("all_released", live_fx.is_empty() and not Pool._active.values().has("hit_effect"))
 		var fx = Pool.acquire("hit_effect", HIT)
 		main.add_child(fx)
-		fx.start()
+		var ordinary := _ordinary_method(fx)
+		fx.call(ordinary)
 		fx._process(0.06)
 		fx.start_shield_hit()
 		_check("restart_shield", fx._shield_hit and not fx._core_pickup and fx._age == 0)
 		fx.start_core_pickup()
 		_check("restart_core", fx._core_pickup and not fx._shield_hit and fx._duration == 0.30)
-		fx.start()
+		fx.call(ordinary)
 		_check("restart_ordinary", not fx._core_pickup and not fx._shield_hit and fx._duration == 0.10 and fx._age == 0)
 		fx._process(0.10)
 		_check("expired_unregistered", fx.is_queued_for_deletion() and not Pool._active.has(fx) and not fx.visible)
@@ -129,6 +130,10 @@ func _process(_delta: float) -> void:
 			await _check_restarted_pixels()
 		print("[PixelFX] SUMMARY pass=%d failed=%d" % [checks - failed, failed])
 		get_tree().quit(1 if failed else 0)
+
+func _ordinary_method(fx: Node) -> String:
+	# 同一份夹具也运行在 0939598，彼时只有 start()。
+	return "start_ordinary_hit" if fx.has_method("start_ordinary_hit") else "start"
 
 func _check_restarted_pixels() -> void:
 	var canvas := SubViewport.new()
@@ -140,10 +145,11 @@ func _check_restarted_pixels() -> void:
 	var reused = HIT.instantiate()
 	reused.position = Vector2(32, 32)
 	canvas.add_child(reused)
-	reused.start()
+	var ordinary := _ordinary_method(reused)
+	reused.call(ordinary)
 	reused.set_process(false)
 	await RenderingServer.frame_post_draw
-	for method in ["start_shield_hit", "start_core_pickup", "start"]:
+	for method in ["start_shield_hit", "start_core_pickup", ordinary, "start"]:
 		var fresh = HIT.instantiate()
 		fresh.position = Vector2(96, 32)
 		canvas.add_child(fresh)

@@ -85,6 +85,7 @@
 │   ├── combat_visual_probe.gd / .tscn   # 战斗画面、拾取时序、炮口和可选录帧
 │   ├── combat_feedback_probe.gd / .tscn # 固定事件的有声回放和反馈门禁
 │   ├── pixelfx_probe.gd / .tscn、compare_pixelfx.py # 普通命中与击毁的逐帧实拍及弹体像素比对
+│   ├── impact_scope_probe.gd / .tscn # 真实扣血与各武器接触，对照历史图形帧
 │   ├── feedback_lan_probe.gd / .tscn    # 双端两次破盾、销毁及消息重发
 │   ├── mixed_viewport_probe.gd / .tscn  # 双进程混合画幅边界用例
 │   ├── curve_probe.tscn / wave_probe.tscn
@@ -215,6 +216,8 @@ main._process(delta)
 
 `shoot_level` 越高，扩散角越小（`max(30 - level*4, 10)` 度）、发数越多（上限 12）。
 子弹首次命中屏幕边缘会反弹并加速（×1.3），反弹后变为橙色。
+
+普通敌机的场景带有 `ordinary_enemies` 分组。命中表现由 `Pool.Impact` 区分。房主在原有位置包的第三个数区分无类型接触（0）、盾面（1）和确认的普通敌机（−1），位置与包长沿用原格式。加入端收到旧包的 0 时画原来的程序火花；旧接收端按正数判断盾面，也能读取新房主的包。
 
 ### 5.3 追踪导弹（5 级起被动）
 

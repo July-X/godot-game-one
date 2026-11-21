@@ -4,7 +4,6 @@ const MAX_HEALTH: int = 100
 const PLAYER_COLLISION_DAMAGE: int = 5
 
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
-var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 
 var entity_id: int = 0
 var _is_network_ghost: bool = false
@@ -85,8 +84,5 @@ func _on_area_entered(area: Area2D) -> void:
 				if typeof(maybe_owner) == TYPE_INT and int(maybe_owner) > 0:
 					killer_peer_id = int(maybe_owner)
 			_destroy(killer_peer_id)
-		var hit = Pool.acquire("hit_effect", _hit_effect_scene)
-		get_tree().current_scene.add_child(hit)
-		hit.global_position = global_position
-		hit.start()
+		Pool.spawn_hit(global_position, Pool.Impact.LEGACY)
 		area.queue_free()

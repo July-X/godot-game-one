@@ -5,7 +5,6 @@ var _speed: float = 1200.0
 var _damage: float = 5.0
 var _lifetime: float = 0.6
 var _chain_max: int = 4
-var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var LightningLine = preload("res://scripts/lightning_line.gd")
 var _line_points: PackedVector2Array = PackedVector2Array()
 var _has_bounced: bool = false
@@ -128,8 +127,9 @@ func _on_body_entered(body: Node2D) -> void:
 	if NetworkManager.is_online() and _is_network_ghost:
 		return
 	if body.is_in_group("enemies") and body.has_method("take_damage"):
+		var impact := Pool.contact_for(body)
 		_apply_or_report_enemy_damage(body, _damage)
-		_spawn_hit()
+		Pool.spawn_hit(global_position, impact)
 		_chain_lightning(body, _is_server_authority())
 		queue_free()
 
@@ -167,12 +167,6 @@ func _draw_lightning_bolt(from: Vector2, to: Vector2) -> void:
 	var line := LightningLine.new()
 	get_tree().current_scene.add_child(line)
 	line.setup(from, to)
-
-func _spawn_hit() -> void:
-	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
-	get_tree().current_scene.add_child(hit)
-	hit.global_position = global_position
-	hit.start()
 
 func _is_server_authority() -> bool:
 	return (not NetworkManager.is_online()) or multiplayer.is_server()

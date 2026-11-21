@@ -6,7 +6,6 @@ var _speed: float = 400.0
 var _damage: float = 3.0
 var _lifetime: float = 5.0
 var _target: Node2D = null
-var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _trail_points: PackedVector2Array = PackedVector2Array()
 var owner_peer_id: int = -1
 
@@ -118,23 +117,19 @@ func _on_body_entered(body: Node2D) -> void:
 	if not GameState.game_running or _state == MissileState.DYING:
 		return
 	if body.is_in_group("enemies") and body.has_method("take_damage"):
+		var impact := Pool.contact_for(body)
 		_apply_or_report_enemy_damage(body, _damage)
-		_spawn_hit()
+		Pool.spawn_hit(global_position, impact)
 		queue_free()
 
 func _on_area_entered(area: Area2D) -> void:
 	if not GameState.game_running or _state == MissileState.DYING:
 		return
 	if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
+		var impact := Pool.contact_for(area.get_parent())
 		_apply_or_report_enemy_damage(area.get_parent(), _damage)
-		_spawn_hit()
+		Pool.spawn_hit(global_position, impact)
 		queue_free()
-
-func _spawn_hit() -> void:
-	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
-	get_tree().current_scene.add_child(hit)
-	hit.global_position = global_position
-	hit.start()
 
 func _is_server_authority() -> bool:
 	return (not NetworkManager.is_online()) or multiplayer.is_server()

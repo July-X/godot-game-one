@@ -15,7 +15,6 @@ var _using_swift := false
 
 var _walk_cycle: float = 0.0
 var _invincible_timer: float = 0.0
-var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 
 
@@ -135,7 +134,7 @@ func _get_visual_tier() -> int:
 
 func trigger_hit() -> void:
 	_invincible_timer = 1.0
-	_spawn_hit_effect()
+	Pool.spawn_hit(_player.global_position, Pool.Impact.LEGACY)
 	_play_hit_animation()
 	## 受击是"我错了"的信号：震屏要明显、连击要清零，不能让玩家
 	## 挨打了还觉得连击在涨。
@@ -183,13 +182,6 @@ func _play_hit_animation() -> void:
 		recover.tween_property(_sprite, "scale",
 			Vector2(base_scale, base_scale), 0.12)
 	)
-
-
-func _spawn_hit_effect() -> void:
-	var hit = Pool.acquire("hit_effect", _hit_effect_scene)
-	get_tree().current_scene.add_child(hit)
-	hit.global_position = _player.global_position
-	hit.start()
 
 
 func spawn_explosion() -> void:

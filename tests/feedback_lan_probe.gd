@@ -8,11 +8,18 @@ var _normal_deaths := {}
 var _normal_hits := {}
 var _player_hurts := {}
 var _shield_hits := {}
+var _contact_modes := {}
+const MOB_CONTACT := Vector2(250, 200)
+const SHIELD_CONTACT := Vector2(430, 180)
+const ELITE_CONTACT := Vector2(434, 180)
 var _watch := false
 
 func _process(_delta: float) -> void:
 	if not _watch:
 		return
+	for fx in Pool._active:
+		if Pool._active[fx] == "hit_effect" and fx.position in [MOB_CONTACT, SHIELD_CONTACT, ELITE_CONTACT]:
+			_contact_modes[fx.position] = [fx._ordinary_enemy, fx._shield_hit]
 	for voice in SFX.get_children():
 		if not voice.playing:
 			continue
@@ -71,24 +78,31 @@ func _run() -> void:
 			_check("ordinary_impact", not _normal_hits.is_empty(), str(_normal_hits.size()))
 			_check("shield_impact", _shield_hits.size() == 1, str(_shield_hits.size()))
 			_check("p2_damage_cue", _player_hurts.size() == 1, str(_player_hurts.size()))
+			_check("mob_atlas", _contact_modes.get(MOB_CONTACT) == [true, false], str(_contact_modes))
+			_check("shield_original", _contact_modes.get(SHIELD_CONTACT) == [false, true], str(_contact_modes))
+			_check("exposed_elite_original", _contact_modes.get(ELITE_CONTACT) == [false, false], str(_contact_modes))
 			await _wait_seconds(0.25)
 	get_tree().quit(_summarize())
+
+func _contact(target: Node2D, point: Vector2) -> void:
+	var shot := Pool.acquire("bullet", preload("res://scenes/entities/bullet.tscn"))
+	_main.add_child(shot)
+	shot.setup(point, 0.0, 1, true, 1, 660.0, 1)
+	shot.monitoring = false # 该发由下一行交付一次接触。
+	shot._on_body_entered(target)
+	_main._batch_sync_entity_positions()
 
 func _break_twice() -> void:
 	await _wait_seconds(0.4)
 	var client: int = NetworkManager.connected_peers[0]
 	GameState.take_damage(GameState.get_shield_layers(client) + 1, client)
-	_main._spawn_enemy_at(0, Vector2(250, 200))
+	_main._spawn_enemy_at(0, MOB_CONTACT)
 	var mob_id: int = _main._next_entity_id - 1
 	var mob: Node2D = _main._entities[mob_id]
 	mob.set_physics_process(false)
 	mob.health = 5
 	await _wait_seconds(0.12)
-	var shot := Pool.acquire("bullet", preload("res://scenes/entities/bullet.tscn"))
-	_main.add_child(shot)
-	shot.setup(mob.position, 0.0, 1, true, 1, 660.0, 1)
-	shot._on_body_entered(mob)
-	_main._batch_sync_entity_positions()
+	_contact(mob, MOB_CONTACT)
 	await _wait_seconds(0.16)
 	# 让一发足以穿盾的真实敌弹经过 P1，检验受击音计数只来自受控的 P2 扣血。
 	var p1: Node2D = _main._players[1]
@@ -103,14 +117,17 @@ func _break_twice() -> void:
 	_main._spawn_elite()
 	var elite: Node = _main._elite
 	elite.set_physics_process(false)
+	elite.collision_layer = 0
+	elite.get_node("Hitbox").monitorable = false
 	var eid: int = elite.entity_id
 	var maximum: float = elite.get_network_max_shield()
 	await _wait_seconds(0.4)
-	elite.take_damage(1, 1)
-	_main._batch_sync_entity_positions()
+	_contact(elite, SHIELD_CONTACT)
 	await _wait_seconds(0.16)
 	elite.take_damage(int(maximum), 1)
 	await _wait_seconds(0.24)
+	_contact(elite, ELITE_CONTACT)
+	await _wait_seconds(0.16)
 	_main._rpc_spawn_elite.rpc(eid, 1.0)
 	_main._rpc_elite_shield_destroyed.rpc(eid)
 	await _wait_seconds(0.18)

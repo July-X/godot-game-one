@@ -12,6 +12,7 @@ var _age := 0.0
 var _duration := HIT_SECONDS
 var _core_pickup := false
 var _shield_hit := false
+var _ordinary_enemy := false
 
 func _ready() -> void:
 	reset()
@@ -22,11 +23,16 @@ func start_core_pickup() -> void:
 func start_shield_hit() -> void:
 	start(false, true)
 
+func start_ordinary_hit() -> void:
+	start()
+	_ordinary_enemy = true
+	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF
+
 func start(core_pickup := false, shield_hit := false) -> void:
 	_core_pickup = core_pickup
 	_shield_hit = shield_hit
-	# 静止火花创建后才赋予世界坐标，首帧不能从 (0,0) 开始插值。
-	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_INHERIT if core_pickup or shield_hit else PHYSICS_INTERPOLATION_MODE_OFF
+	_ordinary_enemy = false
+	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_INHERIT
 	_duration = CORE_SECONDS if core_pickup else HIT_SECONDS
 	_age = 0.0
 	show()
@@ -59,7 +65,7 @@ func _draw() -> void:
 		for side: int in [-1, 1]:
 			var x := roundf(side * lerpf(3.0, 9.0, t))
 			draw_line(Vector2(x - 2, 3), Vector2(x + 2, -3), gold, 2)
-	elif _hit_strip:
+	elif _ordinary_enemy and _hit_strip:
 		var frame := mini(floori(t * HIT_FRAMES), HIT_FRAMES - 1)
 		var source := Rect2(Vector2(frame * HIT_CELL.x, 0), HIT_CELL)
 		# 图集的 (15,15) 是弹体上报的接触点。
