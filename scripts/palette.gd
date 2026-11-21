@@ -17,20 +17,6 @@ extends Node
 ## 低端机约束：全部是纯常量 + modulate，**不引入任何着色器、
 ## 后处理或额外贴图**，draw call 与改动前完全一致。
 
-## ── 背景（低饱和暗色，绝不与弹幕同色）────────────────────
-const BG_BASE: Color = Color("#0a1020")
-const BG_BOSS: Color = Color("#211926")
-## 星云：明度和饱和度都压到很低，只留一点点冷色倾向做纵深
-const NEBULA_COOL: Color = Color(0.10, 0.12, 0.26)
-const NEBULA_WARM: Color = Color(0.18, 0.10, 0.14)
-## 行星：比星云再暗一档，避免大块亮色挡住弹幕
-const PLANET_SHADE: Color = Color(0.12, 0.14, 0.28)
-## 星星：远景最暗，近景最亮，但整体不刺眼
-const STAR_FAR: Color = Color(0.34, 0.36, 0.44)
-const STAR_MID: Color = Color(0.52, 0.54, 0.62)
-const STAR_NEAR: Color = Color(0.78, 0.78, 0.86)
-
-
 ## ── 敌方弹幕（高饱和暖色 = 危险）─────────────────────────
 ## 与弹速绑定：快=红（必须闪）、中=琥珀（可绕的墙）、慢=品红（能读的环）
 const ENEMY_BULLET_FAST: Color = Color(1.0, 0.30, 0.18)

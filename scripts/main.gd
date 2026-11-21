@@ -45,9 +45,6 @@ var _pending_boss_level: int = 0
 ## 旧的 `_enemy_spawn_timer` / `_difficulty_timer`（间隔刷怪 + 8 秒脉冲）已删除，
 ## 杂兵投放改由 `_wave_director` 的乐句节拍统一负责。
 var _asteroid_timer: float = 0.0
-var _bg_layers: Array[Dictionary] = []
-var _nebulas: Array[Node2D] = []
-var _planets: Array[Node2D] = []
 
 ## 多人模式：存储所有已生成的玩家节点（peer_id → Node）
 var _players: Dictionary = {}
@@ -79,7 +76,6 @@ const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
 ## 取 512 而非更小：256 的贴图在 1280 宽的屏幕上会横排重复 5 次，
 ## 肉眼能直接看出网格状重复（实测截图确认）；512 只重复 2.5 次。
 const Palette = preload("res://scripts/palette.gd")
-const STAR_FIELD_TILE: int = 512
 ## 玩家极速兜底值（motion_controller.move_speed 默认 260）。
 ## 正常情况走 player.get_max_move_speed()，这里只作为玩家节点尚未就绪时的回退。
 const PLAYER_MOVE_SPEED_FALLBACK: float = 260.0
@@ -129,7 +125,6 @@ const PLAYER_SYNC_STRIDE: int = 4
 var _pending_bullet_spawns: Array = []
 var _pending_laser_spawns: Array = []
 var _alive_players: Dictionary = {}
-var _client_bg_frame_skip: int = 0
 var _fallback_in_progress: bool = false
 var _last_elite_shield_break_banner_msec: int = -1000000
 
@@ -138,6 +133,7 @@ const DEATH_MARQUEE_HOLD_SECONDS: float = 0.5
 const DEATH_MARQUEE_FADE_SECONDS: float = 3.0
 
 @onready var _bg_color: ColorRect = $Backdrop/BgColor
+@onready var _backdrop: CanvasLayer = $Backdrop
 
 var _camera_shake_script = preload("res://scripts/camera_shake.gd")
 
@@ -194,7 +190,6 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_create_parallax_background()
 	_center_camera_on_viewport()
 	if OS.has_feature("android") or OS.has_feature("ios"):
 		_spawn_mobile_controls()
@@ -208,9 +203,6 @@ func _ready() -> void:
 	_debug_log_variant_assets()
 	var online := NetworkManager.is_online()
 	print("[Main] online=", online)
-	if online and not multiplayer.is_server():
-		_apply_client_perf_profile()
-
 	## 多人：Host 负责权威生成，Client 通过 RPC 复位玩家列表
 	if online and multiplayer.is_server():
 		## 注册子弹批量刷出处理（每帧 flush）
@@ -259,166 +251,6 @@ func _debug_log_variant_assets() -> void:
 		player_count += 1
 
 	print("[variants] boss=", boss_count, " player=", player_count)
-
-## 生成一张可无缝平铺的星空贴图。
-## count 是这块贴图里的星星数量，size_min/size_max 是单颗像素直径，
-## bright_min/bright_max 是亮度范围，colored=true 时给近景星加色相变化。
-static func _build_star_tile(count: int, size_min: int, size_max: int,
-		bright_min: float, bright_max: float, colored: bool) -> ImageTexture:
-	var star_base: Color = Palette.STAR_NEAR if colored \
-		else (Palette.STAR_MID if size_min > 2 else Palette.STAR_FAR)
-	var img := Image.create(STAR_FIELD_TILE, STAR_FIELD_TILE, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	for i in range(count):
-		var size: int = randi_range(size_min, size_max)
-		var b: float = randf_range(bright_min, bright_max)
-		var tint := Color(b, b * 0.88, b * randf_range(0.85, 1.25), 1.0)
-		if colored:
-			## 近景大星只在冷色区间做微偏移制造层次，不引入暖色——
-			## 暖色留给敌方弹幕，玩家看到暖色必须立刻知道"危险"
-			match randi() % 4:
-				0: tint = Color(tint.r, tint.g, tint.b * 0.92, 1.0)
-				1: tint = Color(tint.r * 0.92, tint.g, tint.b, 1.0)
-				2: tint = Color(tint.r, tint.g * 0.95, tint.b * 0.97, 1.0)
-				_: tint = Color(tint.r, tint.g, tint.b, 1.0)
-		## 贴图边缘的星星会平铺时在接缝处重复，因此避开边缘一格
-		var ox: int = randi_range(1, STAR_FIELD_TILE - size - 1)
-		var oy: int = randi_range(1, STAR_FIELD_TILE - size - 1)
-		var half: float = float(size) / 2.0
-		var centre: float = float(size) * 0.5
-		for y in range(size):
-			for x in range(size):
-				var dx: float = float(x) - centre
-				var dy: float = float(y) - centre
-				var d: float = sqrt(dx * dx + dy * dy)
-				if d >= half:
-					continue
-				## 近景大星带柔和衰减，远景小星保持硬边像素感
-				var a: float = 1.0 if size <= 3 else 1.0 - (d / half) * (d / half)
-				img.set_pixel(ox + x, oy + y, Color(tint.r, tint.g, tint.b, a))
-	return ImageTexture.create_from_image(img)
-
-func _create_parallax_background() -> void:
-	_bg_color.color = Palette.BG_BASE
-	var scenery: Node = $Backdrop if NetworkManager.is_online() else self
-
-	## 星空从「每颗星一个 Sprite2D」改为「每层一张平铺贴图」。
-	## 旧实现是 180+90+35 = 305 个节点、305 张各自独立的 2~12px 贴图，
-	## 每帧全部移动，既无法合批也吃满 draw call；实测在本机（AMD 5300M）
-	## 只有 1 个敌人 12 颗子弹时也只有 106 fps，够不到 120。
-	## 新实现每层 1 个节点 + 1 张 512×512 可平铺贴图，draw call 从 305 降到 3。
-	##
-	## 星星数量按**旧实现的实际密度**反推，而不是随手取值：
-	## 旧实现 305 颗铺在 1500×920 的活动区域 = 每 4525 px² 一颗。
-	## 512×512 贴图下对应 far=34 / mid=17 / near=7。
-	## （第一版按 256 贴图取 120/60/22，密度是原来的 14 倍，弹幕可读性
-	##   被背景吃掉——对弹幕射击来说这是比"看出贴图重复"严重得多的问题。）
-	var star_tiles: Array = [
-		_build_star_tile(34, 2, 2, 0.55, 1.0, false),
-		_build_star_tile(17, 3, 5, 0.75, 1.15, false),
-		_build_star_tile(7, 6, 12, 0.9, 1.3, true),
-	]
-	var layer_defs: Array = [
-		{speed = 12.0, z = -10},
-		{speed = 24.0, z = -9},
-		{speed = 40.0, z = -8},
-	]
-	for i in range(layer_defs.size()):
-		var def: Dictionary = layer_defs[i]
-		var sprite := Sprite2D.new()
-		sprite.texture = star_tiles[i]
-		## 联机画布预留一个滚动周期，保证扩展区始终有星星。
-		sprite.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-		sprite.region_enabled = true
-		sprite.region_rect = Rect2(0, 0, STAR_FIELD_TILE * 4, STAR_FIELD_TILE * 3)
-		if scenery != self:
-			sprite.offset = -Vector2.ONE * STAR_FIELD_TILE
-		sprite.centered = false
-		sprite.z_index = int(def.z)
-		scenery.add_child(sprite)
-		_bg_layers.append({nodes = [sprite], speed = float(def.speed)})
-
-
-	for i in range(8):
-		var nebula := Sprite2D.new()
-		var w: int = randi_range(200, 400)
-		var h: int = randi_range(120, 280)
-		var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-		img.fill(Color(0, 0, 0, 0))
-		var cx: float = w / 2.0
-		var cy: float = h / 2.0
-		## 星云只从配色系统里取两种低饱和色，不再随机取高饱和蓝紫——
-		## 高饱和背景会和敌方弹幕抢注意力，是可读性的头号敌人
-		var neb_base: Color = Palette.NEBULA_COOL if randf() < 0.72 else Palette.NEBULA_WARM
-		var nc_r: float = neb_base.r
-		var nc_g: float = neb_base.g
-		var nc_b: float = neb_base.b
-		var nc_a: float = randf_range(0.08, 0.18)
-		var blob_count: int = randi_range(3, 6)
-		for j in range(blob_count):
-			var bx: float = randf_range(w * 0.1, w * 0.9)
-			var by: float = randf_range(h * 0.1, h * 0.9)
-			var rx: float = randf_range(w * 0.1, w * 0.35)
-			var ry: float = randf_range(h * 0.1, h * 0.35)
-			var rot: float = randf_range(0.0, PI)
-			var intensity: float = randf_range(0.5, 1.0)
-			for y in range(h):
-				for x in range(w):
-					var ldx: float = float(x) - bx
-					var ldy: float = float(y) - by
-					var cos_r: float = cos(-rot)
-					var sin_r: float = sin(-rot)
-					var local_x: float = ldx * cos_r - ldy * sin_r
-					var local_y: float = ldx * sin_r + ldy * cos_r
-					var d: float = sqrt(local_x * local_x / (rx * rx) + local_y * local_y / (ry * ry))
-					if d < 1.0:
-						var a: float = nc_a * (1.0 - d * d) * intensity
-						var existing := img.get_pixel(x, y)
-						var new_r: float = min(existing.r + nc_r * a, nc_r)
-						var new_g: float = min(existing.g + nc_g * a, nc_g)
-						var new_b: float = min(existing.b + nc_b * a, nc_b)
-						var new_a: float = min(existing.a + a, nc_a)
-						img.set_pixel(x, y, Color(new_r, new_g, new_b, new_a))
-		nebula.texture = ImageTexture.create_from_image(img)
-		nebula.position = Vector2(randf_range(-200.0, _screen_span_x() + 200.0), randf_range(-200.0, 900.0))
-		nebula.z_index = -6 + randi() % 3
-		scenery.add_child(nebula)
-		_nebulas.append(nebula)
-
-	for i in range(3):
-		var planet := Sprite2D.new()
-		var p_size: int = randi_range(50, 90)
-		var img := Image.create(p_size, p_size, false, Image.FORMAT_RGBA8)
-		var pc_shade: float = randf_range(0.75, 1.15)
-		var pc_r: float = Palette.PLANET_SHADE.r * pc_shade
-		var pc_g: float = Palette.PLANET_SHADE.g * pc_shade
-		var pc_b: float = Palette.PLANET_SHADE.b * pc_shade
-		for y in range(p_size):
-			for x in range(p_size):
-				var dx: float = float(x - p_size * 0.5)
-				var dy: float = float(y - p_size * 0.5)
-				var d: float = sqrt(dx * dx + dy * dy)
-				var mr: float = float(p_size) / 2.0
-				if d < mr:
-					var t: float = d / mr
-					var rr: float = pc_r * (1.0 - t * 0.4)
-					var gg: float = pc_g * (1.0 - t * 0.4)
-					var bb: float = pc_b * (1.0 - t * 0.4)
-					var a: float = 1.0 if t < 0.8 else (1.0 - t) * 5.0
-					img.set_pixel(x, y, Color(rr, gg, bb, a))
-		if randf() < 0.5:
-			var ring_r: float = float(p_size) / 2.0 * 1.4
-			for y in range(p_size):
-				for x in range(p_size):
-					var d2: float = sqrt(float(x - p_size * 0.5) * float(x - p_size * 0.5) + float(y - p_size * 0.5) * float(y - p_size * 0.5))
-					if d2 > ring_r - 2.0 and d2 < ring_r + 2.0:
-						var ring_a: float = 0.4 * (1.0 - abs(d2 - ring_r) / 2.0)
-						img.set_pixel(x, y, Color(pc_r * 1.2, pc_g * 1.2, pc_b * 1.2, ring_a))
-		planet.texture = ImageTexture.create_from_image(img)
-		planet.position = Vector2(randf_range(100.0, _screen_span_x() - 100.0), randf_range(100.0, 620.0))
-		planet.z_index = -4
-		scenery.add_child(planet)
-		_planets.append(planet)
 
 func _start_bgm() -> void:
 	BGM.play_bgm()
@@ -773,14 +605,11 @@ func _process(delta: float) -> void:
 		_flush_bullet_spawns()
 		_flush_laser_spawns()
 
+	_backdrop.scroll(delta)
 	if NetworkManager.is_online() and not multiplayer.is_server():
-		_client_bg_frame_skip += 1
-		if _client_bg_frame_skip % 2 == 0:
-			_scroll_background(delta * 2.0)
 		_apply_entity_interpolation(delta)
 		_apply_player_interpolation(delta)
 		return
-	_scroll_background(delta)
 
 	if _elite != null and is_instance_valid(_elite):
 		return
@@ -850,58 +679,6 @@ func _show_elite_warning_style_banner(text: String, color: Color) -> void:
 	if _hud and _hud.has_method("show_center_banner"):
 		_hud.show_center_banner(text, 1.4, color)
 
-func _scroll_background(delta: float) -> void:
-	for layer in _bg_layers:
-		var spd: float = layer.speed
-		for node in layer.nodes:
-			## 平铺贴图：整层只有一个节点，按贴图边长取模滚动即可无缝循环，
-			## 不再需要逐颗星越界后随机重置坐标。
-			node.position.y += delta * spd
-			if node.position.y > STAR_FIELD_TILE:
-				node.position.y -= STAR_FIELD_TILE
-			node.position.x += delta * spd * 0.15
-			if node.position.x > STAR_FIELD_TILE:
-				node.position.x -= STAR_FIELD_TILE
-
-	for neb in _nebulas:
-		neb.position.y += delta * 2.5
-		neb.position.x += delta * 0.8
-		if neb.position.y > 900:
-			neb.position.y = -200
-			neb.position.x = randf_range(-200.0, _screen_span_x() + 200.0)
-
-	for pl in _planets:
-		pl.position.y += delta * 1.2
-		pl.position.x += delta * 0.3
-		if pl.position.y > 760:
-			pl.position.y = -100
-			pl.position.x = randf_range(100.0, _screen_span_x() - 100.0)
-
-func _apply_client_perf_profile() -> void:
-	## 加入端降低背景渲染负担，优先保障同屏战斗帧率。
-	## 星空现在每层只有一个节点，不能再按节点删一半，改为把贴图调暗
-	## （视觉上就是星星变少/变暗），nebula / planet 仍按节点减半。
-	for layer in _bg_layers:
-		var nodes: Array = layer.nodes
-		for n in nodes:
-			var node: Node2D = n as Node2D
-			if node != null and is_instance_valid(node):
-				node.modulate = Color(0.72, 0.72, 0.8, 1.0)
-	for i in range(_nebulas.size() - 1, -1, -1):
-		if i % 2 == 0:
-			continue
-		var neb: Node = _nebulas[i]
-		if is_instance_valid(neb):
-			neb.queue_free()
-		_nebulas.remove_at(i)
-	for i in range(_planets.size() - 1, -1, -1):
-		if i % 2 == 0:
-			continue
-		var pl: Node = _planets[i]
-		if is_instance_valid(pl):
-			pl.queue_free()
-		_planets.remove_at(i)
-
 func _apply_entity_interpolation(delta: float) -> void:
 	var alpha: float = clampf(delta * 18.0, 0.0, 1.0)
 	for eid in _entity_target_positions.keys():
@@ -935,19 +712,11 @@ func _screen_center_x() -> float:
 	return NetworkManager.battle_size(self).x * 0.5
 
 
-## 可视区宽度。背景装饰（行星 / 星云）的横向散布范围用它，
-## 而不是写死 1180 / 1500 —— 同样是 canvas_items + expand 之后
-## 视口会变宽，写死的范围会让装饰全部堆在屏幕左侧，右半边空荡荡。
-func _screen_span_x() -> float:
-	return get_viewport_rect().size.x
-
-
 ## 单机跟随本地视口中心；联机换窗口时只扩大背景取景。
 func _center_camera_on_viewport() -> void:
 	var cam := get_node_or_null("Camera2D") as Camera2D
 	if cam == null:
 		return
-	var size := get_viewport_rect().size
 	var field := NetworkManager.battle_size(self)
 	var online := NetworkManager.is_online()
 	# 只裁战斗物体。独立画布上的星空与 HUD 仍可显示在边缘以外。
@@ -955,10 +724,6 @@ func _center_camera_on_viewport() -> void:
 	RenderingServer.canvas_item_set_clip(get_canvas_item(), online)
 	cam.position = field * 0.5
 	cam.force_update_scroll()
-	if online:
-		for layer in _bg_layers:
-			for tile: Sprite2D in layer.nodes:
-				tile.region_rect.size = size + Vector2.ONE * STAR_FIELD_TILE
 	queue_redraw()
 
 
@@ -2405,7 +2170,7 @@ func _rpc_spawn_bullets(data: Array) -> void:
 ## 激光同步：
 @rpc("authority", "reliable", "call_remote")
 func _rpc_set_boss_bg(active: bool) -> void:
-	_bg_color.color = Palette.BG_BOSS if active else Palette.BG_BASE
+	_backdrop.set_boss_mode(active)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_boss_ultimate_laser_charge(pos_x: float, pos_y: float, duration: float) -> void:

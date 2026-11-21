@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/battle_backdrop_probe.gd" id="1"]
+
+[node name="BattleBackdropProbe" type="Node"]
+script = ExtResource("1")

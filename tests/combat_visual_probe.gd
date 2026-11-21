@@ -95,14 +95,16 @@ func _run() -> void:
 	transient.free()
 	_check("scene_exit_unregisters_effect", Pool._active.values().count("hit_effect") == hits_before)
 	_check_ship_geometry(player)
+	var panorama := main.get_node("Backdrop/Panorama") as TextureRect
+	var cruise := panorama.texture
 	main._enter_boss_fight_mode()
-	var boss_color := bg.color
+	var rift := panorama.texture
 	main._exit_boss_fight_mode()
-	_check("boss_returns_to_base", bg.color.to_html(false) == "0a1020" and boss_color != bg.color)
+	_check("boss_returns_to_base", cruise != rift and panorama.texture == cruise)
 	main._rpc_set_boss_bg(true)
-	_check("peer_boss_tint_matches", boss_color == bg.color)
+	_check("peer_boss_backdrop_matches", panorama.texture == rift)
 	main._rpc_set_boss_bg(false)
-	_check("peer_returns_to_base", bg.color.to_html(false) == "0a1020")
+	_check("peer_returns_to_base", panorama.texture == cruise)
 	main._hud._on_game_over(120, 1)
 	var entries: Control = main._hud.get_node("GameOverPanel/VBox/LeaderboardEntries")
 	_check("result_has_rankings", entries.is_visible_in_tree() and entries.get_child_count() >= 2)

@@ -26,7 +26,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	# 命中定格使用墙钟。录片统一物理帧时钟，避免不同编码速度改变事件帧。
-	if is_instance_valid(_main) and _main._hitstop_left > 0.0:
+	if is_instance_valid(_main):
 		_main._hitstop_left = 0.0
 		Engine.time_scale = 1.0
 

@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://ggd54n5uic4"]
 
 [ext_resource type="Script" uid="uid://ynas1xbwywjy" path="res://scripts/main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/battle_backdrop.gd" id="2"]
 [node name="Main" type="Node2D" unique_id=1494631403]
 script = ExtResource("1")
 
@@ -9,6 +10,7 @@ position = Vector2(640, 360)
 
 [node name="Backdrop" type="CanvasLayer" parent="."]
 layer = -1
+script = ExtResource("2")
 
 [node name="BgColor" type="ColorRect" parent="Backdrop" unique_id=1028279153]
 z_index = -20
@@ -20,8 +22,13 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.039216, 0.062745, 0.12549, 1)
 
-[node name="Starfield1" type="Sprite2D" parent="." unique_id=1339224260]
-z_index = -2
-
-[node name="Starfield2" type="Sprite2D" parent="." unique_id=1183518301]
-z_index = -1
+[node name="Panorama" type="TextureRect" parent="Backdrop"]
+z_index = -19
+texture_filter = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1

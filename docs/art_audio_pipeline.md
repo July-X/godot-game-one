@@ -21,6 +21,8 @@
 
 配乐采用原创草案的 `cruise-softlead-loop.wav` 与 `boss-softlead-loop.wav`。两段都是 132 BPM（每分钟拍数）、八小节，柔起音的制作逻辑由 `compose.py` 与 `lead-ab.py` 保存。验收在相同输出电平下听巡航、激光报警、命中和玩家受伤，检查循环跨接、重试及离开场景时的播放实例数。
 
+太空底图由 `scripts/generate_assets/make_backdrops.py` 离线生成，源自本项目的 `SBH-Space-Background-AB.png` 与 `space.py`。巡航的冰蓝行星斜切右缘，裂隙的冷紫尘带环绕外侧。生产场景用两张 800×450 底图和两层平铺星野，各自按本机画布显示。每块星野合计 36 个星点。图像生成需 NumPy 和 Pillow，Godot 运行时读取 PNG。
+
 ## 普通命中与普通敌机击毁的 PixelFX 对照
 
 图集只用于玩家弹体击中普通敌机，以及普通敌机击毁。玩家受伤、陨石、精英和 Boss 的接触沿用原画，主炮击盾和核心拾取各走原有的专用画法。武器在扣血前确定目标类别，加入端按房主确认的类别绘制。验收以 `0939598` 的真实玩家扣血画面为参照，在同视口、同落点、同为 35 毫秒时比对像素；普通命中和击毁继续对照已通过的 B。
@@ -97,7 +99,7 @@ bash tests/run_probe.sh 17944
 | 道具（5 种形状，带缓存） | `create_powerup_sprite(type)` |
 | 小行星纹理 | `apply_asteroid_texture(sprite, size)` |
 | 爆炸序列帧 | `create_explosion_frames()` |
-| 星空背景 | `create_star_field(width, height, count)` |
+| 战斗背景 | `make_backdrops.py` 生成全幅图，`battle_backdrop.gd` 生成两层星野 |
 
 ### 外部资产（仅此几处）
 
