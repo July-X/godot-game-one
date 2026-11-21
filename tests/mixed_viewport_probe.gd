@@ -89,7 +89,7 @@ func _exercise_arena() -> void:
 		_stick.move_input.connect(motion.handle_mobile_move)
 		var touch := InputEventScreenTouch.new()
 		touch.pressed = true
-		touch.position = _stick._joystick_center
+		touch.position = Vector2(160, get_viewport().get_visible_rect().end.y - 170)
 		get_viewport().push_input(touch, true)
 	var top := Vector2(1256, 24)
 	var bottom := Vector2(24, 696)
@@ -133,9 +133,14 @@ func _check_resize() -> void:
 		and NetworkManager.battle_size(_main) == FIELD, "view=%s origin=%s own=%s" % [get_viewport().get_visible_rect().size, origin, _main._player.position])
 	if _stick and DisplayServer.get_name() != "headless":
 		var tap := InputEventScreenTouch.new()
-		tap.position = Vector2(183, (size.y - 170.0) * 0.75)
+		var at := Vector2(160, size.y - 170)
+		var transform := get_viewport().get_final_transform()
+		tap.position = transform * at
 		tap.pressed = true
 		get_viewport().push_input(tap)
+		var drag := InputEventScreenDrag.new()
+		drag.position = transform * (at + Vector2(84, 0))
+		get_viewport().push_input(drag)
 		var motion: Node = _main._player.get_node("MotionController")
 		_check("scaled_touch", motion.touch_move.is_equal_approx(Vector2(0.75, 0)), "physical=%s stick=%s move=%s" % [tap.position, _stick._joystick_center, motion.touch_move])
 		tap = tap.duplicate()

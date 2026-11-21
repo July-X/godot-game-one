@@ -223,10 +223,14 @@ func _check_joystick(main: Node) -> void:
 	var motion = player.get_node("MotionController")
 	var touch := InputEventScreenTouch.new()
 	touch.index = 1
-	touch.position = stick._joystick_center + Vector2.RIGHT * 84.0
+	touch.position = Vector2(160, get_viewport().get_visible_rect().end.y - 164)
 	touch.pressed = true
 	var start_x: float = player.position.x
 	get_viewport().push_input(touch, true)
+	var drag := InputEventScreenDrag.new()
+	drag.index = touch.index
+	drag.position = touch.position + Vector2.RIGHT * 84
+	get_viewport().push_input(drag, true)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check("touch_drives_own_ship", motion.mobile_mode and motion.touch_move.x > 0.65

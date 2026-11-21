@@ -32,11 +32,37 @@ bash tests/run_probe.sh 18823 feedback
 
 ## 裂隙母舰可读性
 
-以 `SBH-Rift-Mothership-Design.png` 为造型参考。`python3 scripts/generate_assets/make_rift_mothership.py` 用 Pillow 重画肩甲、钢灰色层次和中央炮口。输出仍为 128×96 像素，场景保持原缩放与 33 单位碰撞圆。外翼使用较暗的冷灰，激光蓄力与推进的暖色留在原预警和光束里。
+以 `SBH-Rift-Mothership-Design.png` 为造型参考。`python3 scripts/generate_assets/make_rift_mothership.py` 用 Pillow 重画肩甲、钢灰色层次和中央炮口。输出仍为 128×96 像素，33 单位碰撞圆沿用原尺寸。首版使用 2/3 倍精灵缩放，后续提高到 0.90 倍，细节见下节。
 
-### 复跑
+### 手机战斗界面与母舰尺度
 
-用 Godot 4.6.2 在同机截取两版。复现基线时，将本版的 `tests/battle_presentation_probe.gd` 复制到 `c26defe` 临时副本。候选版用 `verify` 校验顶部血条、选卡、输入和真实扣血。两版分别把输出写入已存在的目录。
+普通奖励组移到安全区中心，单卡从 204×50 扩至最多 272×120，普通描述支持换行。半透明卡面让重叠的激光和敌弹仍可辨认。窄可用区缩窄卡片并让说明换行。首卡 A/B 保留顶部选卡和额外入口。Android 全屏的引擎安全区提供挖孔边距，原生桥从 `WindowInsets` 补充手势和圆角。桌面模拟采用同一画布换算。Android 10 起读取手势边距，Android 12 起读取圆角。 [Godot 4.6.2 Android 实现](https://github.com/godotengine/godot/blob/4.6.2-stable/platform/android/java/lib/src/main/java/org/godotengine/godot/GodotIO.java#L203-L237) · [Android WindowInsets](https://developer.android.com/reference/android/view/WindowInsets)
+
+第 492 物理帧取同一艘母舰与第一档雨燕。母舰精灵的不透明像素外框由约 83×59 扩至 112×79，雨燕为约 67×62。淡出亮度的翼片延伸到碰撞圆之外，亮装甲和中央炮口标示交火目标。盾弧包住舰身，光束从同一世界坐标发出。单人和双端使用同一套精灵及受击缩放。
+
+```bash
+out=$(mktemp -d)
+mkdir -p "$out"/{desktop,16x9,20x9}
+godot --headless --path . --import
+godot --path . --windowed --resolution 1280x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- verify "$out/desktop"
+godot --path . --windowed --resolution 1280x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- verify "$out/16x9" touch inset
+godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- verify "$out/20x9" touch inset
+godot --path . --windowed --fixed-fps 60 --audio-driver Dummy res://tests/boss_laser_visual_probe.tscn
+godot --headless --path . res://tests/mobile_check.tscn
+python3 tests/run_first_card_probe.py "$out/first-card"
+bash tests/run_probe.sh 19301
+bash tests/run_probe.sh 19302 boss
+bash tests/run_probe.sh 19303 feedback
+```
+
+同帧旧图由 `3280d59` 的原探针用相同窗口和时钟参数取得。图形探针模拟两指、旧触摸跨奖励、暂停、后台通知和重试。两台实体手机的系统边距、物理手柄和触屏手感待验。
+
+### 首版复跑
+
+用 Godot 4.6.2 在同机截取两版。这组历史命令使用当时版本的探针。复现基线时，将母舰首版的 `tests/battle_presentation_probe.gd` 复制到 `c26defe` 临时副本。候选版用 `verify` 校验顶部血条、选卡、输入和真实扣血。两版分别把输出写入已存在的目录。
 
 ```bash
 godot --windowed --resolution 1280x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \

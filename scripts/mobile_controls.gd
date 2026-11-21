@@ -6,11 +6,10 @@ const SafeArea = preload("res://scripts/battle_safe_area.gd")
 var _move_vector: Vector2 = Vector2.ZERO
 var _joystick_center: Vector2 = Vector2.ZERO
 var _move_touch_id: int = -1
+var _safe := Rect2()
 var _ui_root: Control
 var _base_node: Panel
 var _knob_node: Panel
-var _base_style: StyleBoxFlat
-var _knob_style: StyleBoxFlat
 
 signal move_input(vector: Vector2)
 
@@ -19,117 +18,88 @@ func _ready() -> void:
 	_recalc_joystick()
 	get_viewport().size_changed.connect(_recalc_joystick)
 	get_window().focus_entered.connect(_recalc_joystick)
-	get_window().focus_exited.connect(_release_move_touch)
+	get_window().focus_exited.connect(cancel_move_touch)
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_PAUSED, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
+		cancel_move_touch()
+	elif what == NOTIFICATION_APPLICATION_RESUMED and is_node_ready():
+		_recalc_joystick.call_deferred()
 
 func _recalc_joystick() -> void:
 	_layout_in_safe_area(SafeArea.for_viewport(get_viewport()))
 
 func _layout_in_safe_area(safe: Rect2) -> void:
-	_joystick_center = Vector2(safe.position.x + joystick_radius + 48, safe.end.y - joystick_radius - 58)
-	_base_node.position = _joystick_center - _base_node.size * 0.5
-	_update_visual_knob(_joystick_center + _move_vector * joystick_radius)
+	_safe = safe
+	if _move_touch_id != -1:
+		_update_visual()
 
 func _input(event: InputEvent) -> void:
-	# 先于 GUI 续接摇杆手指，拖出摇杆区也能收到松手。
-	if event is InputEventScreenTouch and event.device != InputEvent.DEVICE_ID_EMULATION:
-		if event.pressed and _move_touch_id == -1 and _is_in_joystick_area(event.position):
-			_move_touch_id = event.index
-			_set_active_visual(true)
-			_update_move_vector(event.position)
-			get_viewport().set_input_as_handled()
-		elif not event.pressed and event.index == _move_touch_id:
-			_release_move_touch()
-			get_viewport().set_input_as_handled()
-	elif event is InputEventScreenDrag:
-		if event.index == _move_touch_id:
-			_update_move_vector(event.position)
-			get_viewport().set_input_as_handled()
+	# 摇杆手指一旦被认领，就不能把拖动或抬起送给后来出现的按钮。
+	if event.device == InputEvent.DEVICE_ID_EMULATION or _move_touch_id == -1:
+		return
+	if event is InputEventScreenTouch and event.index == _move_touch_id:
+		if not event.pressed or event.canceled:
+			cancel_move_touch()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag and event.index == _move_touch_id:
+		_move_vector = ((event.position - _joystick_center) / joystick_radius).limit_length()
+		_update_visual()
+		move_input.emit(_move_vector)
+		get_viewport().set_input_as_handled()
+
+func _unhandled_input(event: InputEvent) -> void:
+	# 新触摸先交给 GUI，只有左手区的空白处能起手。
+	if (event is InputEventScreenTouch and event.device != InputEvent.DEVICE_ID_EMULATION
+			and event.pressed and not event.canceled and _move_touch_id == -1
+			and _safe.has_point(event.position) and event.position.x < _safe.get_center().x
+			and GameState.game_running):
+		_move_touch_id = event.index
+		_joystick_center = event.position
+		_ui_root.show()
+		_update_visual()
+		get_viewport().set_input_as_handled()
 
 func disable_for_results() -> void:
-	_release_move_touch()
+	cancel_move_touch()
 	set_process_input(false)
+	set_process_unhandled_input(false)
 	hide()
 
-func _release_move_touch() -> void:
+func cancel_move_touch() -> void:
 	if _move_touch_id == -1:
 		return
 	_move_touch_id = -1
 	_move_vector = Vector2.ZERO
+	_ui_root.hide()
 	move_input.emit(Vector2.ZERO)
-	_set_active_visual(false)
-	_update_visual_knob(_joystick_center)
 
-func _is_in_joystick_area(pos: Vector2) -> bool:
-	var dx: float = pos.x - _joystick_center.x
-	var dy: float = pos.y - _joystick_center.y
-	return dx * dx + dy * dy < joystick_radius * joystick_radius * 1.5
-
-func _update_move_vector(current_pos: Vector2) -> void:
-	var delta_v: Vector2 = current_pos - _joystick_center
-	if delta_v.length() <= 0.001:
-		_move_vector = Vector2.ZERO
-		_update_visual_knob(_joystick_center)
-	else:
-		_move_vector = delta_v / joystick_radius
-		_move_vector = _move_vector.limit_length(1.0)
-		_update_visual_knob(_joystick_center + _move_vector * joystick_radius)
-	move_input.emit(_move_vector)
+func _update_visual() -> void:
+	var half := _base_node.size * 0.5
+	var visual_center := _joystick_center.clamp(_safe.position + half, _safe.end - half)
+	_base_node.position = visual_center - half
+	var travel := half.x - _knob_node.size.x * 0.5
+	_knob_node.position = visual_center + _move_vector * travel - _knob_node.size * 0.5
 
 func _build_visual_nodes() -> void:
 	_ui_root = Control.new()
 	_ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ui_root.hide()
 	add_child(_ui_root)
-	_base_node = Panel.new()
-	_base_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_base_node.size = Vector2(joystick_radius * 2.0, joystick_radius * 2.0)
-	_base_node.position = _joystick_center - _base_node.size * 0.5
-	_base_style = StyleBoxFlat.new()
-	_base_style.bg_color = Color(0.1, 0.15, 0.25, 0.28)
-	_base_style.border_color = Color(0.45, 0.65, 1.0, 0.78)
-	_base_style.border_width_left = 3
-	_base_style.border_width_top = 3
-	_base_style.border_width_right = 3
-	_base_style.border_width_bottom = 3
-	_base_style.corner_radius_top_left = int(joystick_radius)
-	_base_style.corner_radius_top_right = int(joystick_radius)
-	_base_style.corner_radius_bottom_left = int(joystick_radius)
-	_base_style.corner_radius_bottom_right = int(joystick_radius)
-	_base_node.add_theme_stylebox_override("panel", _base_style)
-	_ui_root.add_child(_base_node)
-	var knob_radius: float = joystick_radius * knob_scale
-	_knob_node = Panel.new()
-	_knob_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_knob_node.size = Vector2(knob_radius * 2.0, knob_radius * 2.0)
-	_knob_style = StyleBoxFlat.new()
-	_knob_style.bg_color = Color(0.65, 0.8, 1.0, 0.88)
-	_knob_style.border_color = Color(1.0, 1.0, 1.0, 0.85)
-	_knob_style.border_width_left = 2
-	_knob_style.border_width_top = 2
-	_knob_style.border_width_right = 2
-	_knob_style.border_width_bottom = 2
-	_knob_style.corner_radius_top_left = int(knob_radius)
-	_knob_style.corner_radius_top_right = int(knob_radius)
-	_knob_style.corner_radius_bottom_left = int(knob_radius)
-	_knob_style.corner_radius_bottom_right = int(knob_radius)
-	_knob_node.add_theme_stylebox_override("panel", _knob_style)
-	_ui_root.add_child(_knob_node)
+	var visual_radius := joystick_radius * 0.6
+	_base_node = _make_disc(visual_radius, Color("#16223550"), Color("#9accff80"))
+	_knob_node = _make_disc(visual_radius * knob_scale, Color("#a6c8ff75"), Color("#e4f1ff90"))
 
-func _update_visual_knob(knob_center: Vector2) -> void:
-	if _knob_node == null:
-		return
-	_knob_node.position = knob_center - _knob_node.size * 0.5
-
-func _set_active_visual(active: bool) -> void:
-	if _base_style == null or _knob_style == null:
-		return
-	if active:
-		_base_style.bg_color = Color(0.2, 0.3, 0.45, 0.12)
-		_base_style.border_color = Color(0.6, 0.8, 1.0, 0.28)
-		_knob_style.bg_color = Color(0.8, 0.9, 1.0, 0.25)
-		_knob_style.border_color = Color(1.0, 1.0, 1.0, 0.25)
-	else:
-		_base_style.bg_color = Color(0.1, 0.15, 0.25, 0.28)
-		_base_style.border_color = Color(0.45, 0.65, 1.0, 0.78)
-		_knob_style.bg_color = Color(0.65, 0.8, 1.0, 0.88)
-		_knob_style.border_color = Color(1.0, 1.0, 1.0, 0.85)
+func _make_disc(radius: float, fill: Color, outline: Color) -> Panel:
+	var disc := Panel.new()
+	disc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	disc.size = Vector2.ONE * radius * 2.0
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = outline
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(int(radius))
+	disc.add_theme_stylebox_override("panel", style)
+	_ui_root.add_child(disc)
+	return disc

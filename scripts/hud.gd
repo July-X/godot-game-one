@@ -24,7 +24,7 @@ const SafeArea = preload("res://scripts/battle_safe_area.gd")
 @onready var _game_over_panel: Panel = $GameOverPanel
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
-@onready var _restart_label: Label = $GameOverPanel/VBox/RestartLabel
+@onready var _restart_button: Button = $GameOverPanel/VBox/Restart
 @onready var _perm_leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
 @onready var _skill_bar: HBoxContainer = $SkillBar
 
@@ -58,7 +58,6 @@ var _safe_rect := Rect2()
 var _draft_cards: Array = []
 var _draft_prompt := ""
 const BOSS_BAR_SIZE := Vector2(520, 39)
-const CARD_SIZE := Vector2(204, 50)
 const EDGE_MARGIN := 18.0
 const SIDE_WIDTH := 198.0
 const POWERUP_BAR_WIDTH: int = 110
@@ -81,6 +80,11 @@ func _ready() -> void:
 	_fps_label.visible = OS.get_cmdline_user_args().has("--fps")
 	for child in get_children():
 		_set_control_ignore_input(child)
+	_draft_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_draft_panel.minimum_size_changed.connect(_position_draft_panel)
+	_restart_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_restart_button.pressed.connect(Callable(get_parent(), "_restart"), CONNECT_DEFERRED)
+	_restart_button.gui_input.connect(_on_restart_touch)
 	_setup_damage_flash()
 	_update_platform_hints()
 	_draft_time_bar.max_value = UpgradeDraft.DRAFT_TIMEOUT_SECONDS
@@ -95,11 +99,16 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_changed)
 	GameState.powerup_collected.connect(_on_powerup_collected)
 	GameState.player_scores_changed.connect(_on_player_scores_changed)
+	UpgradeDraft.draft_opened.connect(_on_draft_opened)
 	_update_score(0)
 	_update_level(1)
 	_update_pilots()
 	_update_player_scores(GameState.get_all_player_scores(), GameState.score)
 	_update_powerup_display()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_RESUMED and is_node_ready():
+		_layout_battle_hud.call_deferred()
 
 func _process(_delta: float) -> void:
 	_boss_shield_release_left = maxf(_boss_shield_release_left - _delta, 0.0)
@@ -169,6 +178,14 @@ func _nearest_downed_node() -> Node:
 ## 同一排 Button 显示常规三选一和试飞的四张卡，确认仍由 UpgradeDraft 处理。
 var _draft_card_buttons: Array[Button] = []
 
+func _on_draft_opened(pid: int, _cards: Array) -> void:
+	if pid != _local_peer_id():
+		return
+	var stick := get_parent().get_node_or_null("MobileControls")
+	if stick and _draft_prompt.is_empty():
+		stick.cancel_move_touch()
+	_update_draft_panel()
+
 func _update_draft_panel() -> void:
 	var my_pid := _local_peer_id()
 	if not GameState.game_running or not UpgradeDraft.has_draft(my_pid):
@@ -178,9 +195,9 @@ func _update_draft_panel() -> void:
 	var cards: Array = draft.cards
 	_draft_panel.visible = true
 	if cards != _draft_cards:
-		_populate_draft(cards)
 		_draft_cards = cards.duplicate()
-		_layout_top_rows()
+		_populate_draft(cards)
+		_layout_draft_cards()
 	var left := float(draft.left)
 	_draft_time_bar.value = left
 	_draft_clock.text = "%02d 秒" % ceili(left)
@@ -190,21 +207,14 @@ func _populate_draft(cards: Array) -> void:
 		var icon := Control.new()
 		icon.name = "Icon"
 		icon.set_script(preload("res://scripts/card_icon.gd"))
-		icon.position = Vector2(8, 6)
-		icon.size = Vector2(37, 38)
-		var card_name := _label(15, Vector2(48, 5), Vector2(150, 21))
+		var card_name := _label(22, Vector2.ZERO, Vector2.ZERO)
 		card_name.name = "CardName"
-		var description := _label(12, Vector2(48, 27), Vector2(154, 18))
+		var description := _label(18, Vector2.ZERO, Vector2.ZERO)
 		description.name = "Description"
 		description.add_theme_color_override("font_color", Color("#b0c4d6"))
-		description.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		var button := Button.new()
-		button.custom_minimum_size = CARD_SIZE
 		button.focus_mode = Control.FOCUS_NONE
 		button.mouse_filter = Control.MOUSE_FILTER_PASS
-		button.add_theme_stylebox_override("normal", _surface(Color("#132238d9"), Color("#426480")))
-		button.add_theme_stylebox_override("hover", _surface(Color("#233b52e8"), Palette.CARD_STYLE))
-		button.add_theme_stylebox_override("pressed", _surface(Color("#2c455de8"), Palette.CARD_STYLE))
 		button.add_child(icon)
 		button.add_child(card_name)
 		button.add_child(description)
@@ -232,9 +242,11 @@ func _populate_draft(cards: Array) -> void:
 func set_draft_prompt(text: String) -> void:
 	_draft_prompt = text
 	_update_draft_title()
+	if not _draft_cards.is_empty():
+		_layout_draft_cards()
 
 func _update_draft_title() -> void:
-	var action := "点选卡片" if _is_touch_platform() else "按 1 / 2 / 3"
+	var action := "点选卡片" if _is_touch_platform() else "按 1 / 2" if _draft_cards.size() == 2 else "按 1 / 2 / 3"
 	_draft_title.text = "本机升级 · %s · 超时取第一张" % action if _draft_prompt.is_empty() else _draft_prompt
 
 func _on_draft_card_pressed(index: int) -> void:
@@ -247,7 +259,7 @@ func _on_draft_card_touch(event: InputEvent, button: Button, index: int) -> void
 func _accept_touch_press(event: InputEvent, button: Button) -> bool:
 	if event is InputEventMouseButton and event.device == InputEvent.DEVICE_ID_EMULATION:
 		button.accept_event()
-	if event is InputEventScreenTouch and event.device != InputEvent.DEVICE_ID_EMULATION and event.pressed:
+	if event is InputEventScreenTouch and event.device != InputEvent.DEVICE_ID_EMULATION and event.pressed and not event.canceled:
 		button.accept_event()
 		return true
 	return false
@@ -395,21 +407,75 @@ func _layout_in_safe_area(safe: Rect2) -> void:
 	_controls_label.position = Vector2(left, safe.end.y - 32)
 	_controls_label.size = Vector2(310, 17)
 	_layout_skill_bar()
+	_game_over_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_game_over_panel.position = safe.get_center() - _game_over_panel.size * 0.5
+	if not _draft_cards.is_empty():
+		_layout_draft_cards()
 	_layout_top_rows()
 
 func _layout_top_rows() -> void:
 	var center := _safe_rect.get_center().x
 	var top := _safe_rect.position.y + 12.0
-	var boss_visible := is_instance_valid(_boss_status_root) and _boss_status_root.visible
 	if is_instance_valid(_boss_status_root):
 		_boss_status_root.position = Vector2(center - BOSS_BAR_SIZE.x * 0.5, top)
-	var alert_visible := is_instance_valid(_alert_label) and _alert_label.visible
 	if is_instance_valid(_alert_label):
 		_alert_label.position = Vector2(center - BOSS_BAR_SIZE.x * 0.5, top)
-	var columns := maxi(3, _draft_cards.size())
-	var width := CARD_SIZE.x * columns + 8.0 * (columns - 1)
-	_draft_panel.position = Vector2(center - width * 0.5, top + (42.0 if boss_visible or alert_visible else 0.0))
-	_draft_panel.size = Vector2(width, 0)
+	_position_draft_panel()
+
+func _layout_draft_cards() -> void:
+	var compact := not _draft_prompt.is_empty()
+	var columns := _draft_cards.size()
+	var gap := 8.0 if compact else 12.0
+	var width := floorf(minf(204.0 if compact else 272.0,
+		(_safe_rect.size.x - EDGE_MARGIN * 2.0 - gap * (columns - 1)) / columns))
+	var height := 50.0 if compact else 144.0 if width < 148.0 else 120.0
+	var narrow := width < 188.0
+	_draft_row.add_theme_constant_override("separation", int(gap))
+	_draft_panel.add_theme_constant_override("separation", 3 if compact else 8)
+	_draft_title.add_theme_font_size_override("font_size", 13 if compact else 18)
+	_draft_clock.add_theme_font_size_override("font_size", 14 if compact else 18)
+	_draft_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_draft_title.add_theme_color_override("font_outline_color", Color("#0b1324"))
+	_draft_title.add_theme_constant_override("outline_size", 4)
+	for i in columns:
+		var button := _draft_card_buttons[i]
+		button.custom_minimum_size = Vector2(width, height)
+		button.add_theme_stylebox_override("normal", _surface(Color("#132238d9" if compact else "#1322387a"), Color("#426480")))
+		button.add_theme_stylebox_override("hover", _surface(Color("#233b52e8" if compact else "#233b5290"), Palette.CARD_STYLE))
+		button.add_theme_stylebox_override("pressed", _surface(Color("#2c455de8" if compact else "#2c455d9c"), Palette.CARD_STYLE))
+		var icon := button.get_node("Icon") as Control
+		var title := button.get_node("CardName") as Label
+		var desc := button.get_node("Description") as Label
+		for label in [title, desc]:
+			label.add_theme_color_override("font_outline_color", Color("#0b1324"))
+			label.add_theme_constant_override("outline_size", 0 if compact else 4)
+		icon.position = Vector2(8, 6) if compact else Vector2(12, 12)
+		icon.size = Vector2(37, 38) if compact else Vector2(34, 34)
+		icon.visible = not narrow
+		var title_x := 12.0 if narrow else 48.0 if compact else 56.0
+		title.position = Vector2(title_x, 5 if compact else 14)
+		title.add_theme_font_size_override("font_size", 15 if compact or width < 128.0 else 19 if narrow else 22)
+		title.size = Vector2(width - title_x - 10.0, 22 if compact else 32)
+		var desc_x := title_x if compact else 14.0
+		desc.position = Vector2(desc_x, 27 if compact else 55)
+		desc.autowrap_mode = TextServer.AUTOWRAP_OFF if compact else TextServer.AUTOWRAP_WORD_SMART
+		desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if compact else TextServer.OVERRUN_NO_TRIMMING
+		desc.add_theme_font_size_override("font_size", 12 if compact else 16 if narrow else 18)
+		desc.size = Vector2(width - desc_x - 12.0, 18 if compact else height - 65.0)
+	_draft_panel.size = Vector2(width * columns + gap * (columns - 1), 0)
+	_position_draft_panel()
+
+func _position_draft_panel() -> void:
+	if not _draft_panel.visible:
+		return
+	_draft_panel.size.y = _draft_panel.get_combined_minimum_size().y
+	var top := _safe_rect.position.y + 12.0
+	var boss_visible := is_instance_valid(_boss_status_root) and _boss_status_root.visible
+	var alert_visible := is_instance_valid(_alert_label) and _alert_label.visible
+	if boss_visible or alert_visible:
+		top += 42.0
+	var y := top if not _draft_prompt.is_empty() else maxf(top, _safe_rect.get_center().y - _draft_panel.size.y * 0.5)
+	_draft_panel.position = Vector2(_safe_rect.get_center().x - _draft_panel.size.x * 0.5, y)
 
 func _layout_skill_bar() -> void:
 	var slot_size := SKILL_SLOT_MOBILE if _is_touch_platform() else SKILL_SLOT_DESKTOP
@@ -507,6 +573,7 @@ func _on_game_over(final_score: int, final_level: int) -> void:
 	if is_instance_valid(_alert_label):
 		_alert_label.hide()
 	_draft_panel.hide()
+	_update_platform_hints()
 	_final_score_label.text = "得分: %d" % final_score
 	_final_level_label.text = "等级: %d" % final_level
 	Leaderboard.add_entry(final_score, final_level, GameState.get_all_player_scores())
@@ -910,14 +977,19 @@ func _format_leaderboard_players(entry: Dictionary) -> String:
 
 func _update_platform_hints() -> void:
 	var can_restart := not NetworkManager.is_online() or multiplayer.is_server()
+	_restart_button.disabled = not can_restart
 	if _is_touch_platform():
 		_controls_label.text = "自动射击"
-		_restart_label.text = "点击屏幕重新开始" if can_restart else "等待房主重新开始"
+		_restart_button.text = "重新开始" if can_restart else "等待房主重新开始"
 	else:
-		_restart_label.text = "按 R 重新开始" if can_restart else "等待房主重新开始"
+		_restart_button.text = "重新开始 · R" if can_restart else "等待房主重新开始"
 		_controls_label.text = "自动射击  ·  Esc 释放鼠标"
 		if NetworkManager.is_online():
 			_controls_label.text += "  ·  E 救援"
+
+func _on_restart_touch(event: InputEvent) -> void:
+	if _accept_touch_press(event, _restart_button) and not _restart_button.disabled:
+		get_parent().call_deferred("_restart")
 
 func _update_fps(delta: float) -> void:
 	if not _fps_label.visible:

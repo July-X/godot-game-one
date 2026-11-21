@@ -2,10 +2,11 @@ extends CanvasLayer
 
 const SafeArea := preload("res://scripts/battle_safe_area.gd")
 
-@onready var _start_label: Label = $StartLabel
-@onready var _btn_single: Button = $BtnSingle
-@onready var _btn_multi: Button = $BtnMultiplayer
-@onready var _btn_first_card: Button = $BtnFirstCard
+@onready var _menu: VBoxContainer = $Menu
+@onready var _start_label: Label = $Menu/StartLabel
+@onready var _btn_single: Button = $Menu/BtnSingle
+@onready var _btn_multi: Button = $Menu/BtnMultiplayer
+@onready var _btn_first_card: Button = $Menu/BtnFirstCard
 @onready var _trial_choices: VBoxContainer = $TrialChoices
 
 func _ready() -> void:
@@ -14,33 +15,35 @@ func _ready() -> void:
 	_start_blink()
 	# 触摸合成的鼠标释放仍会访问触发按钮，等 GUI 处理结束后再切场景。
 	_btn_single.pressed.connect(_on_single_pressed, CONNECT_DEFERRED)
-	_btn_multi.pressed.connect(_on_multiplayer_pressed)
+	_btn_multi.pressed.connect(_on_multiplayer_pressed, CONNECT_DEFERRED)
 	_btn_first_card.pressed.connect(_show_trial_choices.bind(true))
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/Back.pressed.connect(_show_trial_choices.bind(false))
-	get_viewport().size_changed.connect(_refresh_trial_layout)
-	get_window().focus_entered.connect(_refresh_trial_layout)
+	get_viewport().size_changed.connect(_layout_title)
+	get_window().focus_entered.connect(_layout_title)
+	_layout_title()
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_RESUMED and is_node_ready():
+		_layout_title.call_deferred()
 
 func _show_trial_choices(open: bool) -> void:
-	for item: Control in [_start_label, _btn_single, _btn_multi, _btn_first_card]:
-		item.visible = not open
+	_menu.visible = not open
 	_trial_choices.visible = open
-	if open:
-		_refresh_trial_layout()
+	_layout_title()
 
 
-func _refresh_trial_layout() -> void:
-	if _trial_choices.visible:
-		_layout_trial_choices(SafeArea.for_viewport(get_viewport()))
+func _layout_title() -> void:
+	_layout_in_safe_area(SafeArea.for_viewport(get_viewport()))
 
 
-func _layout_trial_choices(safe: Rect2) -> void:
-	_trial_choices.size = _trial_choices.get_combined_minimum_size()
-	var center := safe.get_center()
-	var y := minf(center.y + 64, safe.end.y - _trial_choices.size.y - 12)
-	_trial_choices.position = Vector2(center.x - _trial_choices.size.x * 0.5, maxf(safe.position.y + 12, y)).round()
+func _layout_in_safe_area(safe: Rect2) -> void:
+	var content := safe.grow(-SafeArea.MENU_MARGIN)
+	for menu: VBoxContainer in [_menu, _trial_choices]:
+		menu.size = Vector2(minf(336.0, content.size.x), 0)
+		menu.position = (content.get_center() - menu.size * 0.5).round()
+	$VersionLabel.position = content.end - $VersionLabel.size
 
 
 func _start_blink() -> void:

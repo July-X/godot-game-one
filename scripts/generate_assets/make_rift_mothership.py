@@ -1,6 +1,7 @@
 """Render the original Rift Mothership variants on a 64×48 pixel grid."""
 
 from pathlib import Path
+from math import hypot
 
 from PIL import Image, ImageDraw
 
@@ -52,9 +53,22 @@ def mothership(variant: int) -> Image.Image:
     plate("#83bbcb", (31, 10), (32, 10), (32, 16), (31, 16))
     plate("#455f73", (28, 22), (30, 25), (33, 25), (35, 22), (33, 30), (30, 30))
     plate("#96aebb", (31, 27), (32, 27), (32, 32), (31, 32))
+    draw.rectangle((30, 21, 33, 25), fill="#203443")
+    draw.rectangle((31, 23, 32, 24), fill="#93bcc8")
     plate("#304859", (28, 39), (35, 39), (34, 42), (29, 42))
     for y in range(26, 26 + 2 * min(variant, 3), 2):
         pair("#86a5b4", (23, y), (24, y), (24, y + 1), (23, y + 1))
+
+    # The collision circle stays 33 world pixels when the sprite grows.
+    for y in range(image.height):
+        for x in range(image.width):
+            red, green, blue, alpha = image.getpixel((x, y))
+            distance = hypot(x + 0.5 - 32, y + 0.5 - 24) * 1.8
+            if alpha and distance > 30:
+                fade = min(1, (distance - 30) / 9)
+                dimmed = tuple(round(value - max(0, value - limit) * fade)
+                               for value, limit in zip((red, green, blue), (43, 57, 72)))
+                image.putpixel((x, y), (*dimmed, alpha))
 
     return image.resize((128, 96), Image.Resampling.NEAREST)
 

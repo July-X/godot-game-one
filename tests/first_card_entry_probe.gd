@@ -29,29 +29,55 @@ func _run() -> void:
 	var title := await _wait_for_scene(TITLE)
 	if title == null:
 		return
-	await _tap(title.get_node("BtnFirstCard"))
-	var choices: VBoxContainer = title.get_node("TrialChoices")
-	_check("neutral_menu_opens", choices.visible and not title.get_node("BtnSingle").visible
-		and choices.get_node("A").text == "试飞 A" and choices.get_node("B").text == "试飞 B")
 	var view := get_viewport().get_visible_rect()
 	var safe := Rect2(Vector2(76, 24), view.size - Vector2(110, 96))
 	var screen := get_viewport().get_screen_transform() * safe
-	title._layout_trial_choices(SafeArea.from_display(get_viewport(), screen))
+	title._layout_in_safe_area(SafeArea.from_display(get_viewport(), screen))
+	await get_tree().process_frame
+	var usable := safe.grow(-SafeArea.MENU_MARGIN)
+	_check("title_button_rectangles_inside_inset", usable.encloses(title.get_node("Menu/BtnSingle").get_global_rect())
+		and usable.encloses(title.get_node("Menu/BtnMultiplayer").get_global_rect())
+		and usable.encloses(title.get_node("Menu/BtnFirstCard").get_global_rect()))
+	await _tap(title.get_node("Menu/BtnMultiplayer"))
+	var lobby := await _wait_for_scene("res://scenes/ui/lobby.tscn")
+	if lobby == null:
+		return
+	lobby._layout_in_safe_area(safe)
+	await get_tree().process_frame
+	_check("lobby_button_rectangles_inside_inset", usable.encloses(lobby.get_node("VBox/PanelModeSelect/BtnBeHost").get_global_rect())
+		and usable.encloses(lobby.get_node("VBox/PanelModeSelect/BtnBeClient").get_global_rect())
+		and usable.encloses(lobby.get_node("VBox/BtnBack").get_global_rect()))
+	await _tap(lobby.get_node("VBox/BtnBack"))
+	title = await _wait_for_scene(TITLE)
+	if title == null:
+		return
+	await _tap(title.get_node("Menu/BtnFirstCard"))
+	var choices: VBoxContainer = title.get_node("TrialChoices")
+	_check("neutral_menu_opens", choices.visible and not title.get_node("Menu/BtnSingle").is_visible_in_tree()
+		and choices.get_node("A").text == "试飞 A" and choices.get_node("B").text == "试飞 B")
+	title._layout_in_safe_area(SafeArea.from_display(get_viewport(), screen))
 	await get_tree().process_frame
 	_check("chooser_inside_inset", safe.encloses(choices.get_global_rect())
 		and safe.encloses(choices.get_node("A").get_global_rect()) and safe.encloses(choices.get_node("B").get_global_rect()))
 	await _tap(choices.get_node("Back"))
-	_check("touch_cancel_restores_title", get_tree().current_scene == title and not choices.visible and title.get_node("BtnSingle").visible)
-	title.get_node("BtnFirstCard").grab_focus()
+	_check("touch_cancel_restores_title", get_tree().current_scene == title and not choices.visible and title.get_node("Menu/BtnSingle").is_visible_in_tree())
+	title.get_node("Menu/BtnFirstCard").grab_focus()
 	await _key(KEY_ENTER)
 	_check("keyboard_can_open_chooser", choices.visible)
 	await _key(KEY_W)
 	_check("chooser_holds_during_single_shortcut", get_tree().current_scene == title and choices.visible)
 	await _key(KEY_ESCAPE)
 	_check("keyboard_cancel_restores_title", get_tree().current_scene == title and not choices.visible)
+	title.get_node("Menu/BtnSingle").grab_focus()
+	var down := InputEventJoypadButton.new()
+	down.button_index = JOY_BUTTON_DPAD_DOWN
+	down.pressed = true
+	get_viewport().push_input(down, true)
+	await get_tree().process_frame
+	_check("gamepad_moves_title_focus", title.get_node("Menu/BtnMultiplayer").has_focus())
 
 	for variant in ["A", "B"]:
-		await _tap(title.get_node("BtnFirstCard"))
+		await _tap(title.get_node("Menu/BtnFirstCard"))
 		if variant == "A":
 			await _capture_chooser()
 		await _tap(title.get_node("TrialChoices/" + variant))
@@ -60,8 +86,8 @@ func _run() -> void:
 		title = await _wait_for_scene(TITLE)
 		if title == null:
 			return
-		_check(variant + "_return_clears_chooser", not title.get_node("TrialChoices").visible and title.get_node("BtnFirstCard").visible)
-	title.get_node("BtnFirstCard").grab_focus()
+		_check(variant + "_return_clears_chooser", not title.get_node("TrialChoices").visible and title.get_node("Menu/BtnFirstCard").is_visible_in_tree())
+	title.get_node("Menu/BtnFirstCard").grab_focus()
 	await _key(KEY_ENTER)
 	title.get_node("TrialChoices/B").grab_focus()
 	await _key(KEY_ENTER)
@@ -73,8 +99,8 @@ func _run() -> void:
 	title = await _wait_for_scene(TITLE)
 	if title == null:
 		return
-	_check("mouse_can_return_to_title", title.get_node("BtnFirstCard").visible)
-	await _tap(title.get_node("BtnSingle"))
+	_check("mouse_can_return_to_title", title.get_node("Menu/BtnFirstCard").is_visible_in_tree())
+	await _tap(title.get_node("Menu/BtnSingle"))
 	var solo := await _wait_for_scene(SOLO)
 	if solo == null:
 		return
@@ -130,7 +156,7 @@ func _play_version(variant: String) -> bool:
 
 func _start_steering(scene: Node, label: String, direction: Vector2) -> void:
 	var stick = scene.get_node("MobileControls")
-	var center: Vector2 = stick._joystick_center
+	var center := Vector2(160.0, get_viewport().get_visible_rect().end.y - 164)
 	var origin: Vector2 = scene._player.global_position
 	_touch(center, true, 0)
 	var drag := InputEventScreenDrag.new()
@@ -146,8 +172,10 @@ func _check_steering(scene: Node, label: String, origin: Vector2, direction: Vec
 	var player = scene._player
 	var move: Vector2 = direction * 0.75
 	var cap: Vector2 = stick._knob_node.get_rect().get_center()
+	var base: Vector2 = stick._base_node.get_rect().get_center()
+	var visual_travel: float = (stick._base_node.size.x - stick._knob_node.size.x) * 0.5
 	_check(label + "_cap_follows_finger", stick._move_touch_id == 0 and stick._move_vector.is_equal_approx(move)
-		and cap.is_equal_approx(stick._joystick_center + direction * 84.0))
+		and cap.is_equal_approx(base + move * visual_travel))
 	var travel: Vector2 = player.global_position - origin
 	var nose: Vector2 = Vector2.UP.rotated(player.global_rotation)
 	_check(label + "_pilot_moves_and_turns", player._motion.mobile_mode and player._motion.touch_move.is_equal_approx(move)
@@ -159,7 +187,7 @@ func _release_stick(scene: Node, label: String) -> void:
 	_touch(stick._joystick_center, false, 0)
 	_check(label + "_release_zeros_stick", stick._move_touch_id == -1 and stick._move_vector == Vector2.ZERO
 		and scene._player._motion.touch_move == Vector2.ZERO
-		and stick._knob_node.get_rect().get_center().is_equal_approx(stick._joystick_center))
+		and not stick._ui_root.visible)
 
 func _wait_for_scene(path: String, previous := 0) -> Node:
 	for i in 100:

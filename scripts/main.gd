@@ -1351,6 +1351,9 @@ func _rpc_force_game_over(final_score: int, final_level: int) -> void:
 		_hud._on_game_over(final_score, final_level)
 
 func _clear_runtime_entities_on_game_over() -> void:
+	var stick := get_node_or_null("MobileControls")
+	if stick:
+		stick.disable_for_results()
 	_rpc_set_boss_bg(false)
 	_clear_boss_laser_visual()
 	for n in get_tree().get_nodes_in_group("enemies"):
@@ -1394,10 +1397,6 @@ func _show_death_marquee_text(msg: String, hold_seconds: float = DEATH_MARQUEE_H
 	tween.tween_interval(hold_seconds)
 	tween.tween_property(banner, "modulate:a", 0.0, DEATH_MARQUEE_FADE_SECONDS)
 	tween.tween_callback(banner.queue_free)
-
-func _restart_on_touch() -> void:
-	if OS.has_feature("android") or OS.has_feature("ios"):
-		_restart()
 
 func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
@@ -1449,10 +1448,6 @@ func _input(event: InputEvent) -> void:
 					UpgradeDraft.choose_card(my_pid, 1, "key")
 				KEY_3, KEY_KP_3:
 					UpgradeDraft.choose_card(my_pid, 2, "key")
-
-	if event is InputEventScreenTouch and event.pressed and not GameState.game_running:
-		if OS.has_feature("android") or OS.has_feature("ios"):
-			_restart()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.keycode == KEY_R and not GameState.game_running:

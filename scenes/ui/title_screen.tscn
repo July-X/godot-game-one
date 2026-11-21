@@ -16,75 +16,37 @@ anchor_bottom = 1.0
 mouse_filter = 2
 color = Color(0.04, 0.04, 0.1, 1)
 
-[node name="Logo" type="TextureRect" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -256.0
-offset_top = -140.0
-offset_right = 256.0
-offset_bottom = 40.0
-texture = ExtResource("1")
-expand_mode = 0
-stretch_mode = 0
+[node name="Menu" type="VBoxContainer" parent="."]
+theme_override_constants/separation = 8
 
-[node name="StartLabel" type="Label" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -120.0
-offset_top = 60.0
-offset_right = 120.0
-offset_bottom = 90.0
+[node name="Logo" type="TextureRect" parent="Menu"]
+custom_minimum_size = Vector2(0, 154)
+mouse_filter = 2
+texture = ExtResource("1")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="StartLabel" type="Label" parent="Menu"]
 theme_override_colors/font_color = Color(0.6, 0.7, 1.0, 1)
 theme_override_font_sizes/font_size = 16
 text = "选择模式开始"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="BtnMultiplayer" type="Button" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -140.0
-offset_top = 172.0
-offset_right = 140.0
-offset_bottom = 228.0
-custom_minimum_size = Vector2(280, 56)
-text = "📡  多人联机"
-theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(0.3, 1.0, 0.6, 1)
-
-[node name="BtnSingle" type="Button" parent="."]
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -140.0
-offset_top = 108.0
-offset_right = 140.0
-offset_bottom = 164.0
-custom_minimum_size = Vector2(280, 56)
+[node name="BtnSingle" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(0, 56)
 text = "🎮  单人游戏"
 theme_override_font_sizes/font_size = 22
 theme_override_colors/font_color = Color(0.6, 0.85, 1, 1)
 
-[node name="BtnFirstCard" type="Button" parent="."]
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -140.0
-offset_top = 236.0
-offset_right = 140.0
-offset_bottom = 284.0
+[node name="BtnMultiplayer" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(0, 56)
+text = "📡  多人联机"
+theme_override_font_sizes/font_size = 22
+theme_override_colors/font_color = Color(0.3, 1.0, 0.6, 1)
+
+[node name="BtnFirstCard" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(0, 48)
 text = "首卡试飞"
 theme_override_font_sizes/font_size = 20
 
@@ -114,13 +76,8 @@ theme_override_font_sizes/font_size = 20
 text = "返回"
 
 [node name="VersionLabel" type="Label" parent="."]
-anchors_preset = 10
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -200.0
-offset_top = 340.0
-offset_right = -20.0
-offset_bottom = 360.0
+offset_right = 180.0
+offset_bottom = 20.0
 theme_override_colors/font_color = Color(0.3, 0.35, 0.5, 0.6)
 theme_override_font_sizes/font_size = 11
 text = "v1.0.0 | Godot 4.6"

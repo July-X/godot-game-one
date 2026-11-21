@@ -4,6 +4,8 @@ extends Control
 
 signal game_start_requested
 
+const SafeArea := preload("res://scripts/battle_safe_area.gd")
+
 enum LobbyMode { NONE, HOST, JOIN }
 var _mode: LobbyMode = LobbyMode.NONE
 
@@ -40,6 +42,23 @@ func _ready() -> void:
 	if _debug_title:
 		_debug_title.visible = false
 	_refresh_debug_info()
+	get_viewport().size_changed.connect(_layout_lobby)
+	get_window().focus_entered.connect(_layout_lobby)
+	_layout_lobby()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_RESUMED and is_node_ready():
+		_layout_lobby.call_deferred()
+
+func _layout_lobby() -> void:
+	_layout_in_safe_area(SafeArea.for_viewport(get_viewport()))
+
+func _layout_in_safe_area(safe: Rect2) -> void:
+	var content := safe.grow(-SafeArea.MENU_MARGIN)
+	var column: VBoxContainer = $VBox
+	column.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	column.size = Vector2(minf(440.0, content.size.x), minf(560.0, content.size.y))
+	column.position = (content.get_center() - column.size * 0.5).round()
 
 
 func _process(delta: float) -> void:
@@ -53,7 +72,7 @@ func _process(delta: float) -> void:
 func _connect_signals() -> void:
 	_btn_be_host.pressed.connect(_on_host_mode_selected)
 	_btn_be_client.pressed.connect(_on_join_mode_selected)
-	_btn_back.pressed.connect(_on_back_pressed)
+	_btn_back.pressed.connect(_on_back_pressed, CONNECT_DEFERRED)
 	_btn_start.pressed.connect(_on_start_pressed)
 	_btn_quick_join.pressed.connect(_on_quick_join_pressed)
 

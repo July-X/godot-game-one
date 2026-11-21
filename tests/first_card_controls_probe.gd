@@ -32,7 +32,9 @@ func _run() -> void:
 		and float(UpgradeDraft.get_draft(1).left) > 9.8)
 	var card_button: Button = trial._hud._draft_row.get_child(1)
 	var start_x: float = trial._player.position.x
-	_touch(0, stick._joystick_center - Vector2(95, 0), true)
+	var origin := Vector2(160, get_viewport().get_visible_rect().end.y - 164)
+	_touch(0, origin, true)
+	_drag(0, origin - Vector2(95, 0))
 	for i in 14:
 		await get_tree().physics_frame
 	_check("pilot_moves_before_first_choice_without_starting_combat",
@@ -48,15 +50,11 @@ func _run() -> void:
 		return
 	_check("pilot_moves_left_while_hint_drawn", trial._player.position.x < start_x - 25 and hint.visible and not draft.visible)
 	var left_x: float = trial._player.position.x
-	var drag := InputEventScreenDrag.new()
-	drag.index = 0
-	drag.position = get_viewport().get_final_transform() * (stick._joystick_center + Vector2(95, 0))
-	get_viewport().push_input(drag)
+	_drag(0, origin + Vector2(95, 0))
 	if not await _at(70):
 		return
 	_check("held_finger_can_move_right", stick._move_touch_id == 0 and trial._player.position.x > left_x + 25)
-	var hit_radius: float = stick.joystick_radius * sqrt(1.5)
-	var left_touch := Rect2(stick._joystick_center - Vector2.ONE * hit_radius, Vector2.ONE * hit_radius * 2)
+	var left_touch: Rect2 = stick._base_node.get_global_rect()
 	var skill_bar: Control = trial._hud._skill_bar
 	var hint_rect := hint.get_global_rect()
 	_check("hint_clear_of_touch_zones", not hint_rect.intersects(left_touch) and not hint_rect.intersects(skill_bar.get_global_rect())
@@ -75,7 +73,7 @@ func _run() -> void:
 	trial._player.take_damage(2.0)
 	GameState.heal(2, 1)
 	_check("cumulative_loss_survives_heal", GameState.get_current_health(1) == hp and trial._hp_lost == loss + 2)
-	_touch(0, stick._joystick_center + Vector2(60, 0), true)
+	_touch(0, origin + Vector2(60, 0), true)
 	if not await _at(trial.END_TICK):
 		return
 	var retry: Button = trial.get_node("TrialUI/Options/Retry")
@@ -130,6 +128,12 @@ func _touch(index: int, at: Vector2, pressed: bool) -> void:
 	event.index = index
 	event.position = get_viewport().get_final_transform() * at
 	event.pressed = pressed
+	get_viewport().push_input(event)
+
+func _drag(index: int, at: Vector2) -> void:
+	var event := InputEventScreenDrag.new()
+	event.index = index
+	event.position = get_viewport().get_final_transform() * at
 	get_viewport().push_input(event)
 
 func _check(label: String, ok: bool) -> void:

@@ -128,7 +128,7 @@ var _laser_dot_accumulator: float = 0.0
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
-const BOSS_VISUAL_SCALE: float = 2.0 / 3.0
+const BOSS_VISUAL_SCALE: float = 0.90
 const BOSS_TARGET_TTK_SECONDS: float = 42.0
 const BOSS_EXPECTED_PLAYER_UPTIME: float = 0.95
 const BOSS_CLOSE_ESCAPE_DIST: float = 290.0

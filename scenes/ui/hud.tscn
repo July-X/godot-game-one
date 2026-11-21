@@ -187,11 +187,11 @@ theme_override_font_sizes/font_size = 18
 text = "等级: 1"
 horizontal_alignment = 1
 
-[node name="RestartLabel" type="Label" parent="GameOverPanel/VBox"]
+[node name="Restart" type="Button" parent="GameOverPanel/VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
-text = "按 R 重新开始"
-horizontal_alignment = 1
+custom_minimum_size = Vector2(0, 48)
+theme_override_font_sizes/font_size = 18
+text = "重新开始 · R"
 
 [node name="LeaderboardDivider" type="HSeparator" parent="GameOverPanel/VBox"]
 layout_mode = 2

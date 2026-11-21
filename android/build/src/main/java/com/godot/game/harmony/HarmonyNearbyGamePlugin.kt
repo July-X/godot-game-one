@@ -6,6 +6,8 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.util.Log
+import android.view.RoundedCorner
+import android.view.WindowInsets
 import org.godotengine.godot.Godot
 import org.godotengine.godot.plugin.GodotPlugin
 import org.godotengine.godot.plugin.SignalInfo
@@ -43,6 +45,31 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 		STATUS_SIGNAL,
 		HOST_DISCOVERED_SIGNAL
 	)
+
+	// The engine's immersive safe area accounts for cutouts, but omits gesture navigation.
+	@UsedByGodot
+	@Suppress("DEPRECATION")
+	fun getWindowUiInsets(): IntArray {
+		val insets = activity?.window?.decorView?.rootWindowInsets ?: return intArrayOf()
+		val gestures = when {
+			Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+				insets.getInsets(WindowInsets.Type.systemGestures())
+			Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> insets.systemGestureInsets
+			else -> return intArrayOf()
+		}
+		val edges = intArrayOf(gestures.left, gestures.top, gestures.right, gestures.bottom)
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+			val topLeft = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0
+			val topRight = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT)?.radius ?: 0
+			val bottomRight = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
+			val bottomLeft = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
+			edges[0] = maxOf(edges[0], topLeft, bottomLeft)
+			edges[1] = maxOf(edges[1], topLeft, topRight)
+			edges[2] = maxOf(edges[2], topRight, bottomRight)
+			edges[3] = maxOf(edges[3], bottomRight, bottomLeft)
+		}
+		return edges
+	}
 
 	@UsedByGodot
 	fun publishNearbyGame(roomName: String, gamePort: Int) {

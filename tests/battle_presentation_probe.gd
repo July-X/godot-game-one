@@ -3,6 +3,7 @@ extends Node
 const MAIN = preload("res://scenes/main.tscn")
 const BULLET = preload("res://scenes/entities/bullet.tscn")
 const PALETTE = preload("res://scripts/palette.gd")
+const SafeArea = preload("res://scripts/battle_safe_area.gd")
 const CARDS := ["pierce", "splash", "power"]
 
 var _main
@@ -38,7 +39,7 @@ func _run() -> void:
 	if DisplayServer.get_name() == "headless":
 		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 		get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
-		get_window().content_scale_size = Vector2i(1600 if _mobile else 1280, 720)
+		get_window().content_scale_size = Vector2i(1600 if _mobile and not args.has("narrow") else 1280, 720)
 	seed(1121)
 	_main = MAIN.instantiate()
 	get_tree().root.add_child(_main)
@@ -51,6 +52,8 @@ func _run() -> void:
 	_player = _main._player
 	_x = _main._screen_center_x()
 	_place_player(Vector2(_x - 156, 535))
+	# 实拍窗口中的系统鼠标移动会干扰固定航线，只从夹具注入本文的移动。
+	_player.set_process_unhandled_input(false)
 	if _mobile:
 		_main._spawn_mobile_controls()
 		_stick = _main.get_node("MobileControls")
@@ -60,6 +63,8 @@ func _run() -> void:
 		if _main._hud.has_method("_layout_battle_hud"):
 			_main._hud._layout_battle_hud()
 			_main._hud._update_platform_hints()
+		if args.has("inset"):
+			_apply_safe_area(_asymmetric_safe())
 	GameState.health_changed.connect(_health_changed)
 	_last_hp = GameState.get_current_health()
 	GameState.set_shield_layers(1, 0)
@@ -78,6 +83,8 @@ func _run() -> void:
 	_main._on_boss_spawn_requested(5)
 	_report("boss_request")
 	await _at(440)
+	if _mobile and args.has("inset"):
+		_apply_safe_area(_asymmetric_safe())
 	_boss = _main._boss
 	_boss.global_position = Vector2(_x, 187)
 	_boss.reset_physics_interpolation()
@@ -157,6 +164,8 @@ func _run() -> void:
 	await _at(1510)
 	await _capture("cruise-return")
 	_report("cruise_return")
+	if _mobile and _verify:
+		await _exercise_touch_lifecycle()
 	print("[BATTLE] SUMMARY pass=%d failed=%d" % [_passed, _failed])
 	get_tree().quit(0 if _failed == 0 else 1)
 
@@ -171,18 +180,28 @@ func _place_player(at: Vector2) -> void:
 
 func _move(direction: Vector2, pressed: bool) -> void:
 	if _mobile:
-		_touch(0, _stick._joystick_center + direction * _stick.joystick_radius * 0.8, pressed)
+		var origin := _asymmetric_safe().position + Vector2(138, 470)
+		_touch(0, origin, pressed)
+		if pressed:
+			_drag(0, origin + direction * _stick.joystick_radius * 0.8)
 	elif pressed:
 		var motion := InputEventMouseMotion.new()
 		motion.position = get_viewport().get_visible_rect().get_center()
 		motion.relative = direction * 170
-		get_viewport().push_input(motion, true)
+		_player._unhandled_input(motion)
 
-func _touch(index: int, pos: Vector2, pressed: bool) -> void:
+func _touch(index: int, pos: Vector2, pressed: bool, canceled := false) -> void:
 	var event := InputEventScreenTouch.new()
 	event.index = index
 	event.position = pos
 	event.pressed = pressed
+	event.canceled = canceled
+	get_viewport().push_input(event, true)
+
+func _drag(index: int, pos: Vector2) -> void:
+	var event := InputEventScreenDrag.new()
+	event.index = index
+	event.position = pos
 	get_viewport().push_input(event, true)
 
 func _key(code: Key) -> void:
@@ -249,11 +268,16 @@ func _report(name: String) -> void:
 		var row := hud._draft_row as HBoxContainer
 		_check("boss_and_cards_in_separate_rows", hud._draft_panel.visible and row.get_child_count() == 3 and boss_rect.has_area()
 			and boss_rect.end.y <= cards.position.y and get_viewport().get_visible_rect().encloses(cards))
+		_check("draft_centered_and_enlarged", cards.get_center().distance_to(hud._safe_rect.get_center()) < 1
+			and row.get_child(0).size.y >= 120 and row.get_child(0).get_node("CardName").get_theme_font_size("font_size") >= 19)
 		_check("draft_has_no_focus", get_viewport().gui_get_focus_owner() == null and not get_tree().paused)
 		_check("countdown_max_10_seconds", hud._draft_time_bar.max_value == 10.0 and absf(hud._draft_time_bar.value - 7.5) < 0.2)
 		if _mobile:
 			_check_safe_area()
 	if _verify and name in ["charge", "laser_and_draft", "laser_hold"]:
+		if not is_instance_valid(_boss):
+			_check("boss_alive_at_" + name, false)
+			return
 		var phase := {"charge": "蓄力", "laser_and_draft": "推进", "laser_hold": "持续"}
 		_check("boss_window_" + name, hud._boss_status_phase.text == "有盾 · 不掉血 · 激光" + phase[name])
 		_check("same_hp_fill_width_" + name, hud._boss_status_hatch.visible
@@ -261,29 +285,126 @@ func _report(name: String) -> void:
 			and is_equal_approx(hud._boss_status_fill.size.x, 500.0 * _boss.get_network_health() / _boss.get_network_max_health()))
 	if _verify and name == "charge":
 		var hit_circle := _boss.get_node("CollisionShape2D") as CollisionShape2D
+		var boss_sprite: Sprite2D = _boss._sprite
+		var player_sprite: Sprite2D = _player.get_node("Sprite2D")
+		var hull := Vector2(boss_sprite.texture.get_image().get_used_rect().size) * boss_sprite.scale
+		var swift := Vector2(player_sprite.texture.get_image().get_used_rect().size) * player_sprite.scale
 		_check("single_hp_bar_original_collision", not _boss.has_node("HealthBar") and not _boss.has_node("Label")
-			and hit_circle.shape.radius == 33.0 and _boss._sprite.scale.is_equal_approx(Vector2.ONE * (2.0 / 3.0)))
+			and hit_circle.shape.radius == 33.0 and hit_circle.global_scale.is_equal_approx(Vector2.ONE))
+		_check("enlarged_hull_at_muzzle", hull.x > swift.x * 1.5 and hull.y > swift.y * 1.2
+			and boss_sprite.global_position == _boss._ultimate_laser_start)
+		print("[BATTLE] opaque_hull=", hull, " player=", swift, " hit_radius=", hit_circle.shape.radius)
 	if _verify and name == "shield_release":
 		_check("one_release_in_boss_row", hud._boss_status_phase.text == "护盾解除 · 可攻击"
 			and not hud._boss_status_hatch.visible and hud._draft_panel.visible and boss_rect.end.y <= cards.position.y)
 
 func _check_safe_area() -> void:
 	var viewport := get_viewport()
-	var view := viewport.get_visible_rect()
-	var unsafe_edges := Rect2(Vector2(60, 14), view.size - Vector2(140, 46))
-	var area_script = load("res://scripts/battle_safe_area.gd")
-	var safe: Rect2 = area_script.from_display(viewport, viewport.get_screen_transform() * unsafe_edges)
-	_check("display_to_canvas_safe_area", safe.is_equal_approx(unsafe_edges))
+	var inset := _asymmetric_safe()
+	var safe: Rect2 = SafeArea.from_display(viewport, viewport.get_screen_transform() * inset)
+	_check("display_to_canvas_safe_area", safe.is_equal_approx(inset))
 	var hud = _main._hud
-	hud._layout_in_safe_area(safe)
-	_stick._layout_in_safe_area(safe)
+	var original: Rect2 = hud._safe_rect
+	_apply_safe_area(safe)
 	var skills: Rect2 = hud._skill_bar.get_global_rect()
-	var joystick := Rect2(_stick._joystick_center - Vector2.ONE * _stick.joystick_radius, Vector2.ONE * _stick.joystick_radius * 2.0)
-	_check("safe_controls", safe.encloses(hud._draft_panel.get_global_rect()) and safe.encloses(skills)
-		and safe.encloses(joystick) and joystick.end.x < skills.position.x)
-	# 回到实际视口的安全区，已按住的手指应持续驱动机体。
-	hud._layout_battle_hud()
-	_stick._recalc_joystick()
+	var joystick: Rect2 = _stick._base_node.get_global_rect()
+	_check("safe_controls", safe.encloses(hud._draft_panel.get_global_rect()) and safe.grow(-16).encloses(skills)
+		and safe.encloses(joystick) and joystick.end.x < skills.position.x
+		and _stick._move_touch_id == 0 and _player._motion.touch_move.x > 0.7)
+	_apply_safe_area(original)
+
+func _asymmetric_safe() -> Rect2:
+	return Rect2(Vector2(72, 34), get_viewport().get_visible_rect().size - Vector2(188, 102))
+
+func _apply_safe_area(safe: Rect2) -> void:
+	_main._hud._layout_in_safe_area(safe)
+	_stick._layout_in_safe_area(safe)
+
+func _exercise_touch_lifecycle() -> void:
+	var hud = _main._hud
+	var motion = _player._motion
+	UpgradeDraft.clear_drafts()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var safe := _asymmetric_safe()
+	_apply_safe_area(safe)
+	var outside := Vector2(safe.position.x - 1, safe.end.y - 12)
+	_touch(0, outside, true)
+	_check("outside_safe_does_not_start", _stick._move_touch_id == -1 and not _stick._ui_root.visible)
+	_touch(0, outside, false)
+	var edge := outside + Vector2(4, 0)
+	_touch(0, edge, true)
+	_check("fresh_touch_is_neutral_at_actual_origin", _stick._joystick_center.is_equal_approx(edge)
+		and _stick._move_vector == Vector2.ZERO and safe.encloses(_stick._base_node.get_global_rect()))
+	_drag(0, edge + Vector2(84, 0))
+	_check("clamped_visual_does_not_change_direction", motion.touch_move.is_equal_approx(Vector2(0.75, 0))
+		and safe.encloses(_stick._knob_node.get_global_rect()))
+	_drag(0, Vector2(safe.get_center().x + 30, edge.y))
+	_check("owned_touch_survives_crossing_half", _stick._move_touch_id == 0 and motion.touch_move == Vector2.RIGHT)
+	UpgradeDraft.offer_cards(1, ["splash", "graze_focus", "pierce"])
+	_check("reward_open_releases_owned_finger", _stick._move_touch_id == -1 and motion.touch_move == Vector2.ZERO)
+	await get_tree().process_frame
+	var card: Button = hud._draft_card_buttons[0]
+	var card_point := card.get_global_rect().get_center()
+	_drag(0, card_point)
+	_touch(0, card_point, false)
+	_check("old_finger_cannot_choose_reward", UpgradeDraft.has_draft(1) and _stick._move_touch_id == -1)
+	var narrow := Rect2(safe.position + Vector2(84, 0), Vector2(544, safe.size.y))
+	_apply_safe_area(narrow)
+	for i in 3:
+		await get_tree().process_frame
+	var fits: bool = narrow.encloses(hud._draft_panel.get_global_rect())
+	for button: Button in hud._draft_card_buttons:
+		var label := button.get_node("Description") as Label
+		fits = fits and button.get_global_rect().encloses(label.get_global_rect())
+		fits = fits and label.get_line_count() == label.get_visible_line_count()
+	_check("narrow_reward_wraps_full_description", fits and card.size.x < 188)
+	await _capture("narrow-reward")
+	card_point = card.get_global_rect().position + Vector2(8, card.size.y - 8)
+	_touch(1, card_point, true)
+	_touch(1, card_point, false)
+	_check("whole_card_taps_without_starting_stick", not UpgradeDraft.has_draft(1)
+		and _stick._move_touch_id == -1 and UpgradeDraft.get_draft(1).source == "tap")
+	_apply_safe_area(safe)
+	var next := edge + Vector2(120, -106)
+	_touch(0, next, true)
+	_drag(0, next - Vector2(0, 84))
+	_check("next_touch_relocates_center", _stick._joystick_center.is_equal_approx(next) and motion.touch_move.y < -0.7)
+	_touch(0, next, true, true)
+	_check("os_canceled_touch_clears_move", _stick._move_touch_id == -1 and motion.touch_move == Vector2.ZERO)
+	_touch(0, next, true)
+	_drag(0, next + Vector2(0, 84))
+	_stick.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	_check("background_clears_move", _stick._move_touch_id == -1 and motion.touch_move == Vector2.ZERO)
+	_touch(0, next, true)
+	_drag(0, next + Vector2(0, 84))
+	get_tree().paused = true
+	_check("pause_clears_move", _stick._move_touch_id == -1 and motion.touch_move == Vector2.ZERO)
+	_touch(1, edge, true)
+	get_tree().paused = false
+	_drag(1, edge + Vector2(84, 0))
+	_touch(1, edge, false)
+	_check("paused_touch_cannot_resume_movement", motion.touch_move == Vector2.ZERO and not _stick._ui_root.visible)
+	_touch(0, next, true)
+	_drag(0, next + Vector2(84, 0))
+	_main._on_player_died()
+	await get_tree().process_frame
+	_check("gameover_releases_stick_and_has_safe_button", not _stick.visible and _stick._move_touch_id == -1
+		and motion.touch_move == Vector2.ZERO and safe.grow(-16).encloses(hud._restart_button.get_global_rect()))
+	var result_button: Vector2 = hud._restart_button.get_global_rect().get_center()
+	var finished_id: int = _main.get_instance_id()
+	_touch(0, result_button, false)
+	_touch(1, edge, true)
+	_touch(1, edge, false)
+	await get_tree().process_frame
+	_check("result_ignores_old_release_and_blank_press", is_instance_valid(_main) and not GameState.game_running)
+	_touch(1, result_button, true)
+	_touch(1, result_button, false)
+	for i in 8:
+		await get_tree().process_frame
+	var restarted := get_tree().current_scene
+	_check("result_button_restarts", is_instance_valid(restarted) and restarted.get_instance_id() != finished_id
+		and GameState.game_running)
 
 func _check(label: String, ok: bool) -> void:
 	print("[BATTLE] %s pass=%s" % [label, ok])

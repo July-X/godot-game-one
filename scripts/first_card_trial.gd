@@ -63,6 +63,9 @@ func _ready() -> void:
 	$TrialUI/Options/Back.pressed.connect(func():
 		if is_inside_tree():
 			get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn"), CONNECT_DEFERRED)
+	$TrialUI/Options.minimum_size_changed.connect(_layout_trial_options)
+	get_viewport().size_changed.connect(_layout_trial_options)
+	get_window().focus_entered.connect(_layout_trial_options)
 	UpgradeDraft.card_chosen.connect(_start_trial)
 	if from_draft:
 		_player.position = get_viewport_rect().size * Vector2(.50, .78)
@@ -87,6 +90,7 @@ func _on_level_up(new_level: int) -> void:
 	_player.set_process_unhandled_input(false)
 	_player.on_level_up()
 	$TrialUI/Options.show()
+	_layout_trial_options()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_hud.set_draft_prompt("首卡试飞 · 选定后进场 · 超时取第一张")
 	UpgradeDraft.offer_cards(1, FIRST_OFFER)
@@ -191,7 +195,18 @@ func _physics_process(_delta: float) -> void:
 		$TrialUI/Options/Power.hide()
 		$TrialUI/Options/Retry.show()
 		$TrialUI/Options.show()
+		_layout_trial_options()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _layout_trial_options() -> void:
+	var options: Control = $TrialUI/Options
+	if not options.visible:
+		return
+	var safe := SafeArea.for_viewport(get_viewport()).grow(-SafeArea.MENU_MARGIN)
+	options.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	options.size = options.get_combined_minimum_size()
+	options.position = Vector2(safe.get_center().x - options.size.x * 0.5,
+		minf(safe.position.y + safe.size.y / 3.0, safe.end.y - options.size.y)).round()
 
 func _layout_action_hint() -> void:
 	if not _action_hint.visible:
