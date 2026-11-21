@@ -7,6 +7,7 @@ const ICE := Color("#b9dcf2")
 var _age := 0.0
 var _duration := HIT_SECONDS
 var _core_pickup := false
+var _shield_hit := false
 
 func _ready() -> void:
 	reset()
@@ -14,8 +15,13 @@ func _ready() -> void:
 func start_core_pickup() -> void:
 	start(true)
 
+func start_shield_hit() -> void:
+	start()
+	_shield_hit = true
+
 func start(core_pickup := false) -> void:
 	_core_pickup = core_pickup
+	_shield_hit = false
 	_duration = CORE_SECONDS if core_pickup else HIT_SECONDS
 	_age = 0.0
 	show()
@@ -43,6 +49,11 @@ func _draw() -> void:
 			var axis := Vector2.from_angle(TAU * i / 8.0)
 			var tangent := axis.orthogonal() * lerpf(3.5, 1.0, t)
 			draw_line((axis * radius - tangent).round(), (axis * radius + tangent).round(), gold, 2.0)
+	elif _shield_hit:
+		var gold := Color(GOLD, 1.0 - t)
+		for side: int in [-1, 1]:
+			var x := roundf(side * lerpf(3.0, 9.0, t))
+			draw_line(Vector2(x - 2, 3), Vector2(x + 2, -3), gold, 2)
 	else:
 		var ice := Color(ICE, 1.0 - t)
 		if t < 0.35:

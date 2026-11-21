@@ -23,12 +23,12 @@ const CARDS: Array[Dictionary] = [
 	# ── 改变操作方式（构筑的核心）────────────────────────────
 	{
 		"id": "pierce", "icon": "pierce", "name": "贯穿弹芯", "kind": "style",
-		"desc": "多贯穿 1 个敌人",
+		"desc": "对准纵列，一弹多穿一架",
 		"max_stacks": 3,
 	},
 	{
 		"id": "splash", "icon": "splash", "name": "溅射弹头", "kind": "style",
-		"desc": "命中小范围爆炸",
+		"desc": "等敌机聚拢，一击波及近邻",
 		"max_stacks": 2,
 	},
 	{
@@ -43,7 +43,7 @@ const CARDS: Array[Dictionary] = [
 	},
 	{
 		"id": "graze_focus", "icon": "graze_focus", "name": "擦弹专注", "kind": "style",
-		"desc": "擦弹 +8px",
+		"desc": "贴弹边攒射速，感应圈 +8px",
 		"max_stacks": 3,
 	},
 	# ── 数值（最多一半，与上面混合）──────────────────────────
@@ -115,7 +115,11 @@ func open_draft(peer_id: int) -> Array:
 		var tmp: Variant = pool[i]
 		pool[i] = pool[j]
 		pool[j] = tmp
-	var picks: Array = pool.slice(0, mini(DRAFT_POOL_SIZE, pool.size()))
+	return offer_cards(peer_id, pool.slice(0, mini(DRAFT_POOL_SIZE, pool.size())))
+
+
+## 试飞指定候选，实际选择、超时和加成都走普通升级流程。
+func offer_cards(peer_id: int, picks: Array) -> Array:
 	_drafts[peer_id] = {"cards": picks, "left": DRAFT_TIMEOUT_SECONDS, "chosen": false}
 	draft_opened.emit(peer_id, picks)
 	return picks

@@ -191,8 +191,6 @@ func _rpc_play_sfx(sound: String) -> void:
 		"player_hurt":
 			if SFX and SFX.has_method("play_player_hurt"):
 				SFX.play_player_hurt()
-			if multiplayer.is_server():
-				_rpc_play_sfx.rpc("player_hurt")
 		"explosion":
 			if SFX and SFX.has_method("play_explosion"):
 				SFX.play_explosion()
@@ -444,6 +442,9 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 			max_health = s.max_health
 			health_changed.emit(current_health, max_health)
 		SFX.play_player_hurt()
+		# P2 的扣血在房主结算，沿用音效消息通知受击者。
+		if NetworkManager.is_online() and multiplayer.is_server() and pid in NetworkManager.connected_peers:
+			_rpc_play_sfx.rpc_id(pid, "player_hurt")
 		if int(s.current_health) <= 0 and _is_local_peer(pid) and not NetworkManager.is_online():
 			game_over.emit(score, level)
 	if int(s.current_health) <= 0:
@@ -664,6 +665,7 @@ func get_shoot_cooldown(peer_id: int = -1) -> float:
 var _graze_stacks: int = 0
 var _graze_last_msec: int = 0
 var _graze_since_stack: int = 0
+var _graze_window_msec: int = GRAZE_WINDOW_MSEC
 
 ## 每层提供的射速加成
 const GRAZE_STACK_BONUS: float = 0.04
@@ -677,7 +679,8 @@ const GRAZE_WINDOW_MSEC: int = 2000
 
 
 ## 记录一次擦弹。每 GRAZE_THRESHOLD 次累计擦弹升 1 层。
-func add_graze(now_msec: int) -> int:
+func add_graze(now_msec: int, peer_id: int = -1) -> int:
+	_graze_window_msec = get_graze_window_msec(peer_id)
 	_graze_last_msec = now_msec
 	if _graze_since_stack < GRAZE_THRESHOLD - 1:
 		_graze_since_stack += 1
@@ -689,15 +692,11 @@ func add_graze(now_msec: int) -> int:
 
 ## 当前射速加成 0~0.4。超时会自动归零（惰性判定，无需每帧维护）
 func get_graze_fire_rate_bonus() -> float:
-	if _graze_stacks <= 0:
-		return 0.0
-	if Time.get_ticks_msec() - _graze_last_msec > GRAZE_WINDOW_MSEC:
-		return 0.0
-	return float(_graze_stacks) * GRAZE_STACK_BONUS
+	return float(get_graze_stacks()) * GRAZE_STACK_BONUS
 
 
 func get_graze_stacks() -> int:
-	if Time.get_ticks_msec() - _graze_last_msec > GRAZE_WINDOW_MSEC:
+	if Time.get_ticks_msec() - _graze_last_msec > _graze_window_msec:
 		return 0
 	return _graze_stacks
 
@@ -707,6 +706,7 @@ func get_graze_ratio() -> float:
 
 
 func reset_graze() -> void:
+	_graze_window_msec = GRAZE_WINDOW_MSEC
 	_graze_stacks = 0
 	_graze_since_stack = 0
 	_graze_last_msec = 0

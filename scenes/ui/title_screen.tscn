@@ -76,6 +76,18 @@ text = "🎮  单人游戏"
 theme_override_font_sizes/font_size = 22
 theme_override_colors/font_color = Color(0.6, 0.85, 1, 1)
 
+[node name="BtnFirstCard" type="Button" parent="."]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = 236.0
+offset_right = 140.0
+offset_bottom = 284.0
+text = "首卡试飞"
+theme_override_font_sizes/font_size = 20
+
 [node name="VersionLabel" type="Label" parent="."]
 anchors_preset = 10
 anchor_left = 1.0

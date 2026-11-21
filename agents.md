@@ -24,7 +24,7 @@
 - **联机**：2 人本地合作（P1 房主 / P2 加入），Wi-Fi LAN + 鸿蒙近场发现 + ENet 战斗同步。
 - **主场景**：`scenes/ui/title_screen.tscn`（入口分流），战斗场景 `scenes/main.tscn`。
 - **代码结构权威**：`docs/architecture.md`。该文档与代码冲突时以代码为准，并回头修文档。
-- **固定项目目录**：`/Users/zhongxingxing/2026/code/godot-game-one`。
+- **固定项目目录**：`/Users/zhongxingxing/2026/code/godot-game-one`。后续开发、测试和提交直接在这个工作树的 `master` 分支上进行。
 - **历史包袱**：`backup_3d/` 是已废弃的旧 3D 版本存档，**不是**设计依据，不要参考。
 
 ## 2. 开发优先级
@@ -145,6 +145,10 @@ godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 ```
 
 改战斗背景、雨燕或拾取与命中特效时运行 `godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn`。用图形模式并追加 `-- capture /已有目录/前缀` 可保存四帧，在同一构图中检查敌弹遮挡。
+
+改战斗音画反馈时，运行 `godot --headless --fixed-fps 60 --path . res://tests/combat_feedback_probe.tscn` 和 `bash tests/run_probe.sh 7855 feedback`。前者复播固定事件，后者用两个进程检查两次破盾、命中与击毁。图形录制和电平对照见 `docs/art_audio_pipeline.md`。
+
+改首卡或试飞敌阵时，运行 `python3 tests/run_first_card_probe.py /tmp/first-card-results`。八组冻结轨迹须逐架、逐弹一致，同一路线须逐帧走位一致。普通导演和试飞的完整流程均要区分按键、超时，跑到首只 Boss 实际受伤。[验证口径](docs/first_card_trial.md)
 
 ## 7. 工作约束
 

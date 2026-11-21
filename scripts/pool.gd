@@ -33,6 +33,15 @@ func acquire(type_name: String, _scene: PackedScene) -> Node:
 	node.tree_exiting.connect(func(): _active.erase(node), CONNECT_ONE_SHOT)
 	return node
 
+func spawn_hit(pos: Vector2, shielded := false) -> void:
+	var hit := acquire("hit_effect", preload("res://scenes/effects/hit_effect.tscn"))
+	get_tree().current_scene.add_child(hit)
+	hit.global_position = pos
+	if shielded:
+		hit.start_shield_hit()
+	else:
+		hit.start()
+
 ## 回收单个节点
 func release(node: Node) -> void:
 	if node == null or not is_instance_valid(node):

@@ -65,6 +65,7 @@ var _player_report_received: int = 0
 var _player_report_sent: int = 0
 var _player_report_rejected: int = 0
 var _last_entity_resync_request_msec: int = 0
+var _pending_impact := PackedFloat32Array()
 var _boss_reward_claimed_peers: Dictionary = {}
 const ENTITY_SYNC_INTERVAL: float = 0.022
 const ENTITY_SYNC_STRIDE: int = 3
@@ -1001,7 +1002,7 @@ static func compute_post_elite_multiplier(elite_count: int) -> float:
 ## 章节主题（wave_director.gd CHAPTER_THEMES）改的是**怎么躲**而不是"躲不躲得过"：
 ## 弹速变快的同时敌人变脆、开火变密，玩家的最优应对从"站桩输出"变成
 ## "贴脸抢输出窗口"。手感因此一章一换，而难度总量没变。
-func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> void:
+func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> CharacterBody2D:
 	var enemy = _enemy_scene.instantiate()
 	enemy.position = pos
 	enemy.enemy_type = enemy_type
@@ -1030,6 +1031,7 @@ func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> void:
 			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, mult,
 			enemy.bullet_speed_mult)
 	add_child(enemy)
+	return enemy
 
 func _on_enemy_died() -> void:
 	pass
@@ -1040,8 +1042,7 @@ func _on_network_enemy_died(entity_id: int) -> void:
 	if _entities.has(entity_id):
 		_entities.erase(entity_id)
 	if multiplayer.is_server():
-		_rpc_despawn_entity.rpc(entity_id)
-		GameState._rpc_play_sfx.rpc("enemy_death")
+		_rpc_despawn_entity.rpc(entity_id, true)
 
 ## Client → Host（经 GameState 转发）：敌人受击
 func _on_network_enemy_hit(entity_id: int, damage: int, attacker_peer_id: int = -1) -> void:
@@ -1223,7 +1224,7 @@ func _on_elite_died() -> void:
 		if _entities.has(eid):
 			_entities.erase(eid)
 		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
-			_rpc_despawn_entity.rpc(eid)
+			_rpc_despawn_entity.rpc(eid, true)
 	_elite = null
 	GameState.post_elite_multiplier = compute_post_elite_multiplier(GameState.elite_encounter_count)
 	if _pending_boss_level > 0 and GameState.game_running:
@@ -1885,6 +1886,8 @@ func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
 		return
 	if _despawned_entity_ids.has(eid):
 		return
+	if is_instance_valid(_elite) and _entities.get(eid) == _elite and not _elite.is_queued_for_deletion():
+		return  # 同一实体的补发快照随后会同步血盾值，保留其破盾状态。
 	if _entities.has(eid):
 		var old_node: Node = _entities[eid]
 		if is_instance_valid(old_node):
@@ -2039,11 +2042,13 @@ func _rpc_spawn_asteroid(eid: int, pos_x: float, pos_y: float) -> void:
 
 ## Host → Client：销毁实体
 @rpc("authority", "reliable", "call_remote")
-func _rpc_despawn_entity(eid: int) -> void:
+func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
 	_despawned_entity_ids[eid] = true
 	if _entities.has(eid):
 		var node = _entities[eid]
 		if is_instance_valid(node):
+			if combat_kill and node.has_method("play_death_feedback"):
+				node.play_death_feedback()
 			node.queue_free()
 		_entities.erase(eid)
 	_entity_target_positions.erase(eid)
@@ -2066,7 +2071,12 @@ func _rpc_despawn_entity(eid: int) -> void:
 
 ## Host → Client：实体位置批量同步
 @rpc("authority", "unreliable", "call_remote")
-func _rpc_sync_entity_positions(data: PackedFloat32Array) -> void:
+func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat32Array()) -> void:
+	if impact.size() == 3:
+		var shielded: bool = impact[2] > 0.0
+		Pool.spawn_hit(Vector2(impact[0], impact[1]), shielded)
+		if not shielded:
+			SFX.play_hit_confirm(SHAKE_HIT)
 	var i := 0
 	while i + ENTITY_SYNC_STRIDE - 1 < data.size():
 		var eid := int(data[i])
@@ -2143,8 +2153,13 @@ func _batch_sync_entity_health() -> void:
 	if health_data.size() > 0:
 		_rpc_sync_entity_health.rpc(health_data)
 
+## 加入端的子弹只渲染。随已有位置包捎带一个确认落点，避免每发子弹单独通信。
+func register_projectile_impact(pos: Vector2, shielded: bool) -> void:
+	if _pending_impact.is_empty():
+		_pending_impact = PackedFloat32Array([pos.x, pos.y, float(shielded)])
+
 func _batch_sync_entity_positions() -> void:
-	if _entities.is_empty():
+	if _entities.is_empty() and _pending_impact.is_empty():
 		return
 	var data := PackedFloat32Array()
 	var shield_data := PackedFloat32Array()
@@ -2162,7 +2177,10 @@ func _batch_sync_entity_positions() -> void:
 			if node.has_method("get_network_rotation") and node.has_method("apply_network_rotation"):
 				rotation_data.append(eid as float)
 				rotation_data.append(float(node.get_network_rotation()))
-	if data.size() > 0:
+	if not _pending_impact.is_empty():
+		_rpc_sync_entity_positions.rpc(data, _pending_impact)
+		_pending_impact.clear()
+	elif not data.is_empty():
 		_rpc_sync_entity_positions.rpc(data)
 	if shield_data.size() > 0:
 		_rpc_sync_entity_shields.rpc(shield_data)
@@ -2310,6 +2328,7 @@ func broadcast_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time:
 		_rpc_show_boss_ultimate_laser_fire.rpc(from.x, from.y, to.x, to.y, travel_time, width, hold_duration)
 
 func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
+	SFX.play_boss_warning()
 	var visual := Node2D.new()
 	visual.set_script(_boss_ultimate_laser_visual_script)
 	add_child(visual)

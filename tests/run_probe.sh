@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 双进程 headless 联机回归门禁。
 #
-#   tests/run_probe.sh [端口] [wide-host|wide-client]
+#   tests/run_probe.sh [端口] [feedback|wide-host|wide-client]
 #
 # 做三件人工流程做不到的事：
 #   1. 自动收口两个进程的退出码（探针断言失败 → 非零退出）
@@ -19,7 +19,8 @@ CASE="${2:-}"
 case "$CASE" in
   "") SCENE=res://tests/lan_probe.tscn ;;
   wide-host|wide-client) SCENE=res://tests/mixed_viewport_probe.tscn ;;
-  *) echo "用法: $0 [端口] [wide-host|wide-client]" >&2; exit 2 ;;
+  feedback) SCENE=res://tests/feedback_lan_probe.tscn ;;
+  *) echo "用法: $0 [端口] [feedback|wide-host|wide-client]" >&2; exit 2 ;;
 esac
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"

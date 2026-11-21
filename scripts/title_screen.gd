@@ -10,6 +10,7 @@ func _ready() -> void:
 	_start_blink()
 	_btn_single.pressed.connect(_on_single_pressed)
 	_btn_multi.pressed.connect(_on_multiplayer_pressed)
+	$BtnFirstCard.pressed.connect(_start_game.bind("res://scenes/first_card_trial.tscn"))
 
 
 func _start_blink() -> void:
@@ -21,17 +22,17 @@ func _start_blink() -> void:
 func _input(event: InputEvent) -> void:
 	## 仅保留键盘快捷键，避免移动端误触空白区域直接进单机
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_W or event.keycode == KEY_ENTER:
+		if event.keycode == KEY_W or (event.keycode == KEY_ENTER and get_viewport().gui_get_focus_owner() == null):
 			_start_game()
 
 
-func _start_game() -> void:
+func _start_game(scene_path := "res://scenes/main.tscn") -> void:
 	## 单机模式入口前先清理可能残留的联机状态，
 	## 避免上次联机会话影响单机 authority / 输入链路。
 	NetworkDiscovery.stop_all()
 	HarmonyBridge.stop_all()
 	NetworkManager.disconnect_network()
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	get_tree().change_scene_to_file(scene_path)
 
 
 func _on_multiplayer_pressed() -> void:

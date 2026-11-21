@@ -9,6 +9,7 @@ const Palette = preload("res://scripts/palette.gd")
 @onready var _action_router: Node = _player.get_node("ActionRouter") if _player.has_node("ActionRouter") else null
 
 var _shoot_timer: float = 0.0
+var _muzzle_tween: Tween
 var _missile_timer: float = 0.0
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
@@ -151,17 +152,20 @@ func fire_laser() -> void:
 			var _m = get_tree().current_scene
 			if _m and _m.has_method("register_laser_spawn"):
 				_m.register_laser_spawn(pos, angle, damage, _player.peer_id)
-	SFX.play_shoot()
+	SFX.play_laser()
 
 
 func _show_muzzle_flash() -> void:
 	var muzzle_flash := _player.get_node("MuzzleFlash") as Sprite2D if _player.has_node("MuzzleFlash") else null
 	if not muzzle_flash:
 		return
-	muzzle_flash.visible = true
-	var tween := create_tween()
-	tween.tween_property(muzzle_flash, "modulate:a", 0.0, 0.06)
-	tween.tween_callback(func(): muzzle_flash.visible = false)
+	if _muzzle_tween:
+		_muzzle_tween.kill()
+	muzzle_flash.modulate.a = 0.85
+	muzzle_flash.show()
+	_muzzle_tween = create_tween()
+	_muzzle_tween.tween_property(muzzle_flash, "modulate:a", 0.0, 0.055)
+	_muzzle_tween.tween_callback(muzzle_flash.hide)
 
 
 func _consume_actions() -> void:

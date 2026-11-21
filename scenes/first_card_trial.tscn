@@ -1,0 +1,33 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1"]
+[ext_resource type="Script" path="res://scripts/first_card_trial.gd" id="2"]
+
+[node name="FirstCardTrial" instance=ExtResource("1")]
+script = ExtResource("2")
+
+[node name="TrialUI" type="CanvasLayer" parent="."]
+layer = 5
+
+[node name="Options" type="HBoxContainer" parent="TrialUI"]
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -256.0
+offset_top = 240.0
+offset_right = 256.0
+offset_bottom = 290.0
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="Power" type="Button" parent="TrialUI/Options"]
+custom_minimum_size = Vector2(192, 48)
+text = "[4] 数值对照 · 威力 +3"
+
+[node name="Retry" type="Button" parent="TrialUI/Options"]
+visible = false
+custom_minimum_size = Vector2(164, 48)
+text = "再选一张"
+
+[node name="Back" type="Button" parent="TrialUI/Options"]
+custom_minimum_size = Vector2(140, 48)
+text = "返回标题"

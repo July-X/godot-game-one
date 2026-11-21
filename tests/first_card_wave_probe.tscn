@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/first_card_trial.tscn" id="1"]
+[ext_resource type="Script" path="res://tests/first_card_wave_probe.gd" id="2"]
+
+[node name="FirstCardTrial" instance=ExtResource("1")]
+from_draft = true
+
+[node name="Probe" type="Node" parent="."]
+script = ExtResource("2")
