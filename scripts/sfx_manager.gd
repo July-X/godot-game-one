@@ -1,5 +1,7 @@
 extends Node
 
+signal priority_cue(duration: float)
+
 var _players: Array[AudioStreamPlayer] = []
 var _shoot_players: Array[AudioStreamPlayer] = []
 # 总预算 24 声部；密集命中只能占用共享池。
@@ -219,9 +221,11 @@ func play_elite_death() -> void:
 
 func play_boss_warning() -> void:
 	_warning_voice.play()
+	priority_cue.emit(_stream_boss_warning.get_length())
 
 func play_player_hurt() -> void:
 	_hurt_voice.play()
+	priority_cue.emit(_stream_player_hurt.get_length())
 
 func play_ui_confirm() -> void:
 	_play_stream(_stream_ui_confirm, _players)

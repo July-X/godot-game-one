@@ -39,6 +39,7 @@ func _ready() -> void:
 		GameState.level_up()
 
 func _exit_tree() -> void:
+	super._exit_tree()
 	UpgradeDraft.clear_drafts()
 
 func _on_level_up(new_level: int) -> void:

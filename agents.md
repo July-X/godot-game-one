@@ -150,6 +150,8 @@ godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
 改战斗音画反馈时，运行 `godot --headless --fixed-fps 60 --path . res://tests/combat_feedback_probe.tscn` 和 `bash tests/run_probe.sh 7855 feedback`。前者复播固定事件，后者用两个进程检查两次破盾、命中与击毁。图形录制和电平对照见 `docs/art_audio_pipeline.md`。
 
+改战斗 HUD、太空背景或主题音乐时，用固定构图回放核对激光与选卡同屏，并跑背景开关的同种子轨迹。音乐切换还需在 Boss 专项中检查两端巡航、进场、击败、重试和离场。[验收与复跑命令](docs/art_audio_pipeline.md#战斗界面远行与裂隙)
+
 改 Boss 护盾解除、击败掉落或奖励同步时，运行 `bash tests/run_probe.sh 18870 boss`。单人实弹、炸弹、同帧结算与换场可从 `tests/boss_lifecycle_probe.tscn` 独立复跑。[脚本参数和验收记录](docs/boss_pace_baseline.md#护盾与掉落修复复查)
 
 改首卡或试飞敌阵时，运行 `python3 tests/run_first_card_probe.py /tmp/first-card-results`。八组冻结轨迹须逐架、逐弹一致，同一路线须逐帧走位一致。普通导演和试飞的完整流程均要区分按键、超时，跑到首只 Boss 实际受伤。[验证口径](docs/first_card_trial.md)

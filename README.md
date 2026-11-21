@@ -95,7 +95,7 @@ godot-game-one/
 - **例外**：Boss（`boss_01`~`boss_05`）与玩家等级外形（`lv01`~`lv05`）使用仓库 AI 生成的 PNG
 - 普通命中和普通敌机击毁使用离线生成的 PixelFX 图集。冰蓝火花标记接触处，暖色碎片标记击毁中心。[实拍与素材归属](./docs/art_audio_pipeline.md#普通命中与普通敌机击毁的-pixelfx-对照)
 - **音效**：`scripts/sfx_manager.gd` 程序化合成 8-bit 风格音效
-- **BGM**：`scripts/bgm_manager.gd` 程序化合成正弦波主题音乐
+- **背景音乐**：巡航与 Boss 使用同一原创四音动机，保留两段各自的编排和循环。激光预警、玩家受击时音乐短暂衰减。[战斗界面、背景与音画复跑](./docs/art_audio_pipeline.md#战斗界面远行与裂隙)
 
 ## 联机模式
 

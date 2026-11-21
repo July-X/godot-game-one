@@ -14,7 +14,7 @@ var collected: Array[String] = []
 var deaths := 0
 var health_at_death := 0.0
 var shot_hit := false
-var client_stage := 0
+var client_stage := -1
 var origin := TARGET
 var reward_before := {}
 var p2 := 0
@@ -46,10 +46,24 @@ func _run() -> void:
 	if NetworkManager.is_online():
 		p2 = NetworkManager.connected_peers[0] if _role == "host" else multiplayer.get_unique_id()
 		p2_speed = GameState.get_shoot_speed_level(p2)
+		_check("starts_in_cruise", await _wait_until(_presentation.bind(false), 3), "")
+		var callsign: Label = _main._hud._local_pilot.get_node("Rows/Callsign")
+		_check("local_pilot_slot", callsign.text == ("P1 ━ 本机" if _role == "host" else "P2 ═ 本机"), callsign.text)
+		if _role == "client":
+			_ack.rpc_id(1, 0)
+		elif not _require("both_peers_in_cruise_before_boss", await _wait_until(func(): return client_stage >= 0, 5)):
+			return
 	if _role != "client":
 		_main._spawn_boss(5)
 	if not _require("boss_in_tree", await _wait_until(func(): return is_instance_valid(_main._boss), 5)):
 		return
+	if NetworkManager.is_online():
+		_check("boss_background_and_music", await _wait_until(_presentation.bind(true), 3), "")
+		if _role == "client":
+			BGM.stop_bgm()
+			_main._backdrop.set_boss_mode(false)
+			_main._request_player_sync.rpc_id(1)
+			_check("player_snapshot_restores_active_stage", await _wait_until(_presentation.bind(true), 3), "")
 	_boss = _main._boss
 	_boss.set_physics_process(false)
 	if _role in ["bomb", "game-over", "scene-exit"]:
@@ -57,6 +71,8 @@ func _run() -> void:
 	elif await _shield_cycle():
 		await _shoot_and_collect()
 	_check("no_orphan_shards", _orphan_shards() == 0, str(_orphan_shards()))
+	if NetworkManager.is_online() and _role in ["host", "client"]:
+		await _retry_and_leave()
 	get_tree().quit(_summarize())
 
 func _require(label: String, value: bool) -> bool:
@@ -82,13 +98,24 @@ func _shield_cycle() -> bool:
 		_boss.set_physics_process(true)
 	if not _require("shield_raised", await _wait_until(func(): return is_instance_valid(_boss._boss_shield_circle), 5)):
 		return false
+	if NetworkManager.is_online():
+		_check("hud_shield_charge", await _wait_until(_hud_says.bind("护盾中 · 激光蓄力"), 1.5), "")
 	if _role != "client":
 		if not _require("laser_fired", await _wait_until(func(): return _boss._ultimate_laser_firing, 4)):
 			return false
+		if _role == "host":
+			# 出光后停在另一侧，让报文和实拍有时间观察推进。
+			_main._player.global_position = Vector2(740, 530)
+	if NetworkManager.is_online():
+		_check("hud_shield_sweep", await _wait_until(_hud_says.bind("护盾中 · 激光推进"), 4.0), "")
+		await _capture_boss_and_cards()
+	if _role != "client":
 		_boss._ultimate_laser_fire_timer = 0
 	if not _require("shield_ended", await _wait_until(func(): return _boss._boss_shield_circle == null, 5)):
 		return false
 	_boss.set_physics_process(false)
+	if NetworkManager.is_online():
+		_check("hud_attack_window_open", await _wait_until(_hud_says.bind("可攻击"), 1.5), "")
 	if _role == "host":
 		_main._rpc_destroy_boss_shield.rpc()
 	elif _role == "solo":
@@ -227,6 +254,79 @@ func _alternate_death() -> void:
 func _reward_count(id: int) -> int:
 	return roundi(GameState.get_laser_cd_bonus(id) + GameState.get_extra_bullet_count(id) +
 			GameState.get_extra_damage_bonus(id) / 2.0 + GameState.get_move_speed_bonus(id) / 0.1)
+
+func _hud_says(text: String) -> bool:
+	var label = _main._hud._boss_status_phase
+	return is_instance_valid(label) and label.text == text
+
+func _presentation(boss: bool) -> bool:
+	var player: AudioStreamPlayer = BGM._bgm_player
+	var backdrop = _main._backdrop
+	return _main._boss_fight_active == boss and player.playing and player.max_polyphony == 1 and BGM.get_child_count() == 1 \
+		and BGM._track_gain >= 0.999 and player.stream == (BGM._boss if boss else BGM._cruise) \
+		and backdrop.get_node("Panorama").texture == (backdrop.RIFT if boss else backdrop.CRUISE)
+
+func _retry_and_leave() -> void:
+	_check("boss_defeat_returns_to_cruise_once", is_instance_valid(_main) and await _wait_until(_presentation.bind(false), 3), "")
+	var playback: AudioStreamPlayback = BGM._bgm_player.get_stream_playback()
+	if _role == "client":
+		_main._request_player_sync.rpc_id(1)
+	await _wait_seconds(0.25)
+	_check("duplicate_stage_does_not_restart_voice", playback == BGM._bgm_player.get_stream_playback(), "")
+	if _role == "client":
+		_ack.rpc_id(1, 3)
+	elif await _wait_until(func(): return client_stage >= 3, 4):
+		_main._finish_multiplayer_game_over(GameState.score, GameState.level)
+	else:
+		_check("p2_ready_for_game_over", false, "")
+		return
+	_check("game_over_stops_music", await _wait_until(func(): return not GameState.game_running and not BGM._bgm_player.playing, 5), "")
+	if _role == "client":
+		_ack.rpc_id(1, 4)
+	elif await _wait_until(func(): return client_stage >= 4, 4):
+		_main._restart()
+	else:
+		_check("p2_ready_for_retry", false, "")
+		return
+	if not _require("retry_loaded_new_battle", await _wait_until(func():
+		var current := get_tree().current_scene
+		return is_instance_valid(current) and not is_same(current, _main) and current.scene_file_path == MAIN_SCENE, 8)):
+		return
+	_main = get_tree().current_scene
+	_check("retry_has_one_cruise_voice", await _wait_until(_presentation.bind(false), 3), "")
+	if _role == "client":
+		_ack.rpc_id(1, 5)
+	elif await _wait_until(func(): return client_stage >= 5, 4):
+		_leave_battle.rpc()
+	var title_loaded := await _wait_until(func():
+		var scene := get_tree().current_scene
+		return scene != null and scene.scene_file_path == "res://scenes/ui/title_screen.tscn", 5)
+	await _wait_seconds(0.6)
+	_check("leaving_battle_cancels_music", title_loaded and not BGM._bgm_player.playing and BGM._target_stream == null, "")
+
+@rpc("authority", "reliable", "call_local")
+func _leave_battle() -> void:
+	get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn")
+
+func _capture_boss_and_cards() -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.size() < 4 or args[2] != "capture" or DisplayServer.get_name() == "headless":
+		if _role == "host":
+			await _wait_seconds(0.35)
+		return
+	var hud = _main._hud
+	if _role == "client":
+		_main._spawn_mobile_controls()
+		hud._layout_battle_hud()
+		hud._update_platform_hints()
+	UpgradeDraft.offer_cards(_main._player.peer_id, ["pierce", "splash", "power"])
+	await _wait_seconds(0.23)
+	await RenderingServer.frame_post_draw
+	var frame := get_viewport().get_texture().get_image()
+	_check("captured_lan_presentation", frame.save_png(args[3].path_join(_role + "-laser-and-draft.png")) == OK, "")
+	UpgradeDraft.clear_drafts()
+	if _role == "host":
+		await _wait_seconds(0.27)
 
 func _orphan_shards() -> int:
 	var count := 0

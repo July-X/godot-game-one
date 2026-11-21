@@ -194,8 +194,8 @@ func _ready() -> void:
 	if OS.has_feature("android") or OS.has_feature("ios"):
 		_spawn_mobile_controls()
 	_spawn_hud()
-	_start_bgm()
 	GameState.reset_game()
+	_rpc_set_boss_bg(false)
 	GameState.level_changed.connect(_on_level_up)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
@@ -252,8 +252,8 @@ func _debug_log_variant_assets() -> void:
 
 	print("[variants] boss=", boss_count, " player=", player_count)
 
-func _start_bgm() -> void:
-	BGM.play_bgm()
+func _exit_tree() -> void:
+	BGM.stop_bgm()
 
 func _spawn_player() -> void:
 	_player = _player_scene.instantiate()
@@ -1184,19 +1184,13 @@ func _update_boss_hud() -> void:
 		_boss.get_phase_name(), Boss.ATTACK_WINDOW_LABELS[window], window >= Boss.AttackWindow.CHARGING)
 
 func _enter_boss_fight_mode() -> void:
-	_boss_fight_active = true
 	_clear_non_boss_entities()
 	_rpc_set_boss_bg(true)
-	if BGM and BGM.has_method("play_boss_bgm"):
-		BGM.play_boss_bgm()
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_set_boss_bg.rpc(true)
 
 func _exit_boss_fight_mode() -> void:
-	_boss_fight_active = false
 	_rpc_set_boss_bg(false)
-	if BGM and BGM.has_method("play_bgm"):
-		BGM.play_bgm()
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_set_boss_bg.rpc(false)
 
@@ -1355,6 +1349,7 @@ func _rpc_force_game_over(final_score: int, final_level: int) -> void:
 		_hud._on_game_over(final_score, final_level)
 
 func _clear_runtime_entities_on_game_over() -> void:
+	_rpc_set_boss_bg(false)
 	for n in get_tree().get_nodes_in_group("enemies"):
 		if n and is_instance_valid(n):
 			n.queue_free()
@@ -1490,6 +1485,8 @@ func _request_player_sync() -> void:
 		return
 	var requester := multiplayer.get_remote_sender_id()
 	_send_player_snapshot_to(requester)
+	if requester > 1:
+		_rpc_set_boss_bg.rpc_id(requester, _boss_fight_active)
 
 ## Client -> Host：请求确保本机玩家节点存在（修复偶发漏生成）
 @rpc("any_peer", "reliable", "call_remote")
@@ -2170,7 +2167,16 @@ func _rpc_spawn_bullets(data: Array) -> void:
 ## 激光同步：
 @rpc("authority", "reliable", "call_remote")
 func _rpc_set_boss_bg(active: bool) -> void:
+	var running := GameState.game_running and not _fallback_in_progress
+	active = active and running
+	_boss_fight_active = active
 	_backdrop.set_boss_mode(active)
+	if not running:
+		BGM.stop_bgm()
+	elif active:
+		BGM.play_boss_bgm()
+	else:
+		BGM.play_bgm()
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_boss_ultimate_laser_charge(pos_x: float, pos_y: float, duration: float) -> void:

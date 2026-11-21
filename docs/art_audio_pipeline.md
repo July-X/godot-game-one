@@ -23,6 +23,54 @@
 
 太空底图由 `scripts/generate_assets/make_backdrops.py` 离线生成，源自本项目的 `SBH-Space-Background-AB.png` 与 `space.py`。巡航的冰蓝行星斜切右缘，裂隙的冷紫尘带环绕外侧。生产场景用两张 800×450 底图和两层平铺星野，各自按本机画布显示。每块星野合计 36 个星点。图像生成需 NumPy 和 Pillow，Godot 运行时读取 PNG。
 
+两段 WAV 均为 44.1 kHz 双声道，641455 个采样帧（约 14.545 秒）。在 Godot 中整段循环，换段由同一个音乐播放器先淡出 160 毫秒、切流、再淡入 340 毫秒。激光预警与玩家受击沿用原有声部，并让音乐短暂降 6 dB。连续受击会延长衰减窗口。房主与加入端收到相同的阶段值，各自淡入淡出。重试回到巡航，从战斗退回标题时停播。
+
+### 实拍与混音
+
+MacBook 用 Godot 4.6.2 录制了两版的 1280×720 与 1600×720。第 622 物理帧一边是旧版重叠的血条与卡面，一边是新版独立两行。两版同帧的机体位置一致，两种画幅都能看见光束起点和穿过中场的暖色弹幕。宽屏触摸用脚本把两根独立的屏幕触点交给视口，左指持续移动，右指确认第二张卡，期间自动射击继续。斜向光束来自 Boss 的原推进入口。录制脚本固定出场和选卡帧，收口墙钟驱动的命中定格并安排走位，保留真实弹体碰撞、扣血、激光、命中和击毁。
+
+原始混音由引擎以 48 kHz 输出。每版 1512 帧、25.2 秒，连续拼接且保持同一主输出电平。Boss 在约 5.2 秒切入，7.3 秒鸣响激光预警，10.4 秒出现激光与选卡同帧，23.8 秒击败并切回巡航。基线峰值 −5.73 dBFS，候选峰值 −5.38 dBFS，均无满幅削波。候选的两段报警音、实际扣血和早段命中均能在原始混音中定位。音轨边界的相邻样本差不超过满幅的 0.055%，引擎循环没有更换播放实例。手机扬声器和真人听辨尚未验收。
+
+背景显示与隐藏各通过 5 项，种子 1121 的出场轨迹、抽卡与扣血日志逐行一致。图形回放在 16:9 通过 16 项，在 20:9 通过 20 项。移动端交互门禁 13/13，首卡固定轨迹 194/194，按键与超时的四条完整流程全部通过。房主和加入端从巡航打到 Boss 击败，再结算、重试和退回标题。无窗口 Boss 专项 70/70，分别用 1280×720 和 1600×720 实拍再通过 72/72。常规联机 40/40、反馈联机 25/25，宽窄端分别当房主的真实渲染各 36/36。音乐单场景 13/13，覆盖循环、切换中断、叠加预警和停播。普通局域网单次复跑仍可见既有入场寻址消息，立即退出时还可能出现 Godot 音频对象清理警告。
+
+### 复跑
+
+在仓库根目录运行。先确保 Git LFS 素材已下载。图形命令使用 [Godot Movie Maker](https://docs.godotengine.org/en/4.6/tutorials/animation/creating_movies.html) 导出引擎画面和原始混音。16:9 两版各写一段有声录屏，20:9 两版各留五张原尺寸帧。对照的图片文件名为 `cruise.png`、`charge.png`、`laser-and-draft.png`、`laser-hold.png`、`cruise-return.png`。
+
+```bash
+out=$(mktemp -d)
+mkdir -p "$out"/{baseline,A16,A20,B16,B20,wide-host,wide-client}
+git archive 70f2ad1 | tar -x -C "$out/baseline"
+cp tests/battle_presentation_probe.{gd,tscn} "$out/baseline/tests/"
+godot --headless --path "$out/baseline" --import
+godot --headless --path . --import
+godot --path "$out/baseline" --windowed --resolution 1280x720 --fixed-fps 60 --audio-driver Dummy \
+  --write-movie "$out/A16/engine.avi" res://tests/battle_presentation_probe.tscn -- capture "$out/A16"
+godot --path . --windowed --resolution 1280x720 --fixed-fps 60 --audio-driver Dummy \
+  --write-movie "$out/B16/engine.avi" res://tests/battle_presentation_probe.tscn -- verify "$out/B16"
+godot --path "$out/baseline" --windowed --resolution 1600x720 --fixed-fps 60 --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- capture "$out/A20" touch
+godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --audio-driver Dummy \
+  res://tests/battle_presentation_probe.tscn -- verify "$out/B20" touch
+
+godot --headless --path . --quit
+godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
+godot --headless --path . res://tests/mobile_check.tscn
+godot --headless --path . res://tests/battle_music_probe.tscn
+python3 tests/run_first_card_probe.py "$out/first-card"
+for state in visible hidden; do
+  godot --headless --path . --fixed-fps 60 res://tests/battle_backdrop_probe.tscn -- "$state" > "$out/$state.log" || exit 1
+done
+diff -u <(rg '^\[TRACE\]' "$out/visible.log") <(rg '^\[TRACE\]' "$out/hidden.log")
+bash tests/run_probe.sh 19119
+bash tests/run_probe.sh 19113 feedback
+bash tests/run_probe.sh 19118 boss
+bash tests/run_probe.sh 19116 wide-host "$out/wide-host"
+bash tests/run_probe.sh 19117 wide-client "$out/wide-client"
+```
+
+用安装了 NumPy 的 Python 运行 `python3 scripts/generate_assets/music/lead-ab.py "$out/loop-rebuild"`，可从同目录的 `compose.py` 复原 `assets/audio/` 内两段最新版 WAV。原始文件与重新生成的文件逐字节一致。
+
 ## 普通命中与普通敌机击毁的 PixelFX 对照
 
 图集只用于玩家弹体击中普通敌机，以及普通敌机击毁。玩家受伤、陨石、精英和 Boss 的接触沿用原画，主炮击盾和核心拾取各走原有的专用画法。武器在扣血前确定目标类别，加入端按房主确认的类别绘制。验收以 `0939598` 的真实玩家扣血画面为参照，在同视口、同落点、同为 35 毫秒时比对像素；普通命中和击毁继续对照已通过的 B。
@@ -161,13 +209,13 @@ P1 精修以 `3d960c3` 为对照，只在既有剪影内调整像素。用连续
 
 ## 音频
 
-全部程序化合成，无音频文件：
+音效在运行时合成，主题音乐由仓库内的原创脚本离线合成。
 
 | 模块 | 说明 |
 |------|------|
 | `sfx_manager.gd` | 8-bit 风格音效：射击 / 玩家受击 / 敌人受击 / 敌人死亡 / 爆炸 / UI 确认 / UI 选择。玩家射击使用独立播放器池，避免 Boss 战音效抢占 |
-| `bgm_manager.gd` | 正弦波合成的标题 / 游戏 / 结果主题，Pad + 贝斯 + 旋律 + 底鼓四层，12 秒循环 |
-| Boss 阶段 | 进入 Boss 战切换独立背景色与更高音高/音量的 BGM，结束后恢复 |
+| `bgm_manager.gd` | 战斗巡航与 Boss 变奏共用四音动机，分别整段循环 |
+| Boss 阶段 | 房主的阶段通知同时切换底图与配乐，两端各自淡入淡出 |
 
 ## 生产顺序
 
