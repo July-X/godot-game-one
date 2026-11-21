@@ -982,11 +982,12 @@ func _update_platform_hints() -> void:
 	var can_restart := not NetworkManager.is_online() or multiplayer.is_server()
 	_restart_button.disabled = not can_restart
 	if _is_touch_platform():
-		_controls_label.text = "自动射击"
+		_controls_label.hide()
 		_restart_button.text = "重新开始" if can_restart else "等待房主重新开始"
 	else:
 		_restart_button.text = "重新开始 · R" if can_restart else "等待房主重新开始"
-		_controls_label.text = "自动射击  ·  Esc 释放鼠标"
+		_controls_label.show()
+		_controls_label.text = "Esc 释放鼠标"
 		if NetworkManager.is_online():
 			_controls_label.text += "  ·  E 救援"
 
