@@ -23,7 +23,7 @@ def run(scene, args, log):
                             text=True, timeout=180)
     log.write_text(result.stdout, encoding="utf-8")
     lines = result.stdout.splitlines()
-    verdict = [line for line in lines if "[TRIAL] VERDICT" in line or "[TIMING] verdict" in line]
+    verdict = [line for line in lines if line.startswith(("[TRIAL] VERDICT", "[TIMING] verdict", "[WINDOW] SUMMARY"))]
     if result.returncode or len(verdict) != 1 or any("SCRIPT ERROR" in line or line.startswith("ERROR:") for line in lines):
         raise SystemExit(f"{log}: exit={result.returncode}\n{result.stdout}")
     print(log.stem, verdict[0])
@@ -141,6 +141,27 @@ def compare_columns(directory):
     print(f"[COLUMN] {len(summaries) // 2} paired paths, 549 position samples per flight")
 
 
+def compare_offense_window(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    runs = []
+    for view, aspect in [("16x9", []), ("20x9", ["--wide"])]:
+        for route, input_flags in [("rush", []), ("late", []), ("center", []), ("rush", ["--touch-flight"])]:
+            label = "touch" if input_flags else route
+            pair = []
+            for card in ["pierce", "power"]:
+                log = directory / f"{view}-{label}-{card}.log"
+                lines = run("offense_window_probe", [card, route, *aspect, *input_flags], log)
+                data = next(json.loads(line.removeprefix("[WINDOW_DATA] ")) for line in lines
+                            if line.startswith("[WINDOW_DATA] "))
+                pair.append(data)
+                runs.append(dict(data, input="touch" if input_flags else "mouse"))
+            if any(pair[0][key] != pair[1][key] for key in ("path", "births", "samples")):
+                raise SystemExit(f"{view} {label}: paired trajectories or births differ")
+        run("offense_window_probe", ["--entry", *aspect], directory / f"{view}-entry.log")
+    (directory / "windows.json").write_text(json.dumps(runs, indent=2), encoding="utf-8")
+    print(f"[WINDOW] {len(runs) // 2} matched pairs")
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 2:
         compare(Path(sys.argv[1]).resolve())
@@ -149,5 +170,7 @@ if __name__ == "__main__":
             compare(Path(scratch))
     elif len(sys.argv) == 3 and sys.argv[2] == "--column":
         compare_columns(Path(sys.argv[1]).resolve())
+    elif len(sys.argv) == 3 and sys.argv[2] == "--offense-window":
+        compare_offense_window(Path(sys.argv[1]).resolve())
     else:
-        raise SystemExit("usage: python3 tests/run_first_card_probe.py [log-directory [--column]]")
+        raise SystemExit("usage: python3 tests/run_first_card_probe.py [log-directory [--column|--offense-window]]")

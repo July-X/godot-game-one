@@ -31,10 +31,13 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 scenes/ui/title_screen.tscn   ← 项目主场景
 ├── 单机 → scenes/main.tscn
 ├── 首卡试飞 → 试飞 A / 试飞 B → 相同的首选起点
+├── 进攻窗口 · 45 秒 → 单人贯穿／威力试飞
 └── 联机 → scenes/ui/lobby.tscn → scenes/main.tscn
 ```
 
 标题页的「首卡试飞」供观察者选 A 或 B。两版直接进入首选，重试沿用所选版本。完整试飞仍可直接运行 `scenes/first_card_trial.tscn`，从一级继续到首领战。[复跑与 Android 导出](docs/first_card_trial.md) · [五分钟试玩单](docs/first_card_playtest.md)
+
+「进攻窗口 · 45 秒」复用现有飞机和卡牌。开火前击毁后排，下一轮少一股实际弹流。中路可绕行，飞行中可重试。[复跑和盲试玩](docs/offense_window_trial.md)
 
 ## 核心循环
 

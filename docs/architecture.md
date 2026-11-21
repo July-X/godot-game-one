@@ -30,6 +30,7 @@
 ├── project.godot              # 引擎配置 + 10 个 autoload 注册
 ├── scenes/
 │   ├── main.tscn              # 战斗主场景 (Node2D)
+│   ├── offense_window_trial.tscn # 45 秒单人试飞，继承战斗主场景
 │   ├── effects/
 │   │   ├── explosion.tscn     # 爆炸序列帧
 │   │   ├── hit_effect.tscn    # 命中闪光
@@ -621,6 +622,8 @@ Main 在房主和加入端的 `_rpc_set_boss_bg` 里应用同一个阶段值并�
 ---
 
 ## 16. 验证
+
+`scenes/offense_window_trial.tscn` 由标题单独启动。它继承战斗主场景，在 `scripts/offense_window_trial.gd` 接管试飞的出生和发射时钟。扇弹复用普通敌机的弹体生成入口，由后排在场状态决定。试飞内重试走本场景重载，离场清除临时选卡。[搭配与复跑](offense_window_trial.md)
 
 首卡试飞复用 `scenes/main.tscn`。子场景 `scenes/first_card_trial.tscn` 和 `scripts/first_card_trial.gd` 只接管首次二级选择与随后 550 个物理帧。固定出生表、撤离、预告和扇弹都在该脚本内。常规抽卡和试飞通过 `UpgradeDraft.offer_cards` 共用确认、加卡及超时路径。
 

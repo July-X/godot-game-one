@@ -50,6 +50,11 @@ custom_minimum_size = Vector2(0, 48)
 text = "首卡试飞"
 theme_override_font_sizes/font_size = 20
 
+[node name="BtnOffenseWindow" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(0, 48)
+text = "进攻窗口 · 45 秒"
+theme_override_font_sizes/font_size = 20
+
 [node name="TrialChoices" type="VBoxContainer" parent="."]
 visible = false
 theme_override_constants/separation = 8
