@@ -37,7 +37,7 @@ scenes/ui/title_screen.tscn   ← 项目主场景
 
 标题页的「首卡试飞」供观察者选 A 或 B。两版直接进入首选，重试沿用所选版本。完整试飞仍可直接运行 `scenes/first_card_trial.tscn`，从一级继续到首领战。[复跑与 Android 导出](docs/first_card_trial.md) · [五分钟试玩单](docs/first_card_playtest.md)
 
-「进攻窗口 · 45 秒」复用现有飞机和卡牌。开火前击毁后排，下一轮少一股实际弹流。中路可绕行，飞行中可重试。[复跑和盲试玩](docs/offense_window_trial.md)
+「进攻窗口 · 45 秒」复用现有飞机和卡牌。开火前击毁蓄力的后排，下一轮少一股实际弹流。中路可绕行，飞行中可重试，选卡前可勾选「旧版对照」。[复跑和盲试玩](docs/offense_window_trial.md)
 
 ## 核心循环
 

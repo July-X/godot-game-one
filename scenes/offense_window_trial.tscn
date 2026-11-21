@@ -6,6 +6,14 @@
 [node name="OffenseWindowTrial" instance=ExtResource("1")]
 script = ExtResource("2")
 
+[node name="ChargeCues" type="Node2D" parent="."]
+z_index = -2
+
+[node name="ChargeBreak" type="AudioStreamPlayer2D" parent="."]
+volume_db = -6.0
+max_distance = 2400.0
+max_polyphony = 2
+
 [node name="TrialUI" type="CanvasLayer" parent="."]
 layer = 21
 
@@ -29,6 +37,11 @@ visible = false
 custom_minimum_size = Vector2(100, 46)
 theme_override_font_sizes/font_size = 17
 text = "重试"
+
+[node name="Legacy" type="CheckButton" parent="TrialUI/Options/Buttons"]
+custom_minimum_size = Vector2(142, 46)
+theme_override_font_sizes/font_size = 17
+text = "旧版对照"
 
 [node name="Back" type="Button" parent="TrialUI/Options/Buttons"]
 custom_minimum_size = Vector2(100, 46)

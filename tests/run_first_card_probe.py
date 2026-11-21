@@ -1,4 +1,5 @@
 """Compare the fixed first-card replays and run the director and input gates."""
+from concurrent.futures import ThreadPoolExecutor
 import csv
 import json
 import os
@@ -141,6 +142,18 @@ def compare_columns(directory):
     print(f"[COLUMN] {len(summaries) // 2} paired paths, 549 position samples per flight")
 
 
+def window_data(log, args):
+    lines = run("offense_window_probe", args, log)
+    return next(json.loads(line.removeprefix("[WINDOW_DATA] ")) for line in lines
+                if line.startswith("[WINDOW_DATA] "))
+
+
+def check_window_flight(runs, label):
+    first = runs[0]
+    if any(row[key] != first[key] for row in runs[1:] for key in ("path", "births", "samples")):
+        raise SystemExit(f"{label}: paired trajectories or births differ")
+
+
 def compare_offense_window(directory):
     directory.mkdir(parents=True, exist_ok=True)
     runs = []
@@ -150,16 +163,70 @@ def compare_offense_window(directory):
             pair = []
             for card in ["pierce", "power"]:
                 log = directory / f"{view}-{label}-{card}.log"
-                lines = run("offense_window_probe", [card, route, *aspect, *input_flags], log)
-                data = next(json.loads(line.removeprefix("[WINDOW_DATA] ")) for line in lines
-                            if line.startswith("[WINDOW_DATA] "))
+                data = window_data(log, [card, route, *aspect, *input_flags, "--legacy"])
                 pair.append(data)
                 runs.append(dict(data, input="touch" if input_flags else "mouse"))
-            if any(pair[0][key] != pair[1][key] for key in ("path", "births", "samples")):
-                raise SystemExit(f"{view} {label}: paired trajectories or births differ")
+            check_window_flight(pair, f"{view} {label}")
         run("offense_window_probe", ["--entry", *aspect], directory / f"{view}-entry.log")
     (directory / "windows.json").write_text(json.dumps(runs, indent=2), encoding="utf-8")
     print(f"[WINDOW] {len(runs) // 2} matched pairs")
+
+
+def compare_offense_window_v2(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    inputs = [(width, delay, offset) for width in (1280, 1600)
+              for delay in (0, 12, 18, 24, 36) for offset in (-12, 0, 12)]
+    cards = ("pierce", "power")
+    versions = ("legacy", "revised")
+
+    def replay(case):
+        width, delay, offset, version, card = case
+        name = f"{width}-{delay}-{offset:+d}-{version}-{card}"
+        args = [card, "rush", "--touch-flight", "--first-wave", f"--delay={delay}", f"--offset={offset}"]
+        if width == 1600:
+            args.append("--wide")
+        if version == "legacy":
+            args.append("--legacy")
+        return window_data(directory / f"{name}.log", args)
+
+    def first_fan(row):
+        return [len(lane) for lane in row["fans"].get(str(row["fire_ticks"][0]), [[], []])]
+
+    cases = [(*flight, version, card) for flight in inputs for version in versions for card in cards]
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        results = dict(zip(cases, workers.map(replay, cases)))
+    (directory / "matrix.json").write_text(json.dumps(list(results.values()), indent=2), encoding="utf-8")
+
+    for width, delay, offset in inputs:
+        flight = (width, delay, offset)
+        paired = [results[(*flight, version, card)] for version in versions for card in cards]
+        check_window_flight(paired, flight)
+        for row in paired:
+            fire, charge_start = (166, 118) if row["version"] == "legacy" else (188, 96)
+            if row["fire_ticks"] != [fire, 244] or row["charge_starts"].get(str(fire)) != charge_start:
+                raise SystemExit(f"{flight}: opening charge or first fan time changed")
+        pierce, power = map(first_fan, paired[2:])
+        if (delay == 24 and (pierce, power) != ([0, 3], [3, 3])
+                or delay == 36 and (pierce, power) != ([3, 3], [3, 3])):
+            raise SystemExit(f"{flight}: changed first-fan result on the delayed paired routes")
+    for version in versions:
+        totals = [sum(first_fan(results[(*flight, version, card)]) == [0, 3] for flight in inputs)
+                  for card in cards]
+        print(f"[WINDOW] {version} first-fan interruptions: pierce={totals[0]}/30 power={totals[1]}/30")
+
+    full_runs = []
+    for width in (1280, 1600):
+        aspect = ["--wide"] if width == 1600 else []
+        for route in ("rush", "center"):
+            pair = [window_data(directory / f"{width}-full-{route}-{card}.log",
+                                [card, route, "--touch-flight", "--delay=24", *aspect])
+                    for card in cards]
+            check_window_flight(pair, (width, route))
+            if route == "center" and any(first_fan(row) != [3, 3] or row["interruptions"] for row in pair):
+                raise SystemExit(f"{width}: center transit interfered with a volley")
+            full_runs.extend(pair)
+    (directory / "full.json").write_text(json.dumps(full_runs, indent=2), encoding="utf-8")
+    print(f"[WINDOW] {len(results)} opening replays, {len(full_runs)} full flights")
 
 
 if __name__ == "__main__":
@@ -172,5 +239,7 @@ if __name__ == "__main__":
         compare_columns(Path(sys.argv[1]).resolve())
     elif len(sys.argv) == 3 and sys.argv[2] == "--offense-window":
         compare_offense_window(Path(sys.argv[1]).resolve())
+    elif len(sys.argv) == 3 and sys.argv[2] == "--offense-window-v2":
+        compare_offense_window_v2(Path(sys.argv[1]).resolve())
     else:
-        raise SystemExit("usage: python3 tests/run_first_card_probe.py [log-directory [--column|--offense-window]]")
+        raise SystemExit("usage: python3 tests/run_first_card_probe.py [log-directory [--column|--offense-window|--offense-window-v2]]")
