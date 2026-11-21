@@ -1,4 +1,5 @@
 """Compare the fixed first-card replays and run the director and input gates."""
+import csv
 import json
 import os
 from pathlib import Path
@@ -96,11 +97,57 @@ def compare(directory):
     run("first_card_entry_probe", [], directory / "entry.log")
 
 
+def compare_columns(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    summaries = []
+    with (directory / "paths.csv").open("w", newline="", encoding="utf-8") as output:
+        paths = csv.writer(output)
+        paths.writerow(["view", "route", "tick", "x", "y"])
+        for view, extra in [("16x9", []), ("20x9", ["--wide"])]:
+            births = None
+            for route in ["column", "column-left", "column-right", "center"]:
+                trajectory = None
+                for card in ["pierce", "power"]:
+                    log = directory / f"{view}-{route}-{card}.log"
+                    lines = run("first_card_wave_probe", [card, route, "--column-evidence", *extra], log)
+                    trace = [line for line in lines if line.startswith("[TRACE]")]
+                    if len(trace) != 15 or (births is not None and trace != births):
+                        raise SystemExit(f"{log}: fixed births changed")
+                    births = trace
+                    path = next(json.loads(line.removeprefix("[COLUMN_PATH] ")) for line in lines
+                                if line.startswith("[COLUMN_PATH] "))
+                    ticks = [int(line.split()[1]) for line in lines if line.startswith("[FRAME] ")]
+                    samples = list(zip(ticks[:-1], path))
+                    if len(ticks) != 550 or len(path) != len(ticks) - 1 or (trajectory is not None and samples != trajectory):
+                        raise SystemExit(f"{log}: paired flight path differs")
+                    if trajectory is None:
+                        paths.writerows([view, route, tick, *point] for tick, point in samples)
+                    trajectory = samples
+
+                    stats = next(json.loads(line.removeprefix("[COLUMN] ")) for line in lines
+                                 if line.startswith("[COLUMN] "))
+                    contacts = stats["pair"].get("contacts", [])
+                    expected_pair = route != "center" and card == "pierce"
+                    if bool(contacts) != expected_pair or (contacts and len({hit["order"] for hit in contacts}) != 2):
+                        raise SystemExit(f"{log}: unexpected result for the same shot on two left targets")
+                    if stats["hp_lost"] or (route == "center" and (
+                            stats["left_contacts"] or path[0][1] - path[-1][1] < 100)):
+                        raise SystemExit(f"{log}: flight or safe middle path failed")
+                    expected_kills = 0 if route == "center" else 3
+                    if stats["left_kills"] != expected_kills:
+                        raise SystemExit(f"{log}: unexpected left squad kill count")
+                    summaries.append(dict(stats, view=view))
+    (directory / "columns.json").write_text(json.dumps(summaries, indent=2), encoding="utf-8")
+    print(f"[COLUMN] {len(summaries) // 2} paired paths, 549 position samples per flight")
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 2:
         compare(Path(sys.argv[1]).resolve())
     elif len(sys.argv) == 1:
         with tempfile.TemporaryDirectory() as scratch:
             compare(Path(scratch))
+    elif len(sys.argv) == 3 and sys.argv[2] == "--column":
+        compare_columns(Path(sys.argv[1]).resolve())
     else:
-        raise SystemExit("usage: python3 tests/run_first_card_probe.py [log-directory]")
+        raise SystemExit("usage: python3 tests/run_first_card_probe.py [log-directory [--column]]")

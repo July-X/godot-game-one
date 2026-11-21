@@ -626,7 +626,7 @@ Main 在房主和加入端的 `_rpc_set_boss_bg` 里应用同一个阶段值并�
 
 标题页在自己的按钮区显示两种中性选择。短场景 `first_card_trial_a.tscn` 和 `first_card_trial_b.tscn` 继承同一试玩场景，选版附在场景上，重载直接保留。场景切换等按键与触摸处理结束后再执行。行动提示仍画在背景层，直接运行时沿用 `--trial-hint`。选卡来源保存在当前升级记录，继续复用原确认信号。标题入口及 `--trial-log` 启用本地结果记录。
 
-`tests/first_card_wave_probe.gd` 核对实际出生、弹体及逐帧走位。`tests/first_card_timing.gd` 供普通局和完整试飞记录精英、Boss 时序。`tests/first_card_controls_probe.tscn` 覆盖双指操作，`tests/first_card_entry_probe.tscn` 走实际标题、选卡、重试与返回。`python3 tests/run_first_card_probe.py` 统一运行对照与回归。[实测记录](first_card_trial.md)
+`tests/first_card_wave_probe.gd` 核对实际出生、弹体及逐帧走位。`tests/first_card_timing.gd` 供普通局和完整试飞记录精英、Boss 时序。`tests/first_card_controls_probe.tscn` 覆盖双指操作，`tests/first_card_entry_probe.tscn` 走实际标题、选卡、重试与返回。`python3 tests/run_first_card_probe.py` 统一运行对照与回归。给脚本传入输出目录和 `--column` 可单跑贯穿与威力的首队对照，保存首次双中的两个碰撞时刻、清队与退出时刻、实际失血和航线。[实测记录](first_card_trial.md)
 
 `tests/boss_pace_probe.tscn` 直接实例化普通单人战斗。其脚本继承上述时间记录器，监听生产子弹碰撞、精英及 Boss 的死亡信号，区分选卡等待、入场等待和可交火时长。`tests/run_boss_pace_probe.py` 保留逐局日志、出生和事件明细。引擎报错与采样结果分别记账，出现报错时命令最终退出 1。[首只 Boss 基线与真人试玩](boss_pace_baseline.md)
 

@@ -2,6 +2,7 @@ extends Node
 ## 每个进程只选一张首卡。鼠标输入走原惯性和转向，伤害、擦弹与死亡走真实碰撞。
 const KEYS := {"pierce": KEY_1, "splash": KEY_2, "graze_focus": KEY_3, "power": KEY_4}
 const ROUTES := {"pierce": "column", "splash": "cluster", "graze_focus": "edge", "power": "center"}
+const COLUMN_OFFSETS := {"column": 0.0, "column-left": -12.0, "column-right": 12.0}
 @onready var trial = get_parent()
 var card := ""
 var route := ""
@@ -25,6 +26,15 @@ var low_health := 0
 var hint_ticks := 0
 var hint_clear := true
 var capture_dir := ""
+var capture_tick := 0
+var _column_evidence := false
+var _left_orders: Dictionary[int, int] = {}
+var _left_exit_tick := -1
+var _left_contacts := 0
+var _left_pair: Dictionary = {}
+var _launches := 0
+var _hp_previous := 0
+var _hp_lost := 0
 
 func _ready() -> void:
 	# Headless 的默认窗口是方形，固定逻辑视口才能与录屏逐帧对照。
@@ -37,21 +47,30 @@ func _ready() -> void:
 func _start() -> void:
 	var args := OS.get_cmdline_user_args()
 	if args.is_empty() or not KEYS.has(args[0]):
-		push_error("Pass -- pierce|splash|graze_focus|power [column|cluster|edge|center]")
+		push_error("Pass -- pierce|splash|graze_focus|power [column|column-left|column-right|cluster|edge|center]")
 		get_tree().quit(2)
 		return
 	card = args[0]
 	route = args[1] if args.size() > 1 and not args[1].begins_with("--") else ROUTES[card]
-	if route not in ROUTES.values():
+	if route not in ROUTES.values() and not COLUMN_OFFSETS.has(route):
 		get_tree().quit(2)
 		return
 	seed(1121)
+	capture_tick = 300 if card == "graze_focus" else 120
 	for arg in args:
 		if arg.begins_with("--capture="):
 			capture_dir = arg.trim_prefix("--capture=")
+		elif arg.begins_with("--capture-tick="):
+			capture_tick = arg.trim_prefix("--capture-tick=").to_int()
 	start = Engine.get_physics_frames()
 	health = GameState.get_current_health(1)
 	low_health = health
+	_column_evidence = "--column-evidence" in args
+	if _column_evidence:
+		_hp_previous = health
+		GameState.health_changed.connect(func(hp, _maximum):
+			_hp_lost += maxi(_hp_previous - hp, 0)
+			_hp_previous = hp)
 	_check("fixed_offer", UpgradeDraft.get_draft(1).get("cards") == ["pierce", "splash", "graze_focus"])
 	get_tree().node_added.connect(_observe_birth)
 	trial._player.get_node("GrazeArea").area_entered.connect(func(area):
@@ -79,7 +98,7 @@ func _physics_process(_delta: float) -> void:
 	_trace_frame(tick)
 	if tick < trial.END_TICK:
 		_observe_hint()
-		if tick == (300 if card == "graze_focus" else 120):
+		if tick == capture_tick:
 			_capture_action()
 		_steer(tick)
 		path.append(trial._player.position.snapped(Vector2(.01, .01)))
@@ -132,8 +151,8 @@ func _steer(tick: int) -> void:
 	var size: Vector2 = trial.field
 	var target := size * Vector2(.5, .78)
 	match route:
-		"column":
-			target.x = size.x * .30
+		"column", "column-left", "column-right":
+			target.x = size.x * .30 + COLUMN_OFFSETS[route]
 			if tick > 100:
 				target.y -= minf((tick - 100) * 1.4, 130)
 		"cluster":
@@ -168,6 +187,9 @@ func _observe_birth(node: Node) -> void:
 		_check("spawn_%d" % i, trial.trial_tick == order.at and node.enemy_type == order.kind and node.position.is_equal_approx(trial.field * order.from))
 		print("[TRACE] order=", i, " scheduled=", order.at, " born=", trial.trial_tick, " formation=", order.lane, " type=", node.enemy_type, " pos=", node.position)
 		node.enemy_died.connect(_on_kill.bind(node, i))
+		if _column_evidence and order.lane == "column":
+			_left_orders[node.get_instance_id()] = i
+			node.tree_exiting.connect(func(): _left_exit_tick = trial.trial_tick, CONNECT_ONE_SHOT)
 	elif node.scene_file_path == "res://scenes/entities/bullet.tscn":
 		# setup 在 add_child 之后。离树时 _pierced 仍保有本次飞行打中过的不同目标。
 		node.tree_exiting.connect(func():
@@ -175,6 +197,29 @@ func _observe_birth(node: Node) -> void:
 				pierce_flights += 1
 		, CONNECT_ONE_SHOT)
 		call_deferred("_record_fan", node.get_instance_id(), trial.trial_tick)
+		if _column_evidence:
+			_observe_left_shot.call_deferred(node.get_instance_id(), trial.trial_tick)
+
+func _observe_left_shot(id: int, launch_tick: int) -> void:
+	var shot = instance_from_id(id)
+	if not is_instance_valid(shot) or not shot._is_player_bullet:
+		return
+	_launches += 1
+	# 在生产碰撞处理之后观察，保存首架的排期编号以便击毁后仍能认出同一发。
+	var flight := {"shot": _launches, "launch_tick": launch_tick, "contacts": []}
+	shot.body_entered.connect(func(body): _observe_left_contact(shot, body, flight))
+	shot.area_entered.connect(func(area): _observe_left_contact(shot, area.get_parent(), flight))
+
+func _observe_left_contact(shot, target: Node, flight: Dictionary) -> void:
+	if not is_instance_valid(target) or not shot._pierced.has(target):
+		return
+	var order: int = _left_orders.get(target.get_instance_id(), -1)
+	if order < 0 or flight.contacts.any(func(hit): return hit.order == order):
+		return
+	_left_contacts += 1
+	flight.contacts.append({"order": order, "tick": trial.trial_tick, "physics_frame": Engine.get_physics_frames()})
+	if flight.contacts.size() == 2 and _left_pair.is_empty():
+		_left_pair = flight.duplicate(true)
 
 func _record_fan(id: int, tick: int) -> void:
 	var b = instance_from_id(id)
@@ -230,6 +275,15 @@ func _finish() -> void:
 		GameState._graze_last_msec = now - 3001
 		_check("card_window_and_cooldown", is_equal_approx(boosted, .96 * GameState.get_shoot_cooldown(1)))
 	print("[PATH] ", hash(path))
+	if _column_evidence:
+		var left_deaths: Array = []
+		for i in 3:
+			if kills.has(i):
+				left_deaths.append(kills[i])
+		print("[COLUMN] ", JSON.stringify({"card": card, "route": route, "pair": _left_pair, "left_contacts": _left_contacts,
+			"left_kills": left_deaths.size(), "left_clear_tick": left_deaths.max() if left_deaths.size() == 3 else -1,
+			"left_exit_tick": _left_exit_tick, "hp_lost": _hp_lost, "nearest_enemy_bullet": snappedf(min_bullet_gap, .1)}))
+		print("[COLUMN_PATH] ", JSON.stringify(Array(path).map(func(point: Vector2): return [point.x, point.y])))
 	print("[TRIAL] card=", card, " route=", route, " x=", Vector2(min_x, max_x), " first_up_tick=", first_up_tick, " kills=", kills, " two_target_flights=", pierce_flights, " splash_neighbours=", cluster_splash, " nearest_bullet_px=", snappedf(min_bullet_gap, .1), " grazes=", grazes, " stacks=", max_stacks, " hp=", low_health, "/", health)
 	print("[TRIAL] VERDICT pass=", passed, " failed=", failed)
 	get_tree().quit(0 if failed == 0 else 1)

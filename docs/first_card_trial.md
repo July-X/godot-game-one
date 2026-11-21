@@ -17,6 +17,21 @@
 
 八组测试都核对了实际入场的六架敌机和九发扇弹。同路线的两种卡还逐帧比对了玩家位置，精度为 0.01 像素。四种走法均由脚本给出。是否看懂卡面、选卡后会不会自行改变走位，要靠真人试玩观察。
 
+## 贯穿的首队对线
+
+用 `9203869` 复跑了 [普通局基线](boss_pace_baseline.md) 的七组贯穿。旧记录来自 `53c0b65`，脚本朝最近目标开火，取确认后首次排期且实际出生的小队，观察到下张卡展示或满 600 帧。本次七局都打中了这支新小队，七局也都在窗口内打出过一弹双中，涉及首支小队的双中仍是 0/7。固定试飞的左侧三架和走位脚本是另一组条件。
+
+固定片段中，三架左队靶机在同一个横坐标，第 12、34、56 帧先后出生。用种子 1121 和固定鼠标目标模拟走位，贯穿和威力卡逐帧核对同一航线。轴线两侧的航线把鼠标目标横移 12 个逻辑像素。以选卡为第 0 帧，六条左路的贯穿运行都在第 136 帧首次由一发主炮打中第 0、1 两架，第二次碰撞发生在引擎物理帧 197。威力卡在同航线每发只打中一架。上文和下方行动提示表中的帧数保留各自采样时的记录。
+
+| 航线 | 16:9 贯穿 / 威力清队帧 | 20:9 贯穿 / 威力清队帧 |
+| --- | ---: | ---: |
+| 左队轴线 | 144 / 158 | 145 / 158 |
+| 轴线左侧 12 像素 | 156 / 171 | 156 / 171 |
+| 轴线右侧 12 像素 | 156 / 171 | 145 / 157 |
+| 安全中路 | 0 次命中，3 架自行撤离 | 0 次命中，3 架自行撤离 |
+
+清队帧取最后一次击毁信号，中路另记最后一架退出的第 328 帧。16 次运行累计失血均为零。两种画幅的中路均向前飞约 150 像素，离最近一发敌弹分别约 195 和 239 像素。用同一探针复跑 `9203869` 的独立副本，`columns.json` 和 `paths.csv` 逐字节一致。Mac 用 Godot 4.6.2 以 60 帧/秒实拍，两种画幅都拍了对线、右偏和中路。试飞沿用原出生表。[两分钟手机盲试玩](first_card_playtest.md#贯穿的两分钟手机盲试玩)
+
 ## 行动提示对照
 
 两版在确认前使用相同的卡面和起点。B 的顶部中央只有一行文字，位于战斗物体下层，随本机安全区定位。贯穿和溅射在确认后第 1 至 179 帧可见。擦弹在第 188 至 361 帧可见，跨过原有扇弹预告和第一轮发射。A 和威力卡无提示。直接运行场景也可用 `--trial-hint` 开启 B 的提示。
@@ -88,6 +103,18 @@ godot --path . res://scenes/first_card_trial.tscn -- --from-draft
 
 # 原八组路线逐对比较 A/B，宽屏复跑四组，另跑按键、超时、触摸和重试
 python3 tests/run_first_card_probe.py /tmp/first-card-results
+
+# 同一航线对照贯穿和威力，输出碰撞、出生和逐帧位置
+python3 tests/run_first_card_probe.py /tmp/first-card-column --column
+
+# 普通局样例，与固定左队分开观察
+godot --headless --fixed-fps 60 --path . res://tests/boss_pace_probe.tscn -- input /tmp/first-card-stock-births.csv 1121 assisted
+
+# 宽屏实拍。可换成 power、column-right 或 center。中路建议取第 401 帧。
+mkdir -p /tmp/first-card-capture
+godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync \
+  --audio-driver Dummy res://tests/first_card_wave_probe.tscn -- pierce column --wide \
+  --column-evidence --capture=/tmp/first-card-capture --capture-tick=137
 
 # 走实际标题入口，使用项目的触摸转鼠标路径，无游戏参数
 godot --headless --fixed-fps 60 --path . res://tests/first_card_entry_probe.tscn
