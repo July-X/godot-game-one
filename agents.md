@@ -148,6 +148,8 @@ godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
 改战斗音画反馈时，运行 `godot --headless --fixed-fps 60 --path . res://tests/combat_feedback_probe.tscn` 和 `bash tests/run_probe.sh 7855 feedback`。前者复播固定事件，后者用两个进程检查两次破盾、命中与击毁。图形录制和电平对照见 `docs/art_audio_pipeline.md`。
 
+改首卡或试飞敌阵时，运行 `python3 tests/run_first_card_probe.py /tmp/first-card-results`。八组冻结轨迹须逐架、逐弹一致，同一路线须逐帧走位一致。普通导演和试飞的完整流程均要区分按键、超时，跑到首只 Boss 实际受伤。[验证口径](docs/first_card_trial.md)
+
 ## 7. 工作约束
 
 - 默认优先使用 `rg` 搜索代码和文档。

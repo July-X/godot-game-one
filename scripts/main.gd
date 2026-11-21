@@ -1002,7 +1002,7 @@ static func compute_post_elite_multiplier(elite_count: int) -> float:
 ## 章节主题（wave_director.gd CHAPTER_THEMES）改的是**怎么躲**而不是"躲不躲得过"：
 ## 弹速变快的同时敌人变脆、开火变密，玩家的最优应对从"站桩输出"变成
 ## "贴脸抢输出窗口"。手感因此一章一换，而难度总量没变。
-func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> void:
+func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> CharacterBody2D:
 	var enemy = _enemy_scene.instantiate()
 	enemy.position = pos
 	enemy.enemy_type = enemy_type
@@ -1031,6 +1031,7 @@ func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> void:
 			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, mult,
 			enemy.bullet_speed_mult)
 	add_child(enemy)
+	return enemy
 
 func _on_enemy_died() -> void:
 	pass

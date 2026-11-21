@@ -665,6 +665,7 @@ func get_shoot_cooldown(peer_id: int = -1) -> float:
 var _graze_stacks: int = 0
 var _graze_last_msec: int = 0
 var _graze_since_stack: int = 0
+var _graze_window_msec: int = GRAZE_WINDOW_MSEC
 
 ## 每层提供的射速加成
 const GRAZE_STACK_BONUS: float = 0.04
@@ -678,7 +679,8 @@ const GRAZE_WINDOW_MSEC: int = 2000
 
 
 ## 记录一次擦弹。每 GRAZE_THRESHOLD 次累计擦弹升 1 层。
-func add_graze(now_msec: int) -> int:
+func add_graze(now_msec: int, peer_id: int = -1) -> int:
+	_graze_window_msec = get_graze_window_msec(peer_id)
 	_graze_last_msec = now_msec
 	if _graze_since_stack < GRAZE_THRESHOLD - 1:
 		_graze_since_stack += 1
@@ -690,15 +692,11 @@ func add_graze(now_msec: int) -> int:
 
 ## 当前射速加成 0~0.4。超时会自动归零（惰性判定，无需每帧维护）
 func get_graze_fire_rate_bonus() -> float:
-	if _graze_stacks <= 0:
-		return 0.0
-	if Time.get_ticks_msec() - _graze_last_msec > GRAZE_WINDOW_MSEC:
-		return 0.0
-	return float(_graze_stacks) * GRAZE_STACK_BONUS
+	return float(get_graze_stacks()) * GRAZE_STACK_BONUS
 
 
 func get_graze_stacks() -> int:
-	if Time.get_ticks_msec() - _graze_last_msec > GRAZE_WINDOW_MSEC:
+	if Time.get_ticks_msec() - _graze_last_msec > _graze_window_msec:
 		return 0
 	return _graze_stacks
 
@@ -708,6 +706,7 @@ func get_graze_ratio() -> float:
 
 
 func reset_graze() -> void:
+	_graze_window_msec = GRAZE_WINDOW_MSEC
 	_graze_stacks = 0
 	_graze_since_stack = 0
 	_graze_last_msec = 0

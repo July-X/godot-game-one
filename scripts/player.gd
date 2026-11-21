@@ -162,6 +162,13 @@ func _init_graze() -> void:
 		return
 	if not _graze_area.area_entered.is_connected(_on_graze_area_entered):
 		_graze_area.area_entered.connect(_on_graze_area_entered)
+	var circle: CircleShape2D = $GrazeArea/CollisionShape2D.shape
+	var base_radius := circle.radius
+	circle.radius = base_radius + GameState.get_graze_radius_bonus(peer_id)
+	UpgradeDraft.card_chosen.connect(func(pid: int, card: String, _index: int):
+		if pid == peer_id and card == "graze_focus":
+			circle.radius = base_radius + GameState.get_graze_radius_bonus(pid)
+	)
 
 
 func _on_graze_area_entered(area: Area2D) -> void:
@@ -173,7 +180,7 @@ func _on_graze_area_entered(area: Area2D) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if peer_id != multiplayer.get_unique_id():
 			return
-	GameState.add_graze(Time.get_ticks_msec())
+	GameState.add_graze(Time.get_ticks_msec(), peer_id)
 	SFX.play_graze_tick(GameState.get_graze_stacks())
 	_flash_grazed_bullet(area)
 	var scene := get_tree().current_scene

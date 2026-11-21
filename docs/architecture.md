@@ -626,6 +626,10 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 
 ## 16. 验证
 
+首卡试飞复用 `scenes/main.tscn`。子场景 `scenes/first_card_trial.tscn` 和 `scripts/first_card_trial.gd` 只接管首次二级选择与随后 550 个物理帧。固定出生表、撤离、预告和扇弹都在该脚本内。常规抽卡和试飞通过 `UpgradeDraft.offer_cards` 共用确认、加卡及超时路径。
+
+`tests/first_card_wave_probe.gd` 观测试飞的实际出生、航迹、碰撞和擦弹。`tests/first_card_timing.gd` 同时供 `first_card_timing.tscn`（普通局）和 `first_card_run_probe.tscn`（完整试飞）记录排期与精英、Boss 时序。`python3 tests/run_first_card_probe.py` 运行全部十二组。[实测记录](first_card_trial.md)
+
 ```bash
 # 1. 项目可加载
 godot --headless --path . --quit
