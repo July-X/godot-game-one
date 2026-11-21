@@ -1077,6 +1077,20 @@ func request_network_powerup_magnet(entity_id: int) -> void:
 		return
 	_rpc_request_powerup_magnet.rpc_id(1, entity_id)
 
+## Boss 死亡信号可触发结算或换场，延迟到达的掉落只属于原战场。
+func spawn_boss_fragment(kind: String, world_pos: Vector2, assigned_peer_id := 0) -> void:
+	if not GameState.game_running or not is_inside_tree() or is_queued_for_deletion() or get_tree().current_scene != self:
+		return
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
+	var item = _powerup_scene.instantiate()
+	item.position = to_local(world_pos)
+	if assigned_peer_id > 0:
+		item.set_meta("assigned_peer_id", assigned_peer_id)
+	item.setup(kind)
+	add_child(item)
+	register_powerup_entity(item, kind)
+
 ## Host：注册掉落物实体并广播给客户端
 func register_powerup_entity(powerup: Node2D, powerup_type: String) -> void:
 	if not NetworkManager.is_online() or not multiplayer.is_server():
@@ -1530,7 +1544,7 @@ func _apply_boss_reward_for_peer(reward_type: String, peer_id: int) -> void:
 			return
 		_boss_reward_claimed_peers[resolved_peer] = true
 	GameState.apply_reward(reward_type, resolved_peer)
-	if NetworkManager.is_online() and multiplayer.is_server() and GameState.has_method("force_sync_to_peer"):
+	if NetworkManager.is_online() and multiplayer.is_server() and resolved_peer != multiplayer.get_unique_id():
 		GameState.force_sync_to_peer(resolved_peer)
 	_send_boss_reward_feedback(resolved_peer, reward_type)
 	if _player and is_instance_valid(_player) and _player.has_method("_update_appearance"):
@@ -1978,7 +1992,7 @@ func _rpc_spawn_powerup(eid: int, powerup_type: String, pos_x: float, pos_y: flo
 	pu.name = str(eid)
 	pu.entity_id = eid
 	pu._is_network_ghost = true
-	pu.position = Vector2(pos_x, pos_y)
+	pu.position = to_local(Vector2(pos_x, pos_y))
 	pu.setup(powerup_type)
 	if assigned_peer_id > 0:
 		pu.set_meta("assigned_peer_id", assigned_peer_id)
@@ -2328,10 +2342,7 @@ func _rpc_create_boss_shield(pos_x: float, pos_y: float) -> void:
 func _rpc_destroy_boss_shield() -> void:
 	if _boss == null or not is_instance_valid(_boss):
 		return
-	if _boss.has_method("_spawn_shield_shatter_burst"):
-		_boss._spawn_shield_shatter_burst()
-	if _boss.has_method("_destroy_shield_circle"):
-		_boss._destroy_shield_circle()
+	_boss._destroy_shield_circle()
 
 func broadcast_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
 	_show_boss_ultimate_laser_charge(pos, duration)

@@ -323,11 +323,15 @@ _max_health = max(player_dps * 42.0 * 0.95 * mult * level_scale, 900.0)
   裁剪线段终点），玩家可以跑出推进路径躲避
 - 激光期间 Boss 获得护盾并暂停常规攻击
 
+护盾结束时，房主和收到解除通知的加入端都由 Boss 移除当前光环，同一面盾只生成一次碎片。碎片挂在战场内，出生时将 Boss 的世界坐标转为父节点的局部坐标。24 枚碎片在敌弹下方绘制，0.48 秒后自行释放。
+
 ### 8.4 死亡奖励
 
 不再弹选择面板。由 Host 按 peer_id **随机**发放一条持久强化
-（激光 CD / 额外子弹 / 额外伤害 / 移速 / 护盾强度），写入 `GameState`，
+（激光冷却 / 额外子弹 / 额外伤害 / 移速），写入 `GameState`，
 并在 HUD 左侧属性条下方的「Boss 强化」分组中显示。
+
+死亡信号同步发出，奖励当场结算。Boss 在死亡帧锁定世界坐标和存活玩家，战场的 `spawn_boss_fragment` 在物理碰撞回调结束后创建六件掉落。它们按核心、治疗、速射、威力、核心、治疗的顺序落在半径 92 像素的圆上。房主登记实体后广播坐标和归属，加入端只生成副本。原战场若已结束或切换，待创建的掉落随之作废。
 
 ---
 
@@ -636,6 +640,8 @@ Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何�
 `tests/first_card_wave_probe.gd` 观测试飞的实际出生、航迹、碰撞和擦弹。`tests/first_card_timing.gd` 同时供 `first_card_timing.tscn`（普通局）和 `first_card_run_probe.tscn`（完整试飞）记录排期与精英、Boss 时序。`python3 tests/run_first_card_probe.py` 运行全部十二组。[实测记录](first_card_trial.md)
 
 `tests/boss_pace_probe.tscn` 直接实例化普通单人战斗。其脚本继承上述时间记录器，监听生产子弹碰撞、精英及 Boss 的死亡信号，区分选卡等待、入场等待和可交火时长。`tests/run_boss_pace_probe.py` 保留逐局日志、出生和事件明细。引擎报错与采样结果分别记账，出现报错时命令最终退出 1。[首只 Boss 基线与真人试玩](boss_pace_baseline.md)
+
+`tests/boss_lifecycle_probe.gd` 和同名场景覆盖主炮击败、清屏炸弹、结算与换场，图形模式可逐像素核对盾片上方的敌弹。`bash tests/run_probe.sh 18870 boss` 运行双进程的护盾、掉落、归属和奖励检查。
 
 ```bash
 # 1. 项目可加载

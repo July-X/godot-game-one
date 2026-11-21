@@ -125,7 +125,6 @@ var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
-var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _health_bar: ProgressBar = $HealthBar
@@ -383,17 +382,19 @@ func _create_shield_circle() -> void:
 		_boss_shield_circle.setup(80.0, Color(0.35, 0.65, 1.0, 0.55))
 
 func _destroy_shield_circle() -> void:
-	if _boss_shield_circle and is_instance_valid(_boss_shield_circle):
-		_boss_shield_circle.queue_free()
+	if not is_instance_valid(_boss_shield_circle):
+		return
+	_boss_shield_circle.queue_free()
 	_boss_shield_circle = null
-
-func _spawn_shield_shatter_burst() -> void:
-	var burst := Node2D.new()
-	burst.set_script(preload("res://scripts/shield_shatter_burst.gd"))
-	burst.global_position = global_position
-	burst.z_index = 8
-	if burst.has_method("setup"):
-		burst.setup(82.0, Color(0.35, 0.65, 1.0, 0.7), 24)
+	if not is_inside_tree() or is_queued_for_deletion() or not GameState.game_running:
+		return
+	# 光环只消费一次，碎片留在解除时的坐标，随战场退场。
+	var world := get_parent() as Node2D
+	var burst := preload("res://scripts/shield_shatter_burst.gd").new()
+	burst.position = world.to_local(global_position)
+	burst.z_index = -1
+	world.add_child(burst)
+	burst.setup(82.0, Color(0.35, 0.65, 1.0, 0.7), 24)
 
 func _should_start_ultimate_laser() -> bool:
 	if _dead or _ultimate_laser_charging or _ultimate_laser_firing:
@@ -449,7 +450,6 @@ func _tick_ultimate_laser(delta: float) -> void:
 			_shield_active = false
 			## 销毁护盾光晕 + 广播
 			_destroy_shield_circle()
-			_spawn_shield_shatter_burst()
 			var scene_shield := get_tree().current_scene
 			if scene_shield and scene_shield.has_method("broadcast_boss_shield_destroy"):
 				scene_shield.broadcast_boss_shield_destroy()
@@ -756,29 +756,20 @@ func _spawn_rift_visual(pos: Vector2) -> void:
 func _drop_supply_fragments() -> void:
 	var types: Array[String] = ["heal", "speed", "power", "heal"]
 	for i in range(types.size()):
-		_spawn_powerup_fragment(types[i], float(i) * TAU / float(types.size()), 70.0)
+		var pos := global_position + Vector2.from_angle(i * TAU / types.size()) * 70.0
+		get_tree().current_scene.spawn_boss_fragment(types[i], pos)
 
-func _spawn_core_fragments() -> void:
+func _queue_core_fragments(death_pos: Vector2) -> void:
 	var types: Array[String] = ["core", "heal", "speed", "power", "core", "heal"]
+	var alive_ids := GameState.get_alive_player_ids()
+	var battle := get_tree().current_scene
 	for i in range(types.size()):
 		var assigned_peer_id := 0
-		if types[i] == "core":
-			var alive_ids := GameState.get_alive_player_ids()
-			if alive_ids.size() > 0:
-				assigned_peer_id = alive_ids[i % alive_ids.size()]
-		_spawn_powerup_fragment(types[i], float(i) * TAU / float(types.size()), 92.0, assigned_peer_id)
-
-func _spawn_powerup_fragment(type: String, angle: float, radius: float, assigned_peer_id: int = 0) -> void:
-	var pu = _powerup_scene.instantiate()
-	get_tree().current_scene.add_child(pu)
-	pu.global_position = global_position + Vector2.from_angle(angle) * radius
-	pu.setup(type)
-	if assigned_peer_id > 0:
-		pu.set_meta("assigned_peer_id", assigned_peer_id)
-	if NetworkManager.is_online() and multiplayer.is_server():
-		var scene := get_tree().current_scene
-		if scene and scene.has_method("register_powerup_entity"):
-			scene.register_powerup_entity(pu, type)
+		if types[i] == "core" and not alive_ids.is_empty():
+			assigned_peer_id = alive_ids[i % alive_ids.size()]
+		var pos := death_pos + Vector2.from_angle(i * TAU / types.size()) * 92.0
+		# 记录当帧的落点，由本场战斗在物理回调结束后创建碰撞形状。
+		battle.spawn_boss_fragment.call_deferred(types[i], pos, assigned_peer_id)
 
 ## ── 受击 ────────────────────────────────────────────────────
 
@@ -907,15 +898,21 @@ func die() -> void:
 	if _dead:
 		return
 	_dead = true
+	var death_pos := global_position
+	_queue_core_fragments(death_pos)
 	GameState.add_score(200 * _level, -1)
-	_spawn_core_fragments()
 	boss_died.emit()
-	call_deferred("_spawn_explosion")
+	_spawn_explosion.call_deferred(death_pos)
 	queue_free()
 
-func _spawn_explosion() -> void:
+func _spawn_explosion(death_pos: Vector2) -> void:
+	if not is_inside_tree() or not GameState.game_running:
+		return
+	var battle := get_tree().current_scene
+	if not battle or battle.is_queued_for_deletion() or not battle.is_ancestor_of(self):
+		return
 	var exp = _explosion_scene.instantiate()
-	get_tree().current_scene.add_child(exp)
-	exp.global_position = global_position
+	battle.add_child(exp)
+	exp.global_position = death_pos
 	exp.scale = Vector2(4, 4)
 	SFX.play_explosion()

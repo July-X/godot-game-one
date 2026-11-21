@@ -66,3 +66,32 @@ python3 tests/run_first_card_probe.py /tmp/first-card-regression
 ```
 
 前两条各自产生 `samples.csv`、逐局日志和导演出生表。按 `seed,mode,pilot,repeat` 找到同一局，再看 `offer`、`choice`、`next_wave_build_used`、各首领的五个时刻及 `end`。结局完整但引擎报错时，采集器写完整组样本再返回非零状态。采样入口、原始样本和试玩单独立于游戏入口，可用 `git revert` 回退本笔基线提交。
+
+## 护盾与掉落修复复查
+
+在 `35c78dc` 上用种子 1121、脚本按键、保命闪避完成普通单人局，首只 Boss 在第 8434 物理帧被打空血量。六件掉落各触发一次物理回调报错，退出时有三个游离碎片节点。修复后同配置最后一次复跑在第 8969 帧击败 Boss，三次护盾共占 2700 帧。物理报错和退出时的游离碎片节点均为零。两局各自使用实际生成的敌阵、掉落和武器成长。
+
+| 验收 | 本机实测 |
+| --- | --- |
+| 护盾解除、原位绘制、前景敌弹 | 平移战场后，碎片和 Boss 的世界坐标同为 (608, 270)。同帧切换碎片和敌弹，交叠区域有 81 个像素与只画敌弹时完全一致。原有 24 枚碎片自行退场，重复解除通知没有再播。图形用例 23/23。[Godot 原帧](boss-shield-release.png) |
+| 实弹死亡与六件掉落 | 主炮实际碰撞触发一次死亡和一次强化。观察者在死亡信号中移走机体，延迟入场的六件掉落依旧落在死亡点周围半径 92 的原位置，随后全部被正常磁吸拾取。 |
+| 炸弹、同帧结算与换场 | 真实拾取清屏炸弹时，Boss 尚有生命也按原规则结算，含过载补给检查 10/10。死亡信号内让玩家阵亡（7/7）或切回标题（7/7），旧战场都没有迟到的掉落，正在绘制的碎片也已释放。 |
+| 双进程局域网 | 房主 26/26，加入端 18/18。两端的六件类型、世界坐标和核心归属一致。P2 请求吸引房主核心时，核心留在原处。P2 实收速射，房主收其余五件。两名玩家各有一次强化，六个实体在两端均已移除。 |
+
+原先返回 1 的两套节奏采集命令均已返回 0。加速 16 局有 10 次击败、6 次玩家提前死亡，实时时钟两局各有一次，两组都没有引擎错误。
+
+两名玩家都存活时，旧规则按掉落物下标分配核心，第 0、4 件都归房主。奖励原本会让房主向自己发一次只允许远端接收的状态包。现由房主立即应用本地奖励，照常给加入端同步。常规双进程 40/40，反馈双进程 25/25，所有进程退出 0。常规局一次复跑记录了 17 条既有入场寻址消息，最终复跑为零。普通单人局立即退出时仍可见音频播放对象的清理警告。手机双机与真人试玩尚未验证。
+
+```sh
+mkdir -p /tmp/boss-lifecycle
+godot --verbose --headless --fixed-fps 60 --path . res://tests/boss_pace_probe.tscn -- input /tmp/boss-lifecycle/births.csv 1121 assisted
+godot --windowed --resolution 1280x720 --audio-driver Dummy --path . res://tests/boss_lifecycle_probe.tscn -- solo 0 /tmp/boss-lifecycle
+for mode in bomb game-over scene-exit; do
+  godot --headless --path . res://tests/boss_lifecycle_probe.tscn -- "$mode" || exit 1
+done
+bash tests/run_probe.sh 18872 boss
+bash tests/run_probe.sh 18873
+bash tests/run_probe.sh 18874 feedback
+```
+
+普通局的脚本只负责瞄准、选卡与保命走位。专项用例还缩短了测试等待，并把 Boss 设为一发可击毁，以便反复触发同一条主炮碰撞路径。图形命令输出四帧，可分别检查无特效、只有碎片、只有敌弹、两者同时绘制的画面。
