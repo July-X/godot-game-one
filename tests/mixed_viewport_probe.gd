@@ -133,7 +133,7 @@ func _check_resize() -> void:
 		and NetworkManager.battle_size(_main) == FIELD, "view=%s origin=%s own=%s" % [get_viewport().get_visible_rect().size, origin, _main._player.position])
 	if _stick and DisplayServer.get_name() != "headless":
 		var tap := InputEventScreenTouch.new()
-		tap.position = Vector2(183, 412.5)
+		tap.position = Vector2(183, (size.y - 170.0) * 0.75)
 		tap.pressed = true
 		get_viewport().push_input(tap)
 		var motion: Node = _main._player.get_node("MotionController")

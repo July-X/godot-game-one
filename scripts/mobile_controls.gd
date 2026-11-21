@@ -1,8 +1,7 @@
 extends CanvasLayer
+const SafeArea = preload("res://scripts/battle_safe_area.gd")
 
 @export var joystick_radius: float = 112.0
-## 兜底圆心（桌面调试用）。真机走 `_calc_joystick_center()` 的贴底逻辑。
-@export var base_offset: Vector2 = Vector2(140.0, 550.0)
 @export var knob_scale: float = 0.38
 var _move_vector: Vector2 = Vector2.ZERO
 var _joystick_center: Vector2 = Vector2.ZERO
@@ -16,39 +15,44 @@ var _knob_style: StyleBoxFlat
 signal move_input(vector: Vector2)
 
 func _ready() -> void:
-	_joystick_center = _calc_joystick_center()
 	_build_visual_nodes()
-	_update_visual_knob(_joystick_center)
-	## 视口尺寸会变（横竖屏、canvas_items+expand 的比例适配），
-	## 摇杆必须跟着重算圆心，否则换向后摇杆会留在屏幕外。
-	if get_viewport() and not get_viewport().size_changed.is_connected(_recalc_joystick):
-		get_viewport().size_changed.connect(_recalc_joystick)
-
+	_recalc_joystick()
+	get_viewport().size_changed.connect(_recalc_joystick)
+	get_window().focus_entered.connect(_recalc_joystick)
+	get_window().focus_exited.connect(_release_move_touch)
 
 func _recalc_joystick() -> void:
-	_joystick_center = _calc_joystick_center()
-	_base_node.position = _joystick_center - _base_node.size * 0.5
-	if _move_touch_id == -1:
-		_update_visual_knob(_joystick_center)
+	_layout_in_safe_area(SafeArea.for_viewport(get_viewport()))
 
-func _unhandled_input(event: InputEvent) -> void:
-	## 触屏控制（移动端）
-	if event is InputEventScreenTouch:
-		if event.pressed:
-			if _move_touch_id == -1 and _is_in_joystick_area(event.position):
-				_move_touch_id = event.index
-				_set_active_visual(true)
-				_update_move_vector(event.position)
-		else:
-			if event.index == _move_touch_id:
-				_move_touch_id = -1
-				_move_vector = Vector2.ZERO
-				move_input.emit(Vector2.ZERO)
-				_set_active_visual(false)
-				_update_visual_knob(_joystick_center)
+func _layout_in_safe_area(safe: Rect2) -> void:
+	_joystick_center = Vector2(safe.position.x + joystick_radius + 48, safe.end.y - joystick_radius - 58)
+	_base_node.position = _joystick_center - _base_node.size * 0.5
+	_update_visual_knob(_joystick_center + _move_vector * joystick_radius)
+
+func _input(event: InputEvent) -> void:
+	# 先于 GUI 续接摇杆手指，拖出摇杆区也能收到松手。
+	if event is InputEventScreenTouch and event.device != InputEvent.DEVICE_ID_EMULATION:
+		if event.pressed and _move_touch_id == -1 and _is_in_joystick_area(event.position):
+			_move_touch_id = event.index
+			_set_active_visual(true)
+			_update_move_vector(event.position)
+			get_viewport().set_input_as_handled()
+		elif not event.pressed and event.index == _move_touch_id:
+			_release_move_touch()
+			get_viewport().set_input_as_handled()
 	elif event is InputEventScreenDrag:
 		if event.index == _move_touch_id:
 			_update_move_vector(event.position)
+			get_viewport().set_input_as_handled()
+
+func _release_move_touch() -> void:
+	if _move_touch_id == -1:
+		return
+	_move_touch_id = -1
+	_move_vector = Vector2.ZERO
+	move_input.emit(Vector2.ZERO)
+	_set_active_visual(false)
+	_update_visual_knob(_joystick_center)
 
 func _is_in_joystick_area(pos: Vector2) -> bool:
 	var dx: float = pos.x - _joystick_center.x
@@ -65,20 +69,6 @@ func _update_move_vector(current_pos: Vector2) -> void:
 		_move_vector = _move_vector.limit_length(1.0)
 		_update_visual_knob(_joystick_center + _move_vector * joystick_radius)
 	move_input.emit(_move_vector)
-
-## 摇杆圆心。贴左下角，位置由视口尺寸算出来而不是写死。
-##
-## 原来的 `base_offset = (140, 550)` 只是 1280×720 下的一个点。
-## 改成 canvas_items + expand 之后手机视口可能更高（20:9 机型逻辑高度能到 870+），
-## 写死 550 会让摇杆悬在屏幕中间偏上，拇指够不到、也会和右下角技能条打架。
-## 所以默认贴底左，距离边距固定，这样任何比例下都在拇指自然落点。
-func _calc_joystick_center() -> Vector2:
-	var size := get_viewport().get_visible_rect().size
-	var margin_x: float = joystick_radius + 48.0
-	var margin_y: float = joystick_radius + 72.0
-	var center_x: float = clampf(base_offset.x, margin_x, maxf(size.x - margin_x, margin_x))
-	var center_y: float = clampf(base_offset.y, margin_y, maxf(size.y - margin_y, margin_y))
-	return Vector2(center_x, center_y)
 
 func _build_visual_nodes() -> void:
 	_ui_root = Control.new()

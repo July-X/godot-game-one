@@ -7,6 +7,7 @@
 extends Node2D
 
 const MotionController = preload("res://scripts/player/motion_controller.gd")
+const Boss = preload("res://scripts/boss.gd")
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
@@ -41,7 +42,6 @@ var _boss_variant_last: int = 0
 var _current_boss_variant_id: int = 0
 var _boss_fight_active: bool = false
 var _pending_boss_level: int = 0
-var _last_boss_hud_phase: String = ""
 ## 旧的 `_enemy_spawn_timer` / `_difficulty_timer`（间隔刷怪 + 8 秒脉冲）已删除，
 ## 杂兵投放改由 `_wave_director` 的乐句节拍统一负责。
 var _asteroid_timer: float = 0.0
@@ -1402,9 +1402,6 @@ func _on_boss_died() -> void:
 		_grant_random_boss_reward_to_peer(-1)
 
 func _on_boss_phase_changed(phase_name: String) -> void:
-	_last_boss_hud_phase = phase_name
-	if _hud and _hud.has_method("show_center_banner"):
-		_hud.show_center_banner(phase_name, 0.8, Color(1.0, 0.55, 0.85, 1.0))
 	if NetworkManager.is_online() and multiplayer.is_server() and _boss != null:
 		var vid: int = 1
 		if _boss.has_method("get_sprite_variant_id"):
@@ -1412,20 +1409,14 @@ func _on_boss_phase_changed(phase_name: String) -> void:
 		_rpc_sync_boss_phase.rpc(phase_name, vid)
 
 func _update_boss_hud() -> void:
-	if _hud == null or not _hud.has_method("show_boss_status"):
+	if _hud == null:
 		return
-	if _boss != null and is_instance_valid(_boss) and _boss.has_method("get_network_health"):
-		var phase_name := "压制校准"
-		if _boss.has_method("get_phase_name"):
-			phase_name = _boss.get_phase_name()
-		_hud.show_boss_status(_boss.get_network_health(), _boss.get_network_max_health(), phase_name)
-		if phase_name != _last_boss_hud_phase:
-			_last_boss_hud_phase = phase_name
-			if _hud.has_method("show_center_banner") and phase_name != "压制校准":
-				_hud.show_center_banner(phase_name, 0.8, Color(1.0, 0.55, 0.85, 1.0))
-	elif _hud.has_method("hide_boss_status"):
-		_last_boss_hud_phase = ""
+	if not _has_active_boss():
 		_hud.hide_boss_status()
+		return
+	var window: Boss.AttackWindow = _boss.get_attack_window()
+	_hud.show_boss_status(_boss.get_network_health(), _boss.get_network_max_health(),
+		_boss.get_phase_name(), Boss.ATTACK_WINDOW_LABELS[window], window >= Boss.AttackWindow.CHARGING)
 
 func _enter_boss_fight_mode() -> void:
 	_boss_fight_active = true
@@ -1940,15 +1931,13 @@ func _rpc_elite_shield_destroyed(eid: int) -> void:
 
 ## Host → Client：同步 Boss 阶段变换
 @rpc("authority", "reliable", "call_remote")
-func _rpc_sync_boss_phase(phase_name: String, variant_id: int) -> void:
+func _rpc_sync_boss_phase(_phase_name: String, variant_id: int) -> void:
 	if _boss == null or not is_instance_valid(_boss):
 		return
 	if _boss.has_method("set_sprite_variant"):
 		_boss.set_sprite_variant(variant_id)
 	if _boss.has_method("_apply_visual_state"):
 		_boss._apply_visual_state()
-	if _hud and _hud.has_method("show_center_banner"):
-		_hud.show_center_banner(phase_name, 0.8, Color(1.0, 0.55, 0.85, 1.0))
 
 ## Host → Client：生成 Boss 幽灵副本
 @rpc("authority", "reliable", "call_remote")
@@ -2124,7 +2113,7 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 
 ## Host → Client：同步实体血量（低频 10Hz）
 @rpc("authority", "unreliable", "call_remote")
-func _rpc_sync_entity_health(data: PackedFloat32Array) -> void:
+func _rpc_sync_entity_health(data: PackedFloat32Array, boss_window := -1) -> void:
 	var i := 0
 	while i + 2 < data.size():
 		var eid := int(data[i])
@@ -2135,6 +2124,8 @@ func _rpc_sync_entity_health(data: PackedFloat32Array) -> void:
 			var node: Node = _entities[eid]
 			if node.has_method("apply_network_health"):
 				node.apply_network_health(hp, max_hp)
+			if node == _boss and boss_window >= 0 and boss_window < Boss.ATTACK_WINDOW_LABELS.size():
+				node.network_attack_window = boss_window as Boss.AttackWindow
 
 ## Host → Client：只同步带护盾实体的护盾值，避免所有实体同步包膨胀。
 @rpc("authority", "reliable", "call_remote")
@@ -2177,7 +2168,9 @@ func _batch_sync_entity_health() -> void:
 			if node.has_method("get_network_max_health"):
 				health_data.append(float(node.get_network_max_health()))
 	if health_data.size() > 0:
-		_rpc_sync_entity_health.rpc(health_data)
+		# Boss 的护盾与激光读数和同一份血量快照一起到达。
+		var boss_window: int = _boss.get_attack_window() if _has_active_boss() else -1
+		_rpc_sync_entity_health.rpc(health_data, boss_window)
 
 ## 加入端的子弹只渲染。随已有位置包捎带一个确认落点，避免每发子弹单独通信。
 func register_projectile_impact(pos: Vector2, kind: Pool.Impact) -> void:
@@ -2361,8 +2354,6 @@ func _show_boss_ultimate_laser_charge(pos: Vector2, duration: float) -> void:
 	add_child(visual)
 	if visual.has_method("setup_charge"):
 		visual.setup_charge(pos, duration)
-	if _hud and _hud.has_method("show_center_banner"):
-		_hud.show_center_banner("究极激光炮充能", 0.9, Color(1.0, 0.28, 0.12, 1.0))
 
 func _show_boss_ultimate_laser_fire(from: Vector2, to: Vector2, travel_time: float, width: float, hold_duration: float = 0.0) -> void:
 	var visual := Node2D.new()

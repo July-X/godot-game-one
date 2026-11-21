@@ -131,13 +131,20 @@ func _check_touch_card_select(hud: Node) -> void:
 		GameState.reset_game()
 		return
 
-	## 模拟"点第 3 张"。走 pressed 信号而不是直接调内部函数——
-	## 要验证的是**信号连线接对了**，不是函数本身能跑。
+	## 从视口分发第 2 根手指，覆盖无需模拟鼠标的真实触摸输入路径。
 	## 必须 deep 拷贝：`get_card_stacks()` 返回的是 GameState 内部的同一个
 	## Dictionary 对象（GDScript 的 Dictionary 是引用类型），
 	## 直接拿它当"操作前快照"，前后指向同一份数据，比较永远相等。
 	var before: Dictionary = GameState.get_card_stacks(pid).duplicate(true)
-	(row.get_child(2) as Button).emit_signal("pressed")
+	var card := row.get_child(2) as Button
+	var tap := InputEventScreenTouch.new()
+	tap.index = 1
+	tap.position = card.get_global_rect().get_center()
+	tap.pressed = true
+	get_viewport().push_input(tap, true)
+	tap = tap.duplicate()
+	tap.pressed = false
+	get_viewport().push_input(tap, true)
 	await get_tree().process_frame
 	var after: Dictionary = GameState.get_card_stacks(pid)
 	var gained: String = ""

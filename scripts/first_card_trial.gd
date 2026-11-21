@@ -24,7 +24,6 @@ var next_order := 0
 var squad: Array[CharacterBody2D] = []
 var field: Vector2
 var asteroid_resume := 0.0
-var regular_draft_hint := ""
 
 func _ready() -> void:
 	super._ready()
@@ -57,9 +56,7 @@ func _on_level_up(new_level: int) -> void:
 	_player.on_level_up()
 	$TrialUI/Options.show()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	var hint: Label = _hud.get_node("DraftPanel/DraftHint")
-	regular_draft_hint = hint.text
-	hint.text = "首卡选定后进场 · 超时取第一张"
+	_hud.set_draft_prompt("首卡试飞 · 选定后进场 · 超时取第一张")
 	UpgradeDraft.offer_cards(1, FIRST_OFFER)
 
 func _choose_power() -> void:
@@ -131,7 +128,7 @@ func _physics_process(_delta: float) -> void:
 	if trial_tick == END_TICK:
 		if not from_draft:
 			_asteroid_timer = asteroid_resume
-			_hud.get_node("DraftPanel/DraftHint").text = regular_draft_hint
+			_hud.set_draft_prompt("")
 			_last_wave_phase_text = ""
 			_refresh_wave_phase_hud()
 			return

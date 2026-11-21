@@ -4,6 +4,8 @@ signal boss_died
 signal phase_changed(phase_name: String)
 
 enum State { IDLE, CIRCLE, ATTACK, RETREAT, ENRAGED }
+enum AttackWindow { UNKNOWN, OPEN, CHARGING, SWEEP, HOLD }
+const ATTACK_WINDOW_LABELS := ["同步中", "可攻击", "护盾中 · 激光蓄力", "护盾中 · 激光推进", "护盾中 · 激光持续"]
 enum BossPhase { SUPPRESSION, RIFT, OVERLOAD }
 
 var _state: int = State.IDLE
@@ -22,6 +24,7 @@ var _shoot_angle_offset: float = 0.0
 var _circle_radius: float = 220.0
 var _knockback_tween: Tween = null
 var entity_id: int = 0
+var network_attack_window := AttackWindow.UNKNOWN
 
 func get_entity_id() -> int:
 	return entity_id
@@ -31,6 +34,15 @@ func get_network_health() -> float:
 
 func get_network_max_health() -> float:
 	return _max_health
+
+func get_attack_window() -> AttackWindow:
+	if _is_network_ghost:
+		return network_attack_window
+	if not _shield_active:
+		return AttackWindow.OPEN
+	if _ultimate_laser_charging:
+		return AttackWindow.CHARGING
+	return AttackWindow.SWEEP if _ultimate_laser_fire_timer > BOSS_ULTIMATE_LASER_HOLD_SECONDS else AttackWindow.HOLD
 
 func get_network_level() -> int:
 	return _level
