@@ -34,12 +34,18 @@ func _run() -> void:
 		boss.global_position = AT
 		boss.attack_target_selected.connect(_record)
 		for _i in 4:
+			var previous := get_tree().get_nodes_in_group("enemy_bullets")
 			boss._do_aimed_shot()
+			_check("emitted_aimed_follows_selected_direction", _new_volley_matches(previous, "aimed"), "")
+			previous = get_tree().get_nodes_in_group("enemy_bullets")
 			boss._do_fan_spread()
+			_check("emitted_fan_center_follows_selected_direction", _new_volley_matches(previous, "fan"), "")
 			boss._start_ultimate_laser()
 			boss._tick_ultimate_laser(BossModel.BOSS_ULTIMATE_LASER_CHARGE + 0.02)
 			var laser: Dictionary = _main._boss_snapshot(boss)
-			_check("actual_laser_lock_direction", laser.direction == boss._laser_locked_direction if laser.has("direction") else not boss._laser_locked_direction.is_zero_approx(), "")
+			var actual := Vector2(laser.to - laser.from).normalized()
+			var aimed: Vector2 = _directions["laser"].back()
+			_check("actual_laser_lock_direction", actual.dot(aimed) > .998, str(actual))
 			boss._finish_ultimate_laser()
 			boss._pulse_used_this_shield = false
 			if boss._try_coop_pulse():
@@ -65,6 +71,16 @@ func _run() -> void:
 	await _barrier("checks_complete")
 	await _wait_seconds(.25)
 	get_tree().quit(_summarize())
+
+func _new_volley_matches(previous: Array, attack: String) -> bool:
+	var average := Vector2.ZERO
+	var count := 0
+	for shot in get_tree().get_nodes_in_group("enemy_bullets"):
+		if not previous.has(shot):
+			average += shot._direction
+			count += 1
+	var recorded: Array = _directions.get(attack, [])
+	return count > 0 and not recorded.is_empty() and average.normalized().dot(recorded.back()) > .99
 
 func _record(attack: String, slot: int, direction: Vector2) -> void:
 	var slots: Array = _targets.get_or_add(attack, [])
