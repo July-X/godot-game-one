@@ -100,6 +100,8 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 `run_probe.sh` 还会额外把 `SCRIPT ERROR` 和运行期 `ERROR:` 计入失败。
 常规门禁共 40 项断言（房主 24 项、加入端 16 项），含两端的雨燕槽位和核心拾取去重。改联机战场还须运行 `tests/run_probe.sh 7790 wide-host` 与 `tests/run_probe.sh 7791 wide-client`，检查双方贴边移动、弹道和入场坐标。末尾追加已有截图目录可用两个图形进程捕获同一场景。
 
+改联机三选一时加跑 `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19616 draft`，核对同批确认、超时、连升补发和断线清理。[复现口径](docs/lan_upgrade_draft.md)
+
 **改任何难度数值后必须跑难度曲线门禁**（防止难度墙悄悄长回来）：
 
 ```bash

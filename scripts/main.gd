@@ -509,6 +509,7 @@ func _fallback_to_single_player(message: String = "") -> void:
 	call_deferred("_reload_as_single_player_clean", reload_delay)
 
 func _clear_network_runtime_state() -> void:
+	UpgradeDraft.clear_drafts()
 	_pending_bullet_spawns.clear()
 	_pending_laser_spawns.clear()
 	_entity_target_positions.clear()
@@ -1401,9 +1402,9 @@ func _show_death_marquee_text(msg: String, hold_seconds: float = DEATH_MARQUEE_H
 func _on_level_up(_new_level: int) -> void:
 	if _player and _player.has_method("on_level_up"):
 		_player.on_level_up()
-	## 升级改为三选一：给每个存活玩家各抽 3 张卡。
-	## 联机时各端各抽各的，不做共享卡池协商——独立抽取保证两端不会
-	## 因为抢同一张卡而卡住选择（共享池的社交玩法留给 v2）。
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return
+	## 房主为每个存活玩家独立抽卡，加入端只展示快照里的本机批次。
 	for pid: int in _alive_peer_ids():
 		UpgradeDraft.open_draft(pid)
 
@@ -1485,6 +1486,7 @@ func _request_player_sync() -> void:
 	_send_player_snapshot_to(requester)
 	if requester > 1:
 		_rpc_set_boss_bg.rpc_id(requester, _boss_fight_active)
+		GameState.force_sync_to_peer(requester)
 
 ## Client -> Host：请求确保本机玩家节点存在（修复偶发漏生成）
 @rpc("any_peer", "reliable", "call_remote")

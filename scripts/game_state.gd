@@ -165,6 +165,7 @@ func _to_dict() -> Dictionary:
 		"boss_encounter_count": boss_encounter_count,
 		"player_states": _player_states.duplicate(true),
 		"player_scores": _player_scores.duplicate(true),
+		"upgrade_drafts": UpgradeDraft.snapshot(),
 	}
 
 @rpc("authority", "reliable", "call_remote")
@@ -259,6 +260,7 @@ func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
 
 func _from_dict(data: Dictionary) -> void:
 	score = data.get("score", 0)
+	var previous_level := level
 	level = data.get("level", 1)
 	kills = data.get("kills", 0)
 	total_kills = data.get("total_kills", 0)
@@ -279,12 +281,17 @@ func _from_dict(data: Dictionary) -> void:
 	## 重新发射信号让 UI 更新
 	score_changed.emit(score)
 	_emit_scores_changed()
-	level_changed.emit(level)
+	if level != previous_level:
+		level_changed.emit(level)
 	_sync_local_view()
 	health_changed.emit(current_health, max_health)
 	for key: String in _player_states.keys():
 		if key.is_valid_int():
 			_emit_shield_changed_for_peer(int(key))
+	if not multiplayer.is_server():
+		var peer_id := _local_peer_id()
+		var drafts: Dictionary = data.get("upgrade_drafts", {})
+		UpgradeDraft.receive_draft(peer_id, drafts.get(peer_id, {}))
 
 func _mark_dirty() -> void:
 	if not multiplayer.has_multiplayer_peer():
@@ -304,6 +311,7 @@ func ensure_player_state(peer_id: int) -> void:
 	_mark_dirty()
 
 func reset_game() -> void:
+	UpgradeDraft.clear_drafts()
 	score = 0
 	level = 1
 	kills = 0
@@ -714,7 +722,7 @@ func reset_graze() -> void:
 
 ## ── 升级卡（构筑）───────────────────────────────────────────
 ##
-## 每个 peer 独立持有卡牌层数。联机时两端各抽各的，避免抢卡冲突。
+## 每个 peer 独立持有卡牌层数，联机由房主结算。
 
 func get_card_stacks(peer_id: int = -1) -> Dictionary:
 	var s := _state(peer_id)

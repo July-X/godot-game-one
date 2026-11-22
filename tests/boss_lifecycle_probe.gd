@@ -461,14 +461,21 @@ func _capture_boss_and_cards() -> void:
 		_main._spawn_mobile_controls()
 		hud._layout_battle_hud()
 		hud._update_platform_hints()
-	UpgradeDraft.offer_cards(_main._player.peer_id, ["pierce", "splash", "power"])
+	else:
+		for pid in [1, p2]:
+			UpgradeDraft.offer_cards(pid, ["pierce", "splash", "power"])
+		GameState.force_sync_to_peer(p2)
+	if not _require("capture_has_authoritative_draft",
+			await _wait_until(UpgradeDraft.has_draft.bind(_main._player.peer_id), 1.0)):
+		return
 	await _wait_seconds(0.23)
 	await RenderingServer.frame_post_draw
 	var frame := get_viewport().get_texture().get_image()
 	_check("captured_lan_presentation", frame.save_png(args[3].path_join(_role + "-laser-and-draft.png")) == OK, "")
-	UpgradeDraft.clear_drafts()
 	if _role == "host":
-		await _wait_seconds(0.27)
+		await _wait_seconds(0.80)
+		UpgradeDraft.clear_drafts()
+		GameState.force_sync_to_peer(p2)
 
 func _orphan_shards() -> int:
 	var count := 0

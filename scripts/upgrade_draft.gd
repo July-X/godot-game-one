@@ -9,8 +9,7 @@ extends Node
 ##    所以卡牌只能改变**走位方式**和**弹幕形态**，不能新增按钮。
 ##    典型：穿透流逼你贴脸、溅射流逼你精准卡位、追踪流让你站桩——
 ##    同一套输入，三种截然不同的站位偏好。
-## 3. 联机时两端各自抽 3 张、各选各的，不做共享卡池协商（v2 再考虑）。
-##    独立抽取保证两端不会因为抢同一张卡而卡住选择。
+## 3. 联机时房主分别为每位玩家抽卡，双方各选各的。
 
 signal card_chosen(peer_id: int, card_id: String, choice_index: int)
 signal draft_opened(peer_id: int, cards: Array)
@@ -80,8 +79,10 @@ const DRAFT_TIMEOUT_SECONDS: float = 10.0
 
 var _rng := RandomNumberGenerator.new()
 
-## { peer_id : {cards = [...], left = 秒, chosen = bool} }
+## 编号在本进程内递增，重开也不会让上一局的选择匹配到新批次。
+var _last_draft_id := 0
 var _drafts: Dictionary = {}
+var _queued_upgrades: Dictionary = {}
 
 
 func _ready() -> void:
@@ -90,6 +91,9 @@ func _ready() -> void:
 
 ## 为某个 peer 抽 3 张卡。已经满层的卡不再进池，避免"抽到没用的卡"。
 func open_draft(peer_id: int) -> Array:
+	if NetworkManager.is_online() and has_draft(peer_id):
+		_queued_upgrades[peer_id] = int(_queued_upgrades.get(peer_id, 0)) + 1
+		return []
 	var owned: Dictionary = GameState.get_card_stacks(peer_id)
 	var pool: Array = []
 	for card: Dictionary in CARDS:
@@ -120,20 +124,22 @@ func open_draft(peer_id: int) -> Array:
 
 ## 试飞指定候选，实际选择、超时和加成都走普通升级流程。
 func offer_cards(peer_id: int, picks: Array) -> Array:
-	_drafts[peer_id] = {"cards": picks, "left": DRAFT_TIMEOUT_SECONDS, "chosen": false}
+	_last_draft_id += 1
+	_drafts[peer_id] = {"id": _last_draft_id, "cards": picks, "left": DRAFT_TIMEOUT_SECONDS, "chosen": false}
 	draft_opened.emit(peer_id, picks)
 	return picks
 
 
 func _process(delta: float) -> void:
-	if _drafts.is_empty():
+	if _drafts.is_empty() or not GameState.game_running:
 		return
+	var authority := not NetworkManager.is_online() or multiplayer.is_server()
 	for peer_id: Variant in _drafts.keys():
 		var d: Dictionary = _drafts[peer_id]
 		if bool(d.chosen):
 			continue
-		d.left = float(d.left) - delta
-		if float(d.left) <= 0.0:
+		d.left = maxf(float(d.left) - delta, 0.0)
+		if authority and float(d.left) <= 0.0:
 			## 超时自动选第一张。必须要有兜底：否则玩家没看到/没空选卡
 			## 时会被永久卡住，拿不到升级收益。
 			choose_card(int(peer_id), 0, "timeout")
@@ -141,25 +147,39 @@ func _process(delta: float) -> void:
 
 ## index 越界或已选过都忽略。来源供观察者在 card_chosen 中读取。
 func choose_card(peer_id: int, index: int, source := "direct") -> bool:
-	if not _drafts.has(peer_id):
+	if not has_draft(peer_id):
 		return false
 	var d: Dictionary = _drafts[peer_id]
-	if bool(d.chosen):
-		return false
 	var cards: Array = d.cards
 	if index < 0 or index >= cards.size():
 		return false
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		if peer_id != multiplayer.get_unique_id() or rpc_id(1, "_rpc_request_card", d.id, index, source) != OK:
+			return false
+		d.pending = true
+		return true
 	d.chosen = true
 	d.source = source
-	_drafts[peer_id] = d
+	d.index = index
 	var card_id: String = str(cards[index])
 	GameState.apply_card(peer_id, card_id)
 	card_chosen.emit(peer_id, card_id, index)
+	# 先把确认和实际卡层一起送达，再推进排队批次。
+	if NetworkManager.is_online() and peer_id != multiplayer.get_unique_id():
+		GameState.force_sync_to_peer(peer_id)
+	var queued := int(_queued_upgrades.get(peer_id, 0))
+	if queued > 0:
+		if queued == 1:
+			_queued_upgrades.erase(peer_id)
+		else:
+			_queued_upgrades[peer_id] = queued - 1
+		open_draft(peer_id)
 	return true
 
 
 func has_draft(peer_id: int) -> bool:
-	return _drafts.has(peer_id) and not bool(_drafts[peer_id].chosen)
+	var draft := get_draft(peer_id)
+	return not draft.is_empty() and not bool(draft.chosen) and not bool(draft.get("pending", false))
 
 
 func get_draft(peer_id: int) -> Dictionary:
@@ -168,6 +188,43 @@ func get_draft(peer_id: int) -> Dictionary:
 
 func clear_drafts() -> void:
 	_drafts.clear()
+	_queued_upgrades.clear()
+
+
+func snapshot() -> Dictionary:
+	return _drafts.duplicate(true)
+
+
+func receive_draft(peer_id: int, incoming: Dictionary) -> void:
+	if incoming.is_empty():
+		_drafts.erase(peer_id)
+		return
+	var current := get_draft(peer_id)
+	var current_id := int(current.get("id", 0))
+	var incoming_id := int(incoming.id)
+	if incoming_id < current_id or (incoming_id == current_id and bool(current.chosen)):
+		return
+	if bool(incoming.chosen):
+		_drafts[peer_id] = incoming
+		var index := int(incoming.index)
+		card_chosen.emit(peer_id, str(incoming.cards[index]), index)
+	elif incoming_id > current_id:
+		_drafts[peer_id] = incoming
+		draft_opened.emit(peer_id, incoming.cards)
+	else:
+		# 保留本机已提交标记。房主确认前，同批快照仍可能显示未选。
+		current.left = incoming.left
+
+
+@rpc("any_peer", "reliable")
+func _rpc_request_card(draft_id: int, index: int, source: String) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if not GameState.game_running or source not in ["tap", "key"]:
+		return
+	if int(get_draft(sender).get("id", 0)) == draft_id:
+		choose_card(sender, index, source)
 
 
 static func card_by_id(card_id: String) -> Dictionary:
