@@ -2,12 +2,15 @@ extends CanvasLayer
 
 const SafeArea := preload("res://scripts/battle_safe_area.gd")
 
+@export var show_opening_choices_on_entry := false
+
 @onready var _menu: VBoxContainer = $Menu
 @onready var _start_label: Label = $Menu/StartLabel
 @onready var _btn_single: Button = $Menu/BtnSingle
 @onready var _btn_multi: Button = $Menu/BtnMultiplayer
 @onready var _btn_first_card: Button = $Menu/BtnFirstCard
 @onready var _trial_choices: VBoxContainer = $TrialChoices
+@onready var _opening_choices: VBoxContainer = $OpeningChoices
 
 func _ready() -> void:
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
@@ -16,23 +19,27 @@ func _ready() -> void:
 	# 触摸合成的鼠标释放仍会访问触发按钮，等 GUI 处理结束后再切场景。
 	_btn_single.pressed.connect(_on_single_pressed, CONNECT_DEFERRED)
 	_btn_multi.pressed.connect(_on_multiplayer_pressed, CONNECT_DEFERRED)
-	_btn_first_card.pressed.connect(_show_trial_choices.bind(true))
+	_btn_first_card.pressed.connect(_show_menu.bind(_trial_choices))
 	$Menu/BtnOffenseWindow.pressed.connect(_start_game.bind("res://scenes/offense_window_trial.tscn"), CONNECT_DEFERRED)
-	$Menu/BtnOpeningTrial.pressed.connect(_start_game.bind("res://scenes/opening_trial.tscn"), CONNECT_DEFERRED)
+	$Menu/BtnOpeningTrial.pressed.connect(_show_menu.bind(_opening_choices))
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
-	$TrialChoices/Back.pressed.connect(_show_trial_choices.bind(false))
+	$TrialChoices/Back.pressed.connect(_show_menu.bind(_menu))
+	$OpeningChoices/Start.pressed.connect(_start_game.bind("res://scenes/opening_trial.tscn"), CONNECT_DEFERRED)
+	$OpeningChoices/A.pressed.connect(_start_game.bind("res://scenes/elite_close_trial_a.tscn"), CONNECT_DEFERRED)
+	$OpeningChoices/B.pressed.connect(_start_game.bind("res://scenes/elite_close_trial_b.tscn"), CONNECT_DEFERRED)
+	$OpeningChoices/Back.pressed.connect(_show_menu.bind(_menu))
 	get_viewport().size_changed.connect(_layout_title)
 	get_window().focus_entered.connect(_layout_title)
-	_layout_title()
+	_show_menu(_opening_choices if show_opening_choices_on_entry else _menu)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_RESUMED and is_node_ready():
 		_layout_title.call_deferred()
 
-func _show_trial_choices(open: bool) -> void:
-	_menu.visible = not open
-	_trial_choices.visible = open
+func _show_menu(active: VBoxContainer) -> void:
+	for menu: VBoxContainer in [_menu, _trial_choices, _opening_choices]:
+		menu.visible = menu == active
 	_layout_title()
 
 
@@ -42,7 +49,7 @@ func _layout_title() -> void:
 
 func _layout_in_safe_area(safe: Rect2) -> void:
 	var content := safe.grow(-SafeArea.MENU_MARGIN)
-	for menu: VBoxContainer in [_menu, _trial_choices]:
+	for menu: VBoxContainer in [_menu, _trial_choices, _opening_choices]:
 		menu.size = Vector2(minf(336.0, content.size.x), 0)
 		menu.position = (content.get_center() - menu.size * 0.5).round()
 	$VersionLabel.position = content.end - $VersionLabel.size
@@ -57,9 +64,9 @@ func _start_blink() -> void:
 func _input(event: InputEvent) -> void:
 	## 仅保留键盘快捷键，避免移动端误触空白区域直接进单机
 	if event is InputEventKey and event.pressed and not event.echo:
-		if _trial_choices.visible:
+		if not _menu.visible:
 			if event.is_action_pressed("ui_cancel"):
-				_show_trial_choices(false)
+				_show_menu(_menu)
 				get_viewport().set_input_as_handled()
 			return
 		if event.keycode == KEY_W or (event.keycode == KEY_ENTER and get_viewport().gui_get_focus_owner() == null):

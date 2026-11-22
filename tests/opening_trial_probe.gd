@@ -6,8 +6,11 @@ const Mobile := preload("res://scenes/ui/mobile_controls.tscn")
 const Bullet := preload("res://scripts/bullet.gd")
 const Enemy := preload("res://scripts/enemy.gd")
 const Elite := preload("res://scripts/elite.gd")
+const CloseTrial := preload("res://scripts/elite_close_trial.gd")
 const SafeArea := preload("res://scripts/battle_safe_area.gd")
 const Title := "res://scenes/ui/title_screen.tscn"
+const OpeningChoices := "res://scenes/ui/opening_trial_choices.tscn"
+const Solo := "res://scenes/main.tscn"
 const SEED := 90220
 
 var trial: Opening
@@ -158,17 +161,34 @@ func _report() -> void:
 
 func _check_title() -> void:
 	get_tree().node_added.connect(func(node: Node):
-		if node is Opening and not (OS.has_feature("android") or OS.has_feature("ios")):
+		if (node is Opening or node.scene_file_path == Solo) and not (OS.has_feature("android") or OS.has_feature("ios")):
 			node._spawn_mobile_controls())
 	get_tree().current_scene = null
 	get_tree().change_scene_to_file(Title)
 	await get_tree().scene_changed
 	await get_tree().process_frame
-	var menu := get_tree().current_scene.get_node("Menu") as Control
-	_check("title_fits_safety_margin", SafeArea.for_viewport(get_viewport()).encloses(menu.get_global_rect()))
+	var title := get_tree().current_scene
+	var menu := title.get_node("Menu") as Control
+	var choices := title.get_node("OpeningChoices") as Control
+	_check("title_fits_safety_margin", SafeArea.for_viewport(get_viewport()).encloses(menu.get_global_rect())
+		and menu.is_visible_in_tree() and not choices.is_visible_in_tree())
 	await _tap_button(menu.get_node("BtnOpeningTrial"))
+	_check("opens_secondary_choices", get_tree().current_scene == title and not menu.is_visible_in_tree()
+		and choices.is_visible_in_tree() and choices.get_node("Start").text == "开始 90 秒试飞"
+		and choices.get_node("A").text == "近身试飞 A" and choices.get_node("B").text == "近身试飞 B")
+	await _check_choice_insets(title, choices)
+	await _tap_button(choices.get_node("Back"))
+	_check("chooser_back_restores_title", get_tree().current_scene == title and menu.is_visible_in_tree()
+		and not choices.is_visible_in_tree())
+	await _tap_button(menu.get_node("BtnOpeningTrial"))
+	for variant in ["B", "A"]:
+		if not await _check_close_choice(choices, variant):
+			return
+		choices = get_tree().current_scene.get_node("OpeningChoices")
+	await _tap_button(choices.get_node("Start"))
 	trial = get_tree().current_scene as Opening
 	_check("opens_trial_with_base_fire_and_mobile_controls", is_instance_valid(trial)
+		and trial.scene_file_path == Scene.resource_path
 		and not UpgradeDraft.has_draft(1) and GameState.get_card_stacks(1).is_empty() and trial._player._motion.mobile_mode)
 	if not is_instance_valid(trial):
 		return
@@ -184,7 +204,63 @@ func _check_title() -> void:
 	if not is_instance_valid(trial):
 		return
 	await _tap_button(trial.get_node("TrialUI/Options/Buttons/Back"))
-	_check("returns_to_title", get_tree().current_scene.scene_file_path == Title)
+	title = get_tree().current_scene
+	var at_title := is_instance_valid(title) and title.scene_file_path == Title
+	_check("returns_to_title", at_title and title.get_node("Menu").is_visible_in_tree())
+	if not at_title:
+		return
+	await _tap_button(title.get_node("Menu/BtnSingle"))
+	var solo := get_tree().current_scene
+	_check("opens_normal_solo", is_instance_valid(solo) and solo.scene_file_path == Solo
+		and not NetworkManager.is_online() and not UpgradeDraft.has_draft(1)
+		and GameState.get_card_stacks(1).is_empty() and solo._player._motion.mobile_mode)
+
+func _check_choice_insets(title: Node, choices: Control) -> void:
+	var viewport := get_viewport()
+	var view := viewport.get_visible_rect()
+	var safe := view.grow_individual(-132, -28, -36, -78)
+	var display_rect := viewport.get_screen_transform() * safe
+	title._layout_in_safe_area(SafeArea.from_display(viewport, display_rect))
+	await get_tree().process_frame
+	var usable := safe.grow(-SafeArea.MENU_MARGIN)
+	var last_bottom := usable.position.y
+	var fits := absf(choices.get_global_rect().get_center().x - usable.get_center().x) <= 1.0
+	for control: Control in choices.get_children():
+		var rect := control.get_global_rect()
+		fits = fits and usable.encloses(rect) and rect.position.y >= last_bottom
+		if control is Button:
+			fits = fits and rect.size.y >= 48.0
+		last_bottom = rect.end.y
+	_check("chooser_fits_asymmetric_safe_area", fits)
+	print("[OPENING] entry viewport=", view.size, " safe_area=", safe)
+
+func _check_close_choice(choices: Control, variant: String) -> bool:
+	await _tap_button(choices.get_node(variant))
+	var close_trial := get_tree().current_scene as CloseTrial
+	var scene_path := "res://scenes/elite_close_trial_%s.tscn" % variant.to_lower()
+	var entered := is_instance_valid(close_trial) and close_trial.scene_file_path == scene_path
+	_check(variant + "_touch_enters_close_trial", entered and close_trial.variant_b == (variant == "B")
+		and close_trial.trial_tick < CloseTrial.START_TICK + 12 and close_trial._player._motion.mobile_mode
+		and GameState.get_card_stacks(1) == {CloseTrial.TRIAL_CARD: 1})
+	if not entered:
+		return false
+	var previous := close_trial.get_instance_id()
+	for i in 14:
+		await get_tree().physics_frame
+	await _tap_button(close_trial.get_node("TrialUI/Options/Buttons/Retry"))
+	close_trial = get_tree().current_scene as CloseTrial
+	var retried := is_instance_valid(close_trial) and close_trial.get_instance_id() != previous
+	_check(variant + "_retry_keeps_variant", retried and close_trial.scene_file_path == scene_path
+		and close_trial.variant_b == (variant == "B") and close_trial.trial_tick < CloseTrial.START_TICK + 12
+		and GameState.get_card_stacks(1) == {CloseTrial.TRIAL_CARD: 1})
+	if not retried:
+		return false
+	await _tap_button(close_trial.get_node("TrialUI/Options/Buttons/Back"))
+	var chooser := get_tree().current_scene
+	var returned := is_instance_valid(chooser) and chooser.scene_file_path == OpeningChoices
+	_check(variant + "_back_to_opening_choices", returned and chooser.get_node("OpeningChoices").is_visible_in_tree()
+		and not chooser.get_node("Menu").is_visible_in_tree())
+	return returned
 
 func _tap_button(button: Button) -> void:
 	var point := get_viewport().get_final_transform() * button.get_global_rect().get_center()

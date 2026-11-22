@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/title_screen.tscn" id="1"]
+
+[node name="TitleScreen" instance=ExtResource("1")]
+show_opening_choices_on_entry = true

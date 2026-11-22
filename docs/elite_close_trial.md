@@ -1,6 +1,8 @@
 # 精英近身抢攻 A/B
 
-直接运行 `res://scenes/elite_close_trial.tscn` 进入 A。启动参数加 `--close-b` 进入 B。桌面按 R 或释放鼠标后点底部「重试」。触摸沿用同一个按钮，重开自动保留版本。该入口用于开发对照。
+从标题点「开场试飞 · 90 秒」，再选「近身试飞 A」或「近身试飞 B」。首项「开始 90 秒试飞」进入完整试飞。近身试飞中点「重试」保留版本，点「返回试飞选择」可换版。桌面也可按 R 重试。
+
+直接运行 `res://scenes/elite_close_trial.tscn` 进入 A，启动参数加 `--close-b` 进入 B。直接运行时底部返回标题。
 
 ## 规则和画面
 
@@ -31,12 +33,17 @@ godot --headless --path . --editor --import
 godot --path . res://scenes/elite_close_trial.tscn
 godot --path . res://scenes/elite_close_trial.tscn -- --close-b
 
+godot --headless --fixed-fps 60 --path . res://tests/opening_trial_probe.tscn -- --entry
+godot --headless --fixed-fps 60 --path . res://tests/opening_trial_probe.tscn -- --entry --wide
+
 out=$(mktemp -d)
 python3 tests/run_elite_close_trial_probe.py "$out"
 python3 tests/run_opening_trial_probe.py /tmp/opening-90-regression
 godot --headless --path . res://tests/mobile_check.tscn
 bash tests/run_probe.sh 19572
 ```
+
+两条 `--entry` 命令用模拟触摸从标题进入两版，核对同版重试、返回换版、完整 90 秒入口与普通单人。选择页另用不对称安全区检查按钮的完整点击范围。
 
 同一目录保存 `summary.csv`、逐帧 `replays.json` 和各条航线的摇杆文件。以下命令在临时项目副本中录制完整的 20:9 贴近后撤 B。Godot 4.6.2 的影片尺寸由录制用窗口设置决定，`--resolution` 负责运行窗口尺寸。[Godot 录制器源码](https://github.com/godotengine/godot/blob/4.6.2-stable/main/main.cpp#L4374-L4389)
 

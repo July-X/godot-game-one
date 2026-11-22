@@ -13,6 +13,10 @@ const BONUS_DAMAGE := 4
 
 signal bonus_hit(shot_id: int, extra_damage: int)
 
+enum TrialVariant { COMMAND_LINE, A, B }
+
+@export var playtest_variant := TrialVariant.COMMAND_LINE
+
 var defeat_tick := -1
 var remaining_hp := 0
 var variant_b := false
@@ -23,11 +27,20 @@ var _status := ""
 
 func _ready() -> void:
 	trial_tick = START_TICK
-	variant_b = "--close-b" in OS.get_cmdline_user_args()
+	var from_menu := playtest_variant != TrialVariant.COMMAND_LINE
+	variant_b = playtest_variant == TrialVariant.B if from_menu else "--close-b" in OS.get_cmdline_user_args()
 	super._ready()
+	if from_menu:
+		$TrialUI/Options/Buttons/Back.text = "返回试飞选择"
 	GameState.apply_card(1, TRIAL_CARD)
 	if variant_b:
 		child_entered_tree.connect(_watch_cannon_shot)
+
+func _return_to_title() -> void:
+	if playtest_variant == TrialVariant.COMMAND_LINE:
+		super._return_to_title()
+	elif is_inside_tree():
+		get_tree().change_scene_to_file("res://scenes/ui/opening_trial_choices.tscn")
 
 func _spawn_elite() -> void:
 	# 护航的击毁也会消耗随机数，在精英入场时重新固定两版的初始状态。
