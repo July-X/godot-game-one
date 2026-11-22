@@ -61,3 +61,5 @@ ffmpeg -framerate 60 -start_number 1355 -i "$out/frame-%05d.jpg" -pix_fmt yuv420
 3. 玩家愿意才开第二局，问会试哪张卡或哪条路。记录看不懂、没截断、选择绕过和中途退出。观察过程与玩家原话分开。
 
 现有记录来自 Mac 上的 Godot 实拍和模拟触摸。手机真机与真人理解、重玩动力仍待验证。
+
+开发验收可直接进入末段的 [18 秒精英近身抢攻对照](elite_close_trial.md)。
