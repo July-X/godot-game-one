@@ -766,11 +766,12 @@ func get_bullet_count(peer_id: int = -1) -> int:
 	return min(2 + int(s.shoot_level) / 3 + int(s.extra_bullet_count), 12)
 
 func get_shoot_cooldown(peer_id: int = -1) -> float:
-	var s := _state(peer_id)
-	var base: float = max(0.27 - int(s.shoot_speed_level) * 0.018, 0.08)
 	## 擦弹奖励直接乘在射击间隔上：CD 越短射速越高，
 	## 这是唯一能让"主动贴近弹幕"转化为收益的通路（见 Design_Decisions）
-	return base * (1.0 - get_graze_fire_rate_bonus())
+	return get_base_shoot_cooldown(peer_id) * (1.0 - get_graze_fire_rate_bonus())
+
+func get_base_shoot_cooldown(peer_id: int) -> float:
+	return maxf(0.27 - int(_state(peer_id).shoot_speed_level) * 0.018, 0.08)
 
 
 ## ── 擦弹（Graze）───────────────────────────────────────────────

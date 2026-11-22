@@ -391,6 +391,8 @@ func _verify_ultimate_laser(client_id: int) -> void:
 	_boss = _main._boss
 	## 固定战场：Boss 正上方、P1 正下方、Client 在右侧远处
 	var p1: Node2D = _main._player
+	_boss._stop_entry_motion()
+	_boss._shoot_timer = 90.0
 	_boss.position = Vector2(640, 160)
 	if p1 != null and is_instance_valid(p1):
 		p1.position = Vector2(640, 520)
@@ -399,9 +401,11 @@ func _verify_ultimate_laser(client_id: int) -> void:
 
 	## 探针验的是「真死亡 ≠ 断线」，要绕过 2 人合作的倒地救援路径
 	_main.rescue_enabled = false
-	## 掉 30 个百分点血量（> BOSS_ULTIMATE_LASER_HP_INTERVAL 的 25 个百分点）触发终局激光
+	## 直接排到持盾的激光招式，隔离这条门禁的计时起点。持盾开招不再由掉血触发。
 	var max_hp: float = _boss._max_health
 	_boss.apply_network_health(max_hp * 0.70, max_hp)
+	_boss._next_attack = 2
+	_boss._shoot_timer = 0.0
 
 	var charging: bool = await _wait_until(_cond_laser_charging, 3.0)
 	var charge_start: int = Engine.get_physics_frames()

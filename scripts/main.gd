@@ -1219,7 +1219,13 @@ func _spawn_boss(level: int) -> void:
 	var variant_id := _pick_boss_variant_id()
 	if _boss.has_method("set_sprite_variant"):
 		_boss.set_sprite_variant(variant_id)
-	_boss.setup(level)
+	var coop := NetworkManager.is_online() and multiplayer.is_server()
+	var pilots: Array[int] = []
+	if coop:
+		for peer_id: int in _alive_players:
+			if is_instance_valid(_players.get(peer_id)) and GameState.is_player_alive(peer_id):
+				pilots.append(peer_id)
+	_boss.setup(level, coop, pilots)
 	if _player and is_instance_valid(_player):
 		_boss.set_target(_player)
 	_boss.boss_died.connect(_on_boss_died)
@@ -1292,9 +1298,10 @@ func _update_boss_hud() -> void:
 		_hud.hide_boss_status()
 		return
 	var window: Boss.AttackWindow = _boss.get_attack_window()
+	var attack: String = _boss.coop_pulse_label() if window == Boss.AttackWindow.OPEN else ""
 	_hud.show_boss_status(_boss.get_network_health(), _boss.get_network_max_health(),
 		_boss.get_shield_hp(), _boss.get_max_shield_hp(), _boss.get_phase_name(),
-		Boss.ATTACK_WINDOW_LABELS[window], _boss.is_shield_recharging())
+		Boss.ATTACK_WINDOW_LABELS[window] if attack.is_empty() else attack, _boss.is_shield_recharging())
 
 func _enter_boss_fight_mode() -> void:
 	_clear_non_boss_entities()
@@ -1817,6 +1824,7 @@ func _boss_snapshot(boss: Boss) -> Dictionary:
 		"shield_stamp": boss.get_shield_stamp(), "shield": boss.get_shield_hp(), "max_shield": boss.get_max_shield_hp(),
 		"stamp": boss.get_attack_window_stamp(), "age": boss.get_laser_visual_age(),
 		"from": boss._ultimate_laser_start, "to": boss._ultimate_laser_end,
+		"pulse": boss.coop_pulse_snapshot(),
 	}
 
 ## 同 ID 快照补齐当前状态，保留在播的激光和已经消费的解除事件。
@@ -1848,6 +1856,7 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary
 		_boss.apply_network_rotation(snapshot.rotation)
 	_entities[eid] = _boss
 	_boss.apply_network_boss_shield(snapshot.shield_stamp, snapshot.shield, snapshot.max_shield)
+	_boss.apply_network_coop_pulse(snapshot.get("pulse", {}))
 	var previous: int = _boss.get_attack_window_stamp()
 	var hp: float = snapshot.hp if previous < 0 else minf(snapshot.hp, _boss.get_network_health())
 	_boss.apply_network_health(hp, snapshot.max_hp)
@@ -2246,6 +2255,15 @@ func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_
 func publish_boss_shield(boss: Boss) -> void:
 	if GameState.game_running and boss == _boss and NetworkManager.is_online() and multiplayer.is_server():
 		_rpc_sync_boss_shield.rpc(boss.entity_id, boss.get_shield_stamp(), boss.get_shield_hp(), boss.get_max_shield_hp(), boss.global_position)
+
+func publish_boss_pulse(boss: Boss) -> void:
+	if GameState.game_running and boss == _boss and NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_sync_boss_pulse.rpc(boss.entity_id, boss.coop_pulse_snapshot())
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_sync_boss_pulse(eid: int, pulse: Dictionary) -> void:
+	if GameState.game_running and _has_active_boss() and _boss.entity_id == eid:
+		_boss.apply_network_coop_pulse(pulse, true)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_sync_boss_shield(eid: int, stamp: int, hp: float, max_hp: float, origin: Vector2) -> void:

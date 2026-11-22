@@ -11,6 +11,7 @@ const WINDOWS_PER_CYCLE := AttackWindow.HOLD - AttackWindow.OPEN + 1
 enum ShieldPhase { RAISED, EXPOSED, RECHARGING }
 const SHIELD_PHASE_COUNT := 3
 enum BossPhase { SUPPRESSION, RIFT, OVERLOAD }
+enum PulsePhase { OPEN, LOCK, FIRE }
 
 var _state: int = State.IDLE
 var _state_timer: float = 0.0
@@ -80,7 +81,7 @@ func get_sprite_variant_id() -> int:
 
 func apply_network_rotation(rot: float) -> void:
 	# 推进与持续阶段的朝向由可靠光束坐标锁定。
-	if _is_network_ghost and (get_attack_window() >= AttackWindow.SWEEP or not _laser_locked_direction.is_zero_approx()):
+	if _is_network_ghost and (get_attack_window() >= AttackWindow.SWEEP or not _laser_locked_direction.is_zero_approx() or _pulse.phase != PulsePhase.OPEN):
 		return
 	_network_target_rotation = rot
 	if not _is_network_ghost:
@@ -156,6 +157,12 @@ var _ultimate_laser_fire_timer: float = 0.0
 var _ultimate_laser_start: Vector2 = Vector2.ZERO
 var _ultimate_laser_end: Vector2 = Vector2.ZERO
 var _laser_dot_accumulator: float = 0.0
+var _coop_encounter := false
+var _pulse_used_this_shield := false
+var _pulse_last_slot := 0
+var _pulse_left := 0.0
+var _pulse_hits: Dictionary[int, bool] = {}
+var _pulse := {"stamp": 0, "phase": PulsePhase.OPEN, "slot": 0, "from": Vector2.ZERO, "to": Vector2.ZERO}
 
 const ARENA_MARGIN_X: float = 96.0
 const ARENA_MARGIN_Y: float = 84.0
@@ -192,6 +199,13 @@ const BOSS_ULTIMATE_LASER_WIDTH: float = 110.0
 const BOSS_ULTIMATE_LASER_HOLD_SECONDS: float = 10.0
 const BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC: float = 10.0
 const ULTIMATE_LASER_INNER_RATIO: float = 0.3  ## 内圈比例（秒杀区）
+const COOP_HULL_SECONDS := 21.0
+const COOP_MIN_HULL := 1000.0
+const COOP_PULSE_CHARGE := 0.90
+const COOP_PULSE_DURATION := 0.18
+const COOP_PULSE_RADIUS := 34.0
+const COOP_PULSE_ESCAPE := 76.0
+const COOP_PULSE_DAMAGE := 10.0
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
@@ -204,12 +218,18 @@ func _apply_visual_state() -> void:
 		_sprite.modulate = Color(1, 1, 1, 1)
 		_sprite.scale = Vector2(BOSS_VISUAL_SCALE, BOSS_VISUAL_SCALE)
 
-func setup(level: int) -> void:
+func setup(level: int, coop := false, pilots: Array[int] = []) -> void:
 	_level = level
-	var player_dps := _calc_player_dps()
+	_coop_encounter = coop
 	_mult = 1.0 + GameState.boss_encounter_count * 0.2
 	var level_scale: float = 1.0 + clampf((_level - 5) * 0.03, 0.0, 0.45)
-	var old_max := maxf(player_dps * BOSS_TARGET_TTK_SECONDS * BOSS_EXPECTED_PLAYER_UPTIME * _mult * level_scale, 900.0)
+	var old_max := maxf(_calc_player_dps() * BOSS_TARGET_TTK_SECONDS * BOSS_EXPECTED_PLAYER_UPTIME * _mult * level_scale, 900.0)
+	if _coop_encounter and not pilots.is_empty():
+		var combined := 0.0
+		for peer_id in pilots:
+			combined += _estimate_coop_dps(peer_id)
+		var minimum := COOP_MIN_HULL if pilots.size() == 2 else 900.0 * BOSS_HULL_RATIO
+		old_max = maxf(combined * COOP_HULL_SECONDS * _mult * level_scale, minimum) / BOSS_HULL_RATIO
 	_max_health = old_max * BOSS_HULL_RATIO
 	_health = _max_health
 	_max_shield_hp = old_max * BOSS_SHIELD_RATIO
@@ -233,6 +253,13 @@ func _calc_player_dps() -> float:
 	var cd: float = GameState.get_shoot_cooldown()
 	var dps: float = count * dmg / cd
 	return max(dps, 5.0)
+
+func _estimate_coop_dps(peer_id: int) -> float:
+	var level := GameState.get_shoot_level(peer_id)
+	# 高阶外侧弹道更宽。按稳定命中的弹道估算，保留贴近和爆发的额外收益。
+	var fraction := 0.75 if level < 4 else (0.62 if level < 8 else (0.50 if level < 12 else 0.42))
+	var landed := clampf(float(GameState.get_bullet_count(peer_id)) * fraction, 1.0, 3.4)
+	return landed * float(GameState.get_bullet_damage(peer_id)) / GameState.get_base_shoot_cooldown(peer_id)
 
 func set_target(target: Node2D) -> void:
 	_target = target
@@ -272,9 +299,12 @@ func _physics_process(delta: float) -> void:
 		_tick_ultimate_laser(delta)
 		return
 	_update_phase_loops(delta)
+	if _pulse.phase != PulsePhase.OPEN:
+		_tick_coop_pulse(delta)
+		return
 	if not (_entry_tween and _entry_tween.is_running()):
 		_tick_attack_schedule(delta)
-	if _ultimate_laser_charging:
+	if _ultimate_laser_charging or _pulse.phase != PulsePhase.OPEN:
 		return
 	_feint_timer = max(_feint_timer - delta, 0.0)
 	if not has_impact_shield():
@@ -433,6 +463,8 @@ func _phase_speed_mult() -> float:
 	return 1.0
 
 func _draw() -> void:
+	if not _dead:
+		_draw_coop_pulse()
 	if _health <= 0.0 or (not has_impact_shield() and not is_shield_recharging()):
 		return
 	var tone := Color("#729cb374") if has_impact_shield() else Color("#afd0e592")
@@ -463,6 +495,7 @@ func _tick_shield_cycle(delta: float) -> void:
 		_shield_stamp += 1
 		_shield_hp = _max_shield_hp
 		_laser_used_this_shield = false
+		_pulse_used_this_shield = false
 		_next_attack = 0
 		_publish_shield_state()
 	elif _exposure_left <= BOSS_RECHARGE_WARNING + 0.00001 and not is_shield_recharging():
@@ -482,10 +515,14 @@ func _break_shield() -> void:
 	_clear_fire_pressure()
 	if _ultimate_laser_charging:
 		_finish_ultimate_laser()
+	if _pulse.phase == PulsePhase.LOCK:
+		_finish_coop_pulse()
 	play_shield_release(global_position)
 	_publish_shield_state()
 
 func _start_ultimate_laser() -> void:
+	if _pulse.phase != PulsePhase.OPEN:
+		return
 	_stop_entry_motion()
 	_laser_used_this_shield = true
 	_ultimate_laser_charging = true
@@ -700,18 +737,134 @@ func _tick_attack_schedule(delta: float) -> void:
 	if _shoot_timer > 0.0:
 		return
 	if _next_attack == 0:
-		_do_aimed_shot()
 		_next_attack = 1
+		if has_impact_shield() and _coop_encounter and not _pulse_used_this_shield and _try_coop_pulse():
+			return
+		_do_aimed_shot()
 	elif _next_attack == 1:
 		_do_fan_spread()
 		_next_attack = 2 if has_impact_shield() and not _laser_used_this_shield else 0
-	elif has_impact_shield() and not _laser_used_this_shield:
+	elif has_impact_shield() and not _laser_used_this_shield and (not _coop_encounter or _coop_pair_alive()):
 		_start_ultimate_laser()
 		_next_attack = 0
 	else:
 		_do_aimed_shot()
 		_next_attack = 1
 	_shoot_timer = minf(1.25 / _phase_speed_mult(), BOSS_ATTACK_GAP_LIMIT)
+
+func _coop_pair_alive() -> bool:
+	return get_parent()._alive_players.size() == 2
+
+func coop_pulse_snapshot() -> Dictionary:
+	return _pulse.duplicate()
+
+func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
+	if next.is_empty() or int(next.stamp) <= int(_pulse.stamp):
+		return
+	_pulse = next
+	if _pulse.phase != PulsePhase.OPEN:
+		face_laser_direction(Vector2(_pulse.to - _pulse.from).normalized())
+	if live_edge and _pulse.phase == PulsePhase.FIRE:
+		SFX.play_enemy_volley()
+	queue_redraw()
+
+func coop_pulse_label() -> String:
+	if _pulse.phase == PulsePhase.OPEN:
+		return ""
+	var pilot := "P1" if int(_pulse.slot) == 1 else "P2"
+	return "锁定 " + pilot if _pulse.phase == PulsePhase.LOCK else "脉冲 · " + pilot
+
+func coop_pulse_contains(point: Vector2) -> bool:
+	return point.distance_squared_to(Geometry2D.get_closest_point_to_segment(point, _pulse.from, _pulse.to)) \
+		<= COOP_PULSE_RADIUS * COOP_PULSE_RADIUS
+
+func _try_coop_pulse() -> bool:
+	if not _coop_pair_alive():
+		return false
+	var battle := get_parent()
+	var ids := GameState.get_alive_player_ids()
+	if ids.size() != 2:
+		return false
+	if ids[0] == _pulse_last_slot:
+		ids.reverse()
+	var field := NetworkManager.battle_size(self)
+	var flyable := Rect2(Vector2(24, 24), field - Vector2(48, 48))
+	for i in ids.size():
+		var pilot: Node2D = battle._players.get(ids[i])
+		var partner: Node2D = battle._players.get(ids[1 - i])
+		if not is_instance_valid(pilot) or not is_instance_valid(partner):
+			continue
+		var at := pilot.global_position
+		if global_position.distance_to(at) < 160.0:
+			continue
+		var axis := global_position.direction_to(at)
+		var side := axis.orthogonal() * COOP_PULSE_ESCAPE
+		if not flyable.has_point(at + side) and not flyable.has_point(at - side):
+			continue
+		var origin := global_position + axis * 48.0
+		var end := at + axis * 112.0
+		var nearest := Geometry2D.get_closest_point_to_segment(partner.global_position, origin, end)
+		if partner.global_position.distance_to(nearest) < COOP_PULSE_RADIUS + 36.0:
+			continue
+		_pulse_used_this_shield = true
+		_pulse_last_slot = ids[i]
+		_pulse_left = COOP_PULSE_CHARGE
+		_pulse_hits.clear()
+		_set_coop_pulse(PulsePhase.LOCK, ids[i], origin, end)
+		return true
+	return false
+
+func _set_coop_pulse(phase: PulsePhase, slot := 0, origin := Vector2.ZERO, end := Vector2.ZERO) -> void:
+	apply_network_coop_pulse({"stamp": int(_pulse.stamp) + 1, "phase": phase, "slot": slot, "from": origin, "to": end}, true)
+	get_parent().publish_boss_pulse(self)
+
+func _tick_coop_pulse(delta: float) -> void:
+	_pulse_left -= delta
+	if _pulse.phase == PulsePhase.LOCK:
+		if not _coop_pair_alive():
+			_finish_coop_pulse()
+		elif _pulse_left <= 0.0:
+			_pulse_left = COOP_PULSE_DURATION
+			_set_coop_pulse(PulsePhase.FIRE, _pulse.slot, _pulse.from, _pulse.to)
+		else:
+			return
+	if _pulse.phase != PulsePhase.FIRE:
+		return
+	if _pulse_left <= 0.0:
+		_finish_coop_pulse()
+		return
+	for pilot: Node2D in get_tree().get_nodes_in_group("player"):
+		if not _pulse_hits.has(pilot.peer_id) and coop_pulse_contains(pilot.global_position):
+			_pulse_hits[pilot.peer_id] = true
+			pilot.take_damage(COOP_PULSE_DAMAGE)
+
+func _finish_coop_pulse() -> void:
+	_pulse_left = 0.0
+	_shoot_timer = minf(1.25 / _phase_speed_mult(), BOSS_ATTACK_GAP_LIMIT)
+	_set_coop_pulse(PulsePhase.OPEN)
+
+func _draw_coop_pulse() -> void:
+	if _pulse.phase == PulsePhase.OPEN:
+		return
+	var start := to_local(_pulse.from)
+	var end := to_local(_pulse.to)
+	var direction := start.direction_to(end)
+	var side := direction.orthogonal() * COOP_PULSE_RADIUS
+	var tone := Color("#ffb86b")
+	var width := 2.0
+	if _pulse.phase == PulsePhase.LOCK:
+		for edge in [side, -side]:
+			draw_dashed_line(start + edge, end + edge, tone, width, 14.0)
+		draw_dashed_line(start, end, Color(tone, 0.34), width, 7.0)
+	else:
+		var heat := Color("#f16c365c")
+		draw_line(start, end, heat, COOP_PULSE_RADIUS * 2.0)
+		draw_circle(start, COOP_PULSE_RADIUS, heat)
+		draw_circle(end, COOP_PULSE_RADIUS, heat)
+		draw_line(start, end, tone, 7.0)
+	var angle := direction.angle()
+	draw_arc(start, COOP_PULSE_RADIUS, angle + PI * 0.5, angle + PI * 1.5, 14, tone, width)
+	draw_arc(end, COOP_PULSE_RADIUS, angle - PI * 0.5, angle + PI * 0.5, 14, tone, width)
 
 func _do_aimed_shot() -> void:
 	var count := 2 if _phase == BossPhase.SUPPRESSION else 3
@@ -905,6 +1058,8 @@ func die() -> void:
 	if _dead:
 		return
 	_dead = true
+	_pulse.phase = PulsePhase.OPEN
+	queue_redraw()
 	_ultimate_laser_charging = false
 	_ultimate_laser_firing = false
 	var death_pos := global_position
