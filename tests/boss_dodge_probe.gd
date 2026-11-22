@@ -109,22 +109,22 @@ func _check_flight(label: String, samples: PackedVector2Array, side: Vector2) ->
 func _solo_pressure() -> void:
 	await _settle_entry()
 	_pose(CENTER, CENTER + Vector2(0, 380))
-	var hp := mothership.get_network_health()
+	var hp := mothership.get_shield_hp()
 	_fire(CENTER, 1)
 	var light := await _trace("light", 39)
 	var movement := _furthest(light)
-	_check("one_hit_changes_hp_without_hull_recoil",
-		is_equal_approx(mothership.get_network_health(), hp - 1.0) and movement.length() < 0.5, str(movement))
+	_check("one_hit_changes_shield_without_hull_recoil",
+		is_equal_approx(mothership.get_shield_hp(), hp - 1.0) and movement.length() < 0.5, str(movement))
 
 	_fire(CENTER, 2)
 	var short_burst := await _trace("two", 14)
 	_check("two_hits_do_not_move_hull",
-		is_equal_approx(mothership.get_network_health(), hp - 3.0) and _furthest(short_burst).length() < 0.5, "")
+		is_equal_approx(mothership.get_shield_hp(), hp - 3.0) and _furthest(short_burst).length() < 0.5, "")
 	_fire(CENTER, 1)
 	var flight := await _trace("center", 45, 18)
 	_check_flight("center", flight, Vector2.LEFT)
-	_check("actual_collision_during_dodge", is_equal_approx(mothership.get_network_health(), hp - 5.0),
-		str(mothership.get_network_health()))
+	_check("actual_collision_during_dodge", is_equal_approx(mothership.get_shield_hp(), hp - 5.0),
+		str(mothership.get_shield_hp()))
 	await _trace("settle", 14)
 
 	_pose(LEFT_EDGE, LEFT_EDGE + Vector2(0, 380))
@@ -147,8 +147,10 @@ func _entry_pressure() -> void:
 	await _laser_interrupts()
 
 func _laser_interrupts() -> void:
-	_fire(mothership.global_position, 1, ceili(mothership.get_network_max_health() * 0.25))
-	if not _require("damage_starts_laser_charge", await _wait_until(
+	mothership._next_attack = 2
+	mothership._shoot_timer = 0.0
+	mothership._stop_entry_motion()
+	if not _require("scheduled_laser_charge", await _wait_until(
 			func(): return mothership.get_attack_window() == BossModel.AttackWindow.CHARGING, 1.5)):
 		return
 	var laser_start := mothership._ultimate_laser_start
@@ -162,10 +164,10 @@ func _host_pressure() -> void:
 	await _settle_entry()
 	_pose(CENTER, CENTER - Vector2(380, 0))
 	_check("still_aiming_at_p1", mothership._target == _main._player, "")
-	var hp := mothership.get_network_health()
+	var hp := mothership.get_shield_hp()
 	_begin.rpc_id(NetworkManager.connected_peers[0])
 	var flight := await _trace("host-p2", 63)
-	_check("p2_shots_hit_on_host", is_equal_approx(mothership.get_network_health(), hp - 3.0), str(mothership.get_network_health()))
+	_check("p2_shots_hit_on_host", is_equal_approx(mothership.get_shield_hp(), hp - 3.0), str(mothership.get_shield_hp()))
 	_check_flight("p2", flight, Vector2.RIGHT)
 	_check("client_landed_and_observed", await _wait_until(func(): return join_finished, 4.0), "")
 
@@ -173,14 +175,14 @@ func _join_pressure() -> void:
 	_main._player.global_position = Vector2(716, 650)
 	if not _require("host_released_pressure", await _wait_until(func(): return begin_pressure, 5.0)):
 		return
-	var hp := mothership.get_network_health()
+	var hp := mothership.get_shield_hp()
 	for tick in 42:
 		# 左向趋势决定起步方向，随后掉头检验母舰侧移不会跟着反转。
 		_main._player.global_position.x += -4.0 if tick < 25 else 4.0
 		if tick == 16:
 			_fire(CENTER, 3)
 		await get_tree().physics_frame
-	_check("host_damage_reached_client", await _wait_until(func(): return mothership.get_network_health() <= hp - 3.0, 1.5), "")
+	_check("host_damage_reached_client", await _wait_until(func(): return mothership.get_shield_hp() <= hp - 3.0, 1.5), "")
 	_check("client_observed_host_dodge", await _wait_until(
 		func(): return mothership.global_position.x > CENTER.x + 91 and absf(mothership.global_position.y - CENTER.y) < 40,
 		1.5), str(mothership.global_position))

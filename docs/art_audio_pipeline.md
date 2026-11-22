@@ -318,7 +318,7 @@ P1 精修以 `3d960c3` 为对照，只在既有剪影内调整像素。用连续
 | 玩家护盾环 | `shield_ring.gd` `draw_arc()` |
 | 普通命中 / 核心确认 | `hit_effect.gd` 在世界层级 −1 绘制 0.10 秒冰色火花或 0.30 秒金色断环。沿用 `Pool` 取用与释放，每次效果共用一个绘制节点。 |
 | 精英护盾光晕 | `shield_circle.gd` |
-| 母舰护盾细弧 | `boss.gd` 按权威激光阶段绘制 |
+| 母舰护盾细弧 | `boss.gd` 按房主盾相位绘制。冷青为打盾触点，暖白为打本体，破盾用原位短碎片。[验证](boss_shield_rhythm.md) |
 | 破盾碎裂 | `shield_shatter_burst.gd` |
 | 激光光束 | `laser_bolt.gd` `_draw()` 三层线叠加 |
 | 闪电链 | `lightning_line.gd` 锯齿线 |

@@ -57,6 +57,10 @@ func _start() -> void:
 	start_tick = Engine.get_physics_frames()
 	if protect_pilot:
 		game._player._invincible_timer = 10000.0
+		if stop_at_first_hit:
+			# 首卡门禁沿用受保护射手，开场主动激光的内圈也需纳入保护。
+			game._player._rescue_protected_until = start_tick + 60 * 600
+			_event("probe_protection", "through first real Boss hull damage")
 	get_tree().node_added.connect(_birth)
 	GameState.elite_spawn_requested.connect(func(): _event("elite_request"))
 	GameState.boss_spawn_requested.connect(func(_level): _event("boss_request"))
@@ -154,7 +158,7 @@ func _process(_delta: float) -> void:
 func _can_hit_in_view(unit: Node2D, kind: String) -> bool:
 	var collider: CollisionShape2D = unit.get_node("CollisionShape2D")
 	var bounds: Rect2 = collider.global_transform * collider.shape.get_rect()
-	return (kind == "elite" or not unit._shield_active) and not collider.disabled and get_viewport().get_visible_rect().intersects(bounds)
+	return (kind == "elite" or not unit.has_impact_shield()) and not collider.disabled and get_viewport().get_visible_rect().intersects(bounds)
 
 func _birth(node: Node) -> void:
 	var path := node.scene_file_path

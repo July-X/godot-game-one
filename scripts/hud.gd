@@ -47,7 +47,7 @@ var _fps_accum: float = 0.0
 var _active_pickup_toasts: Array = []
 var _boss_status_root: Control = null
 var _boss_status_fill: ColorRect = null
-var _boss_status_hatch: TextureRect = null
+var _boss_shield_fill: ColorRect = null
 var _boss_status_label: Label = null
 var _boss_status_phase: Label = null
 var _boss_shield_release_left := 0.0
@@ -1008,7 +1008,8 @@ func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.
 		_alert_label.hide()
 		_layout_top_rows())
 
-func show_boss_status(current: float, maximum: float, phase_name: String, attack_window: String, shielded: bool) -> void:
+func show_boss_status(current: float, maximum: float, shield: float, max_shield: float,
+		phase_name: String, attack_window: String, recharging: bool) -> void:
 	_ensure_boss_status_ui()
 	if not _boss_status_root.visible:
 		_boss_status_root.show()
@@ -1017,13 +1018,21 @@ func show_boss_status(current: float, maximum: float, phase_name: String, attack
 		_layout_top_rows()
 	var ratio := clampf(current / maxf(maximum, 1.0), 0.0, 1.0)
 	_boss_status_fill.size.x = (BOSS_BAR_SIZE.x - 20.0) * ratio
-	_boss_status_fill.color = Color("#5a616c") if shielded else Color("#e1827f")
-	_boss_status_hatch.visible = shielded
+	var shield_ratio := clampf(shield / maxf(max_shield, 1.0), 0.0, 1.0)
+	_boss_shield_fill.size.x = (BOSS_BAR_SIZE.x - 20.0) * shield_ratio
 	_boss_status_label.text = "裂隙母舰  %d%%  ·  %s" % [roundi(ratio * 100), phase_name]
-	if shielded:
+	var status := "可攻击"
+	if current <= 0.0:
+		status = "本体已击毁"
+	elif shield > 0.0:
 		_boss_shield_release_left = 0.0
-	_boss_status_phase.text = "护盾解除 · " + attack_window if _boss_shield_release_left > 0.0 else attack_window
-	_boss_status_phase.add_theme_color_override("font_color", Color("#c3d6e2") if shielded else Palette.CARD_STYLE)
+		status = "护盾 %d%%" % maxi(1, roundi(shield_ratio * 100))
+	elif recharging:
+		status = "即将回盾"
+	elif _boss_shield_release_left > 0.0:
+		status = "破盾 · 可攻击"
+	_boss_status_phase.text = status if attack_window.is_empty() else status + " · " + attack_window
+	_boss_status_phase.add_theme_color_override("font_color", Color("#c3d6e2") if shield > 0.0 or recharging else Palette.CARD_STYLE)
 
 func show_boss_shield_released() -> void:
 	_boss_shield_release_left = 0.55
@@ -1043,31 +1052,25 @@ func _ensure_boss_status_ui() -> void:
 	add_child(panel)
 	_boss_status_root = panel
 	panel.hide()
-	var track := ColorRect.new()
-	track.position = Vector2(10, 28)
-	track.size = Vector2(BOSS_BAR_SIZE.x - 20, 6)
-	track.color = Color("#313747")
-	panel.add_child(track)
-	_boss_status_fill = ColorRect.new()
-	_boss_status_fill.size = track.size
-	_boss_status_fill.color = Color("#e1827f")
-	track.add_child(_boss_status_fill)
-	var hatch := Image.create_empty(8, 8, false, Image.FORMAT_RGBA8)
-	for y in 8:
-		for x in 8:
-			if (x + y) % 8 < 2:
-				hatch.set_pixel(x, y, Color("#9098a3"))
-	_boss_status_hatch = TextureRect.new()
-	_boss_status_hatch.texture = ImageTexture.create_from_image(hatch)
-	_boss_status_hatch.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_boss_status_hatch.stretch_mode = TextureRect.STRETCH_TILE
-	_boss_status_fill.add_child(_boss_status_hatch)
-	_boss_status_hatch.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_boss_status_fill = _add_boss_track(panel, 26.0, Color("#e1827f"))
+	_boss_shield_fill = _add_boss_track(panel, 32.0, Color("#73bbdd"))
 	_boss_status_label = _label(15, Vector2(10, 2), Vector2(265, 24))
 	panel.add_child(_boss_status_label)
 	_boss_status_phase = _label(14, Vector2(273, 2), Vector2(237, 24), HORIZONTAL_ALIGNMENT_RIGHT)
 	panel.add_child(_boss_status_phase)
 	_set_control_ignore_input(panel)
+
+func _add_boss_track(panel: Control, y: float, color: Color) -> ColorRect:
+	var track := ColorRect.new()
+	track.position = Vector2(10.0, y)
+	track.size = Vector2(BOSS_BAR_SIZE.x - 20.0, 4.0)
+	track.color = Color("#313747")
+	panel.add_child(track)
+	var fill := ColorRect.new()
+	fill.size = track.size
+	fill.color = color
+	track.add_child(fill)
+	return fill
 
 func _surface(color: Color, border := Color.TRANSPARENT) -> StyleBoxFlat:
 	var surface := StyleBoxFlat.new()

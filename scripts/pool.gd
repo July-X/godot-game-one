@@ -34,10 +34,15 @@ func acquire(type_name: String, _scene: PackedScene) -> Node:
 	return node
 
 ## 位置包沿用三元组。旧包的 0 无目标信息，只有显式的 -1 才选普通敌机图集。
-enum Impact { LEGACY = 0, SHIELD = 1, ORDINARY_ENEMY = -1 }
+enum Impact { LEGACY = 0, SHIELD = 1, BOSS_SHIELD = 2, BOSS_HULL = 3, ORDINARY_ENEMY = -1 }
 
 func contact_for(target: Node) -> Impact:
+	if target.is_in_group("boss"):
+		return Impact.BOSS_SHIELD if target.has_impact_shield() else Impact.BOSS_HULL
 	return Impact.ORDINARY_ENEMY if target.is_in_group("ordinary_enemies") else Impact.LEGACY
+
+func is_shield_contact(kind: Impact) -> bool:
+	return kind == Impact.SHIELD or kind == Impact.BOSS_SHIELD
 
 func spawn_hit(pos: Vector2, kind: Impact) -> void:
 	var world := get_tree().current_scene
@@ -47,6 +52,8 @@ func spawn_hit(pos: Vector2, kind: Impact) -> void:
 	match kind:
 		Impact.ORDINARY_ENEMY: hit.start_ordinary_hit()
 		Impact.SHIELD: hit.start_shield_hit()
+		Impact.BOSS_SHIELD: hit.start_boss_shield_hit()
+		Impact.BOSS_HULL: hit.start_boss_hull_hit()
 		_: hit.start()
 
 ## 回收单个节点

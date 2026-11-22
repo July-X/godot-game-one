@@ -6,10 +6,16 @@ const TARGET := Vector2(608, 270)
 const ITEMS := ["core", "heal", "speed", "power", "core", "heal"]
 const BossModel = preload("res://scripts/boss.gd")
 const LaserModel = preload("res://scripts/boss_ultimate_laser_visual.gd")
+const HitModel = preload("res://scripts/hit_effect.gd")
 
 var bursts: Array[int] = []
-var burst_origin := Vector2.ZERO
 var release_cues := 0
+var first_break_frame := -1
+var first_warning_frame := -1
+var first_raised_frame := -1
+var beam_overlapping_volleys := 0
+var contacts := {}
+var boss_playbacks := {}
 var authority_release_at := Vector2.INF
 var snapshot_roundtrips := 0
 var drops: Array[int] = []
@@ -72,8 +78,11 @@ func _run() -> void:
 	_boss = _main._boss
 	if _role != "client":
 		_boss.set_physics_process(false)
-	_boss.shield_released.connect(func(): release_cues += 1)
-	if _role in ["bomb", "game-over", "scene-exit"]:
+	_boss.shield_released.connect(func():
+		release_cues += 1
+		if release_cues == 1:
+			first_break_frame = Engine.get_physics_frames())
+	if _role in ["bomb", "game-over", "scene-exit", "finishing-beam"]:
 		await _alternate_death()
 	elif await _shield_cycle():
 		await _shoot_and_collect()
@@ -88,111 +97,224 @@ func _require(label: String, value: bool) -> bool:
 		get_tree().quit(1)
 	return value
 
+func _process(delta: float) -> void:
+	super._process(delta)
+	if not is_instance_valid(_boss):
+		return
+	for node in Pool._active:
+		if node is HitModel:
+			contacts[node._tint] = true
+	for voice: AudioStreamPlayer in SFX.get_children():
+		if not voice.playing:
+			continue
+		var label := ""
+		if voice.stream == SFX._stream_shield_break:
+			label = "break"
+		elif voice.stream == SFX._stream_shield_hit:
+			label = "shield"
+		elif SFX._hit_streams.has(voice.stream):
+			label = "hull"
+		if not label.is_empty():
+			var playback := voice.get_stream_playback()
+			if playback:
+				if not boss_playbacks.has(label):
+					boss_playbacks[label] = {}
+				boss_playbacks[label][playback.get_instance_id()] = true
+
+func _physics_process(_delta: float) -> void:
+	if first_break_frame < 0 or first_raised_frame >= 0 or not is_instance_valid(_boss):
+		return
+	if first_warning_frame < 0 and _boss.is_shield_recharging():
+		first_warning_frame = Engine.get_physics_frames()
+	elif first_warning_frame >= 0 and _boss.has_impact_shield():
+		first_raised_frame = Engine.get_physics_frames()
+
 func _observe(node: Node) -> void:
 	if node.get_script() == BURST:
 		bursts.append(node.get_instance_id())
-		burst_origin = _boss.global_position
 	elif recording and node.scene_file_path == POWERUP.resource_path:
 		drops.append(node.get_instance_id())
 		birth_positions.append(node.global_position)
+	elif is_instance_valid(_boss) and _boss._ultimate_laser_firing and node.scene_file_path == "res://scenes/entities/bullet.tscn":
+		_count_overlapping_volley.call_deferred(node)
+
+func _count_overlapping_volley(node: Node) -> void:
+	if is_instance_valid(node) and node.is_in_group("enemy_bullets"):
+		beam_overlapping_volleys += 1
 
 func _shield_cycle() -> bool:
-	var charge_snapshot := {}
-	if _role == "client":
-		_main._player.global_position = Vector2(916, 530)
+	var hull_hp: float = _boss.get_network_health()
+	var full_shield: float = _boss.get_max_shield_hp()
+	_check("starts_with_a_full_shield_separate_from_hull", _has_boss_shield() and full_shield > 0.0
+		and is_equal_approx(full_shield * 7.0, hull_hp), "HP=%.2f shield=%.2f" % [hull_hp, full_shield])
+	var old_charge := {}
 	if _role != "client":
-		# 等入场动画结束后跨过正式激光阈值。
-		await _wait_seconds(1.65)
+		await _wait_seconds(1.6)
 		_boss.global_position = TARGET
-		_boss.take_damage(ceilf(_boss.get_network_max_health() * 0.26))
+		_boss._rush_cooldown = 100.0
+		_boss._dodge_cooldown = 100.0
 		_boss.set_physics_process(true)
-	if not _require("shield_raised", await _wait_until(_has_boss_shield, 5)):
+		_shoot_at_boss(1)
+		_check("first_physical_shot_only_hurts_shield", await _wait_until(func():
+			return shot_hit and is_equal_approx(_boss.get_shield_hp(), full_shield - 1.0), 1.0)
+			and _boss.get_network_health() == hull_hp, "")
+		_main._player.global_position = Vector2(640, 655)
+	if not _require("laser_charges_at_full_hull", await _wait_until(func():
+			return _boss.get_attack_window() == BossModel.AttackWindow.CHARGING, 7.0)):
 		return false
-	var shield_hp: float = _boss.get_network_health()
-	_check("hud_shield_charge", await _wait_until(_hud_says.bind("有盾 · 不掉血 · 激光蓄力"), 1.5), "")
+	_check("hud_separate_partial_shield_and_full_hull", await _wait_until(func():
+		return (_main._hud._boss_status_phase.text.ends_with("激光蓄力")
+			and _main._hud._boss_shield_fill.size.x < 500.0
+			and _main._hud._boss_status_fill.size.x == 500.0), 0.7), str(_boss.get_shield_hp()))
 	if _role == "client":
+		_main._player.global_position = Vector2(1100, 620)
 		await _restore_laser_stage("charge", LaserModel.VisualMode.CHARGE, 0.20)
+		_ack.rpc_id(1, 10)
+	else:
+		old_charge = _main._boss_snapshot(_boss)
+		if _role == "host":
+			_check("join_rebuilt_charge_before_break", await _wait_until(func(): return client_stage >= 10, 1.2), "")
+		_shoot_at_boss(ceili(full_shield + hull_hp))
+	if not _require("physical_break_cancels_unfired_charge", await _wait_until(func():
+			return not _has_boss_shield() and _boss.get_attack_window() == BossModel.AttackWindow.OPEN, 2.1)):
+		return false
+	_check("breaker_does_not_spill_into_hull", _boss.get_network_health() == hull_hp and release_cues == 1
+		and not is_instance_valid(_main._boss_laser_visual), "")
+	_check("hud_break_keeps_hull_full", await _wait_until(func():
+		return (_hud_says("破盾 · 可攻击") and _main._hud._boss_shield_fill.size.x == 0.0
+			and _main._hud._boss_status_fill.size.x == 500.0), 0.25), "")
+	if _role == "solo" and DisplayServer.get_name() != "headless":
+		await _read_pixels(instance_from_id(bursts[0]))
 	if _role != "client":
-		charge_snapshot = _main._boss_snapshot(_boss)
-		_shoot_at_boss()
-		var contact := await _wait_until(func(): return shot_hit, 1.0)
-		_check("shield_blocks_physical_main_shot", contact and _has_boss_shield() and _boss.get_network_health() == shield_hp,
-			"contact=%s HP=%s -> %s" % [contact, shield_hp, _boss.get_network_health()])
-		if not _require("laser_fired", await _wait_until(func(): return _boss._ultimate_laser_firing, 4)):
-			return false
-		_main._player.global_position = Vector2(750, 530)
-	_check("hud_shield_sweep", await _wait_until(_hud_says.bind("有盾 · 不掉血 · 激光推进"), 4.0), "")
+		_shoot_at_boss(3)
+		_check("next_real_round_hurts_hull", await _wait_until(func():
+			return shot_hit and _boss.get_network_health() < hull_hp, 1.2), "")
+		_main._player.global_position = Vector2(640, 655)
+	_check("damaged_hull_agrees_on_hud", await _wait_until(func():
+		return (is_equal_approx(_boss.get_network_health(), hull_hp - 3.0)
+			and _main._hud._boss_status_fill.size.x < 500.0), 1.5), str(_boss.get_network_health()))
+	_check("warns_before_regenerating", await _wait_until(func():
+		return _boss.is_shield_recharging() and _hud_says("即将回盾") and not _has_boss_shield(), 4.0), "")
+	if not _require("returns_at_full_shield_without_healing", await _wait_until(func():
+			return (_has_boss_shield() and is_equal_approx(_boss.get_shield_hp(), full_shield)
+				and is_equal_approx(_boss.get_network_health(), hull_hp - 3.0)), 1.4)):
+		return false
+	if _role != "client":
+		var sampled := await _wait_until(func(): return first_raised_frame >= 0, 0.2)
+		var open_ticks := first_raised_frame - first_break_frame
+		var warning_ticks := first_raised_frame - first_warning_frame
+		_check("exposure_270_ticks_warns_last_48", sampled and absi(open_ticks - 270) <= 2
+			and absi(warning_ticks - 48) <= 2, "open=%d warning=%d" % [open_ticks, warning_ticks])
+	_check("first_shards_expired", bursts.size() == 1 and not is_instance_id_valid(bursts[0]), "")
+
+	if not _require("second_laser_locks_before_fire", await _wait_until(func():
+			return (_boss.get_attack_window() == BossModel.AttackWindow.CHARGING
+				and not _boss._laser_locked_direction.is_zero_approx()), 6.0)):
+		return false
+	var locked_aim: Vector2 = _boss._laser_locked_direction
+	if _role != "client":
+		_main._player.global_position = Vector2(970, 660)
+	if not _require("locked_aim_does_not_follow_moving_pilot", await _wait_until(func():
+			return (_boss.get_attack_window() == BossModel.AttackWindow.SWEEP
+				and is_instance_valid(_main._boss_laser_visual)
+				and _main._boss_laser_visual._beam_start.direction_to(_main._boss_laser_visual._beam_end).dot(locked_aim) > 0.9999), 1.5)):
+		return false
 	if _role == "client":
 		if not await _check_mid_beam_snapshot():
 			return false
+		_ack.rpc_id(1, 11)
+	elif _role == "host":
+		_check("join_restored_live_shielded_beam", await _wait_until(func(): return client_stage >= 11, 1.7), "")
+	var in_flight: LaserModel = _main._boss_laser_visual
+	var in_flight_snapshot := {}
+	if _role != "client":
+		in_flight_snapshot = _main._boss_snapshot(_boss)
+		_shoot_at_boss(ceili(full_shield + hull_hp))
+	if not _require("physical_break_while_beam_active", await _wait_until(func(): return not _has_boss_shield(), 1.5)):
+		return false
+	var in_flight_from := in_flight._beam_start
+	var in_flight_to := in_flight._beam_end
+	_check("open_while_beam_stays_same_node_and_geometry", is_same(in_flight, _main._boss_laser_visual)
+		and _faces_laser_beam() and is_equal_approx(_boss.get_network_health(), hull_hp - 3.0), "")
+	_check("combined_beam_and_shield_state_in_hud", await _wait_until(func():
+		return (_main._hud._boss_status_phase.text.begins_with("破盾 · 可攻击 · 激光")
+			and _main._hud._boss_shield_fill.size.x == 0.0), 0.22), "")
+	if _role == "host":
+		var eid: int = _boss.entity_id
+		_main._rpc_sync_boss_shield.rpc(eid, _boss.get_shield_stamp(), 0.0, full_shield, _boss.global_position)
+		_main._rpc_sync_boss_shield.rpc(eid, in_flight_snapshot.shield_stamp, full_shield, full_shield, _boss.global_position)
+		_main._rpc_sync_boss_shield.rpc(eid + 1, _boss.get_shield_stamp() + 1, full_shield, full_shield, _boss.global_position)
+		_main._rpc_spawn_boss.rpc(eid, _boss.get_network_level(), _boss.get_sprite_variant_id(), old_charge)
+		_main._rpc_spawn_boss.rpc(eid, _boss.get_network_level(), _boss.get_sprite_variant_id(), in_flight_snapshot)
+		_report_release_origin.rpc(_boss.global_position)
+	if _role == "client":
+		_check("duplicate_and_stale_packets_cannot_repair_shield_or_rewind_beam", await _wait_until(func():
+			return authority_release_at != Vector2.INF, 0.4) and not _has_boss_shield()
+			and is_same(_boss, _main._boss) and is_same(in_flight, _main._boss_laser_visual), "")
+		var fx = instance_from_id(bursts.back())
+		_check("break_burst_uses_authority_world_position", is_instance_valid(fx)
+			and fx.global_position.distance_to(authority_release_at) < 0.1, str(authority_release_at))
+		await _restore_laser_stage("open_hull_during_laser", LaserModel.VisualMode.BEAM, 0.2)
+		var restored: LaserModel = _main._boss_laser_visual
+		_check("open_snapshot_keeps_shield_empty_and_restores_same_geometry", not _has_boss_shield()
+			and restored._beam_start.is_equal_approx(in_flight_from) and restored._beam_end.is_equal_approx(in_flight_to), "")
+	var axis := in_flight_from.direction_to(in_flight_to)
+	if _role != "client":
+		var health: int = GameState.get_current_health()
+		GameState.set_shield_layers(1, 0)
+		_main._player._invincible_timer = 0.0
+		_main._player.global_position = in_flight_from + axis * 110.0 + axis.orthogonal() * 37.0
+		_check("beam_still_damages_after_shield_break", await _wait_until(func():
+			return GameState.get_current_health() < health, 0.85), "")
+		_main._player.global_position = in_flight_from + axis * 110.0 + axis.orthogonal() * 128.0
+		var hp_after_contact: int = GameState.get_current_health()
+		_main._player._invincible_timer = 0.0
+		await _wait_seconds(0.18)
+		_check("side_of_the_in_flight_beam_is_safe", GameState.get_current_health() == hp_after_contact, "")
+	_check("exactly_one_cue_per_broken_cycle", release_cues == 2 and bursts.size() == 2, str(bursts))
 	if NetworkManager.is_online():
 		await _capture_boss_and_cards()
-	await _wait_seconds(0.22)
-	_check("sweep_nose_points_along_beam_after_pilot_moves", _faces_laser_beam(), str(_boss.global_rotation))
-	_check("hud_shield_hold", await _wait_until(_hud_says.bind("有盾 · 不掉血 · 激光持续"), 4.0), "")
+	if not _require("same_laser_continues_into_hold", await _wait_until(func():
+			return _boss.get_attack_window() == BossModel.AttackWindow.HOLD, 4.0)):
+		return false
 	var hold: LaserModel = _main._boss_laser_visual
-	_check("hold_has_full_beam", is_instance_valid(hold) and hold._mode == LaserModel.VisualMode.BEAM
-		and hold._age >= BossModel.BOSS_ULTIMATE_LASER_TRAVEL, "")
+	_check("hold_nose_points_along_beam_after_pilot_moves", _faces_laser_beam()
+		and hold._beam_start.is_equal_approx(in_flight_from) and hold._beam_end.is_equal_approx(in_flight_to), "")
 	if _role == "client":
 		await _restore_laser_stage("hold", LaserModel.VisualMode.BEAM, BossModel.BOSS_ULTIMATE_LASER_TRAVEL + 0.18)
-	_check("hold_nose_points_along_beam", _faces_laser_beam(), str(_boss.global_rotation))
-	if _role == "client":
-		# 按原有接收入口注入一次滞后的瞄准角。
 		var locked_heading: float = _boss._network_target_rotation
 		_boss.apply_network_rotation(_boss.global_rotation + PI * 0.5)
 		_check("late_rotation_cannot_steer_firing_boss", _faces_laser_beam()
-			and is_equal_approx(_boss._network_target_rotation, locked_heading), str(_boss.global_rotation))
-	_check("health_remains_shielded", _has_boss_shield() and _boss.get_network_health() == shield_hp, str(shield_hp))
-	if not _require("shield_ended", await _wait_until(func(): return is_instance_valid(_boss) and not _has_boss_shield(), 13)):
+			and is_equal_approx(_boss._network_target_rotation, locked_heading), "")
+	_check("shield_refills_during_the_same_live_beam", await _wait_until(func():
+		return _has_boss_shield() and _boss.get_attack_window() == BossModel.AttackWindow.HOLD, 5.0), "")
+	if not _require("laser_ends_independently_of_raised_shield", await _wait_until(func():
+			return _boss.get_attack_window() == BossModel.AttackWindow.OPEN and _has_boss_shield(), 12.0)):
 		return false
+	if _role != "client":
+		_check("no_new_volleys_while_laser_was_active", beam_overlapping_volleys == 0, str(beam_overlapping_volleys))
 	_boss.set_physics_process(false)
 	var cooling: LaserModel = _main._boss_laser_visual
 	_check("open_replaces_danger_with_cooling", is_instance_valid(cooling) and cooling._mode == LaserModel.VisualMode.COOLING, "")
-	_check("hud_release_cue", await _wait_until(_hud_says.bind("护盾解除 · 可攻击"), 0.25), "")
-	if _role == "host":
-		var eid: int = _boss.entity_id
-		var current: int = _boss.get_attack_window_stamp()
-		_main._rpc_sync_boss_window.rpc(eid, current, burst_origin, Vector2.ZERO, 0.0, shield_hp)
-		_main._rpc_sync_boss_window.rpc(eid, charge_snapshot.stamp, charge_snapshot.from, charge_snapshot.to, 0.0, shield_hp)
-		_main._rpc_spawn_boss.rpc(eid, _boss.get_network_level(), _boss.get_sprite_variant_id(), charge_snapshot)
-		_main._rpc_sync_boss_window.rpc(eid + 1, current + 1, burst_origin, Vector2.ZERO, 0.0, shield_hp)
-		_report_release_origin.rpc(burst_origin)
-	if _role == "client":
-		_check("duplicates_and_old_snapshot_delivered", await _wait_until(func(): return authority_release_at != Vector2.INF, 0.25), "")
-		_check("old_packets_keep_same_unshielded_boss", is_same(_boss, _main._boss) and not _has_boss_shield(), "")
-		_check("old_packets_do_not_relight_laser", not is_instance_valid(_main._boss_laser_visual)
-			or (is_same(cooling, _main._boss_laser_visual) and cooling._mode == LaserModel.VisualMode.COOLING), "")
-	_check("one_visible_burst_and_cue", bursts.size() == 1 and release_cues == 1, str(bursts))
-	if bursts.size() == 1:
-		var fx = instance_from_id(bursts[0])
-		var expected := authority_release_at if _role == "client" else burst_origin
-		_check("burst_at_authority_release", is_instance_valid(fx) and fx.global_position.distance_to(expected) < 0.1, str(expected))
-		if is_instance_valid(fx):
-			_check("short_mothership_fragments", fx._mothership_release and fx.z_index == -1 and is_equal_approx(fx._duration, 0.32), "")
-			if _role == "solo" and DisplayServer.get_name() != "headless":
-				await _read_pixels(fx)
-	await _wait_seconds(0.65)
-	_check("cooling_expires", not is_instance_valid(cooling) and not is_instance_valid(_main._boss_laser_visual), "")
-	_check("one_burst_released", bursts.size() == 1 and not is_instance_id_valid(bursts[0]), str(bursts))
-	_check("hud_attack_window_open", _hud_says("可攻击") and not _main._hud._boss_status_hatch.visible, "")
+	await _wait_seconds(0.55)
+	_check("cooling_expires_without_extra_shield_release", not is_instance_valid(cooling)
+		and not is_instance_valid(_main._boss_laser_visual) and release_cues == 2 and not is_instance_id_valid(bursts[1]), "")
+	_check("two_distinct_physical_contact_colors", contacts.has(HitModel.ARMOR) and contacts.has(HitModel.HULL), str(contacts.keys()))
+	_check("separate_hit_timbres_and_exactly_two_break_playbacks", boss_playbacks.get("break", {}).size() == 2
+		and not boss_playbacks.get("shield", {}).is_empty() and not boss_playbacks.get("hull", {}).is_empty(), str(boss_playbacks.keys()))
 	if _role != "client":
-		_shoot_at_boss()
-		_check("open_takes_physical_main_shot", await _wait_until(func(): return shot_hit and _boss.get_network_health() < shield_hp, 1.0),
-			"contact=%s HP=%s -> %s" % [shot_hit, shield_hp, _boss.get_network_health()])
-		# 等受击缩放收尾，隔离下一次击毁的反馈。
-		if not _require("nonfatal_hit_settled", await _wait_until(func(): return _boss._hit_recoil_tween == null, 1.0)):
-			return false
+		_shoot_at_boss(ceili(_boss.get_max_shield_hp()))
+	if not _require("next_shield_can_break", await _wait_until(func(): return not _has_boss_shield(), 1.5)):
+		return false
 	if _role == "client":
-		_check("open_hit_health_is_synced", await _wait_until(func(): return _boss.get_network_health() < shield_hp, 2.0),
-			"HP=%s -> %s" % [shield_hp, _boss.get_network_health()])
 		_ack.rpc_id(1, 6)
 	elif _role == "host":
-		_check("join_observed_open_hit", await _wait_until(func(): return client_stage == 6, 2.0), "")
+		_check("join_observed_third_cycle", await _wait_until(func(): return client_stage == 6, 2.0), "")
 		client_stage = 0
 	return true
 
 func _has_boss_shield() -> bool:
-	return is_instance_valid(_boss) and _boss.get_attack_window() >= BossModel.AttackWindow.CHARGING
+	return is_instance_valid(_boss) and _boss.has_impact_shield()
 
 func _faces_laser_beam() -> bool:
 	var beam: LaserModel = _main._boss_laser_visual
@@ -225,6 +347,7 @@ func _check_mid_beam_snapshot() -> bool:
 		return false
 	var beam: Node2D = _main._boss_laser_visual
 	var original_age: float = beam._age
+	var original_origin: Vector2 = beam._beam_start
 	_check("active_snapshot_roundtrip", await _resnapshot(), "")
 	_check("active_snapshot_keeps_node_and_beam", is_same(_boss, _main._boss) and is_same(beam, _main._boss_laser_visual)
 		and beam._age >= original_age and _has_boss_shield(), "")
@@ -233,7 +356,7 @@ func _check_mid_beam_snapshot() -> bool:
 	_check("missing_beam_snapshot_roundtrip", await _resnapshot(), "")
 	var restored: Node2D = _main._boss_laser_visual
 	_check("resnapshot_restores_beam_at_live_age", is_instance_valid(restored) and not is_same(restored, beam)
-		and restored._age >= original_age - 0.10 and restored._beam_start.distance_to(TARGET) < 40.0 and release_cues == 0,
+		and restored._age >= original_age - 0.10 and restored._beam_start.is_equal_approx(original_origin) and release_cues == 1,
 		"beam_age=%.3f → %.3f" % [original_age, restored._age if is_instance_valid(restored) else -1.0])
 	return true
 
@@ -257,11 +380,15 @@ func _mark_snapshot() -> void:
 func _report_release_origin(at: Vector2) -> void:
 	authority_release_at = at
 
-func _shoot_at_boss() -> void:
+func _shoot_at_boss(damage := 0) -> void:
 	shot_hit = false
 	_main._player.global_position = _boss.global_position + Vector2(0, 185)
 	_main._player.rotation = 0
-	_main._player._combat._shoot()
+	if damage > 0:
+		var start: Vector2 = _boss.global_position + Vector2(0.0, 115.0)
+		_main._player._combat._spawn_bullet(start, -PI * 0.5, damage, true, 1, 780.0)
+	else:
+		_main._player._combat._shoot()
 	for shot in get_tree().get_nodes_in_group("player_bullets"):
 		shot.body_entered.connect(func(body):
 			if is_same(body, _boss):
@@ -346,6 +473,25 @@ func _check_drops() -> void:
 func _alternate_death() -> void:
 	_boss.boss_died.connect(_observe_death)
 	match _role:
+		"finishing-beam":
+			_boss._stop_entry_motion()
+			_boss.global_position = TARGET
+			_boss._start_ultimate_laser()
+			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_CHARGE + 0.01)
+			_boss._ultimate_laser_fire_timer = 1.25
+			_boss.take_damage(_boss.get_shield_hp())
+			recording = true
+			_shoot_at_boss(ceili(_boss.get_network_health()))
+			_check("fatal_physical_round_during_live_beam", await _wait_until(func():
+				return shot_hit and _boss.get_network_health() == 0.0, 1.0), "")
+			var beam: LaserModel = _main._boss_laser_visual
+			_check("fatal_round_does_not_cut_beam_or_pay_early", beam._mode == LaserModel.VisualMode.BEAM
+				and deaths == 0 and drops.is_empty(), "")
+			_main._player.global_position = Vector2(1100, 640)
+			_boss.set_physics_process(true)
+			if _require("finishing_beam_releases_loot_afterward", await _wait_until(func(): return drops.size() == 6, 2.0)):
+				_check_drops()
+				_check("finishing_beam_reward_once", deaths == 1 and _reward_count(1) == reward_before[1] + 1, "")
 		"bomb":
 			_boss._drop_supply_fragments()
 			var supplies := []
@@ -376,6 +522,7 @@ func _alternate_death() -> void:
 			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_CHARGE + 0.01)
 			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_TRAVEL + _boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS + 0.01)
 			var cooling: LaserModel = _main._boss_laser_visual
+			_boss.take_damage(_boss.get_shield_hp())
 			_check("live_shards_before_exit", bursts.size() == 1, str(bursts.size()))
 			_check("cooling_before_exit", is_instance_valid(cooling) and cooling._mode == LaserModel.VisualMode.COOLING, "")
 			_boss.boss_died.connect(func():

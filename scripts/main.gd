@@ -1137,7 +1137,8 @@ func _update_boss_hud() -> void:
 		return
 	var window: Boss.AttackWindow = _boss.get_attack_window()
 	_hud.show_boss_status(_boss.get_network_health(), _boss.get_network_max_health(),
-		_boss.get_phase_name(), Boss.ATTACK_WINDOW_LABELS[window], window >= Boss.AttackWindow.CHARGING)
+		_boss.get_shield_hp(), _boss.get_max_shield_hp(), _boss.get_phase_name(),
+		Boss.ATTACK_WINDOW_LABELS[window], _boss.is_shield_recharging())
 
 func _enter_boss_fight_mode() -> void:
 	_clear_non_boss_entities()
@@ -1649,6 +1650,7 @@ func _boss_snapshot(boss: Boss) -> Dictionary:
 	return {
 		"position": boss.global_position, "rotation": boss.global_rotation,
 		"hp": boss.get_network_health(), "max_hp": boss.get_network_max_health(),
+		"shield_stamp": boss.get_shield_stamp(), "shield": boss.get_shield_hp(), "max_shield": boss.get_max_shield_hp(),
 		"stamp": boss.get_attack_window_stamp(), "age": boss.get_laser_visual_age(),
 		"from": boss._ultimate_laser_start, "to": boss._ultimate_laser_end,
 	}
@@ -1681,11 +1683,12 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary
 		add_child(_boss)
 		_boss.apply_network_rotation(snapshot.rotation)
 	_entities[eid] = _boss
+	_boss.apply_network_boss_shield(snapshot.shield_stamp, snapshot.shield, snapshot.max_shield)
 	var previous: int = _boss.get_attack_window_stamp()
-	if stamp < previous:
-		return
 	var hp: float = snapshot.hp if previous < 0 else minf(snapshot.hp, _boss.get_network_health())
 	_boss.apply_network_health(hp, snapshot.max_hp)
+	if stamp < previous:
+		return
 	if _boss.get_sprite_variant_id() != variant_id:
 		_boss.set_sprite_variant(variant_id)
 		_boss._apply_visual_state()
@@ -1817,8 +1820,12 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 			kind = Pool.Impact.ORDINARY_ENEMY
 		elif impact[2] == Pool.Impact.SHIELD:
 			kind = Pool.Impact.SHIELD
+		elif impact[2] == Pool.Impact.BOSS_SHIELD:
+			kind = Pool.Impact.BOSS_SHIELD
+		elif impact[2] == Pool.Impact.BOSS_HULL:
+			kind = Pool.Impact.BOSS_HULL
 		Pool.spawn_hit(Vector2(impact[0], impact[1]), kind)
-		if kind != Pool.Impact.SHIELD:
+		if not Pool.is_shield_contact(kind):
 			SFX.play_hit_confirm(SHAKE_HIT)
 	var i := 0
 	while i + ENTITY_SYNC_STRIDE - 1 < data.size():
@@ -1841,7 +1848,7 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 
 ## Host → Client：同步实体血量（低频 10Hz）
 @rpc("authority", "unreliable", "call_remote")
-func _rpc_sync_entity_health(data: PackedFloat32Array, boss_stamp := -1) -> void:
+func _rpc_sync_entity_health(data: PackedFloat32Array, boss_shield_stamp := -1, boss_shield_hp := -1.0) -> void:
 	var i := 0
 	while i + 2 < data.size():
 		var eid := int(data[i])
@@ -1851,8 +1858,9 @@ func _rpc_sync_entity_health(data: PackedFloat32Array, boss_stamp := -1) -> void
 		if _entities.has(eid) and is_instance_valid(_entities[eid]):
 			var node: Node = _entities[eid]
 			if node == _boss:
-				if boss_stamp != _boss.get_attack_window_stamp():
-					continue
+				if boss_shield_stamp == _boss.get_shield_stamp() and boss_shield_hp > 0.0 and boss_shield_hp < _boss.get_shield_hp():
+					_boss.apply_network_boss_shield(boss_shield_stamp, boss_shield_hp, _boss.get_max_shield_hp())
+					SFX.play_shield_hit()
 				# 无序血量包可能晚于同一阶段的实体快照。
 				hp = minf(hp, _boss.get_network_health())
 			if node.has_method("apply_network_health"):
@@ -1899,8 +1907,9 @@ func _batch_sync_entity_health() -> void:
 			if node.has_method("get_network_max_health"):
 				health_data.append(float(node.get_network_max_health()))
 	if health_data.size() > 0:
-		var boss_stamp: int = _boss.get_attack_window_stamp() if _has_active_boss() else -1
-		_rpc_sync_entity_health.rpc(health_data, boss_stamp)
+		var shield_stamp: int = _boss.get_shield_stamp() if _has_active_boss() else -1
+		var shield_hp: float = _boss.get_shield_hp() if _has_active_boss() else -1.0
+		_rpc_sync_entity_health.rpc(health_data, shield_stamp, shield_hp)
 
 ## 加入端的子弹只渲染。随已有位置包捎带一个确认落点，避免每发子弹单独通信。
 func register_projectile_impact(pos: Vector2, kind: Pool.Impact) -> void:
@@ -2045,6 +2054,17 @@ func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_
 		return
 	_pending_laser_spawns.append([pos.x, pos.y, angle, damage, owner_peer_id])
 
+func publish_boss_shield(boss: Boss) -> void:
+	if GameState.game_running and boss == _boss and NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_sync_boss_shield.rpc(boss.entity_id, boss.get_shield_stamp(), boss.get_shield_hp(), boss.get_max_shield_hp(), boss.global_position)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_sync_boss_shield(eid: int, stamp: int, hp: float, max_hp: float, origin: Vector2) -> void:
+	if not GameState.game_running or not _has_active_boss() or _boss.entity_id != eid:
+		return
+	var advanced: bool = _boss.apply_network_boss_shield(stamp, hp, max_hp)
+	if advanced and stamp % Boss.SHIELD_PHASE_COUNT == Boss.ShieldPhase.EXPOSED:
+		_boss.play_shield_release(origin)
 
 func publish_boss_attack_window(boss: Boss) -> void:
 	if not GameState.game_running or boss != _boss or boss.is_queued_for_deletion():
@@ -2062,13 +2082,13 @@ func _rpc_sync_boss_window(eid: int, stamp: int, origin: Vector2, target: Vector
 	if not GameState.game_running or not _has_active_boss() or _boss.entity_id != eid:
 		return
 	var previous: int = _boss.get_attack_window_stamp()
-	if stamp <= previous:
+	# 唯一有意义的同阶段变更是蓄力已锁向。重复到达不重播预警。
+	var aim_update := Boss.window_from_stamp(stamp) == Boss.AttackWindow.CHARGING and not origin.is_equal_approx(target)
+	if stamp < previous or (stamp == previous and not aim_update):
 		return
 	_boss.apply_network_health(minf(hp, _boss.get_network_health()), _boss.get_network_max_health())
 	_boss.apply_network_attack_window(stamp)
-	_sync_boss_laser(stamp, origin, target, age, true)
-	if _boss.get_attack_window() == Boss.AttackWindow.OPEN and previous > stamp - Boss.WINDOWS_PER_CYCLE:
-		_boss.play_shield_release(origin)
+	_sync_boss_laser(stamp, origin, target, age, stamp > previous)
 
 func _sync_boss_laser(stamp: int, origin: Vector2, target: Vector2, age: float, live_edge: bool) -> void:
 	var window := Boss.window_from_stamp(stamp)
@@ -2084,20 +2104,29 @@ func _sync_boss_laser(stamp: int, origin: Vector2, target: Vector2, age: float, 
 	var visual_stamp := stamp - 1 if window == Boss.AttackWindow.HOLD else stamp
 	if has_visual and _boss_laser_stamp == visual_stamp:
 		_boss_laser_visual.advance_to_age(age)
+		if window == Boss.AttackWindow.CHARGING and not origin.is_equal_approx(target):
+			_apply_boss_laser_aim(origin, target)
 		return
 	_clear_boss_laser_visual()
 	_boss_laser_stamp = visual_stamp
 	if window == Boss.AttackWindow.CHARGING:
 		_boss_laser_visual = _show_boss_ultimate_laser_charge(origin, Boss.BOSS_ULTIMATE_LASER_CHARGE, age, live_edge)
+		if not origin.is_equal_approx(target):
+			_apply_boss_laser_aim(origin, target)
 	else:
 		if _boss._is_network_ghost:
-			_boss.face_laser_direction(target - origin)
+			_boss.apply_network_laser_lock(target - origin)
 		var visual := _boss_ultimate_laser_visual_script.new()
 		add_child(visual)
 		visual.setup_beam(origin, target, Boss.BOSS_ULTIMATE_LASER_TRAVEL, Boss.BOSS_ULTIMATE_LASER_WIDTH, Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS, age)
 		_boss_laser_visual = visual
 	if is_instance_valid(_boss) and not _boss._is_network_ghost:
 		_boss_laser_visual.authority_boss = _boss
+
+func _apply_boss_laser_aim(origin: Vector2, target: Vector2) -> void:
+	_boss_laser_visual.set_charge_direction(target - origin)
+	if _boss._is_network_ghost:
+		_boss.apply_network_laser_lock(target - origin)
 
 func _clear_boss_laser_visual() -> void:
 	if is_instance_valid(_boss_laser_visual):

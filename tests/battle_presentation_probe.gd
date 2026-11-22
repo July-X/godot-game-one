@@ -87,19 +87,30 @@ func _run() -> void:
 	await _at(190)
 	_main._on_boss_spawn_requested(5)
 	_report("boss_request")
+	while not _main._has_active_boss() and Engine.get_physics_frames() - _start < 440:
+		await get_tree().physics_frame
+	_boss = _main._boss
+	if not is_instance_valid(_boss):
+		_check("boss_enters_for_presentation", false)
+		get_tree().quit(1)
+		return
+	_boss.set_physics_process(false)
 	await _at(440)
 	if _mobile and args.has("inset"):
 		_apply_safe_area(_asymmetric_safe())
 	_boss = _main._boss
 	_boss.global_position = Vector2(_x, 187)
 	_boss.reset_physics_interpolation()
-	_boss.take_damage(ceilf(_boss.get_network_max_health() * 0.26))
+	_boss._start_ultimate_laser()
+	_boss.set_physics_process(true)
 	_fan(4)
 	await _at(472)
 	UpgradeDraft.offer_cards(1, CARDS)
 	await _at(492)
 	await _capture("charge")
 	_report("charge")
+	await _at(539)
+	await _capture("laser-lock")
 	# 出光时方向已锁定。马上开始侧移，给触摸摇杆的加速段留下距离。
 	while is_instance_valid(_boss) and not _boss._ultimate_laser_firing:
 		await get_tree().physics_frame
@@ -151,8 +162,10 @@ func _run() -> void:
 	_report("laser_hold")
 	await _at(1310)
 	UpgradeDraft.offer_cards(1, CARDS)
-	while is_instance_valid(_boss) and _boss._shield_active and Engine.get_physics_frames() - _start < 1420:
+	while is_instance_valid(_boss) and _boss._ultimate_laser_firing and Engine.get_physics_frames() - _start < 1420:
 		await get_tree().physics_frame
+	if is_instance_valid(_boss):
+		_boss.take_damage(_boss.get_shield_hp())
 	await _at(Engine.get_physics_frames() - _start + 4)
 	await _capture("shield-release")
 	_report("shield_release")
@@ -161,9 +174,9 @@ func _run() -> void:
 	_report("vulnerable")
 	if _verify:
 		_check("real_damage_was_observed", _hp_drops > 0)
-		_check("laser_has_ended", is_instance_valid(_boss) and not _boss._shield_active)
+		_check("laser_has_ended", is_instance_valid(_boss) and not _boss._ultimate_laser_firing)
 		_check("open_vulnerability_label", _main._hud._boss_status_phase.text == "可攻击")
-		_check("vulnerable_uses_same_hp_bar", not _main._hud._boss_status_hatch.visible and _main._hud._boss_status_fill.color == Color("#e1827f"))
+		_check("vulnerable_keeps_hull_bar_and_empty_shield", _main._hud._boss_shield_fill.size.x == 0.0 and _main._hud._boss_status_fill.color == Color("#e1827f"))
 	if is_instance_valid(_boss):
 		_boss.take_damage(_boss.get_network_health() + 1)
 	await _at(1510)
@@ -301,9 +314,10 @@ func _report(name: String) -> void:
 			_check("boss_alive_at_" + name, false)
 			return
 		var phase := {"charge": "蓄力", "laser_and_draft": "推进", "laser_hold": "持续"}
-		_check("boss_window_" + name, hud._boss_status_phase.text == "有盾 · 不掉血 · 激光" + phase[name])
-		_check("same_hp_fill_width_" + name, hud._boss_status_hatch.visible
-			and is_equal_approx(hud._boss_status_hatch.size.x, hud._boss_status_fill.size.x)
+		_check("boss_window_" + name, hud._boss_status_phase.text.begins_with("护盾 ")
+			and hud._boss_status_phase.text.ends_with("激光" + phase[name]))
+		_check("separate_hull_and_shield_" + name, hud._boss_shield_fill.get_global_rect().position.y > hud._boss_status_fill.get_global_rect().end.y
+			and is_equal_approx(hud._boss_shield_fill.size.x, 500.0 * _boss.get_shield_hp() / _boss.get_max_shield_hp())
 			and is_equal_approx(hud._boss_status_fill.size.x, 500.0 * _boss.get_network_health() / _boss.get_network_max_health()))
 	if _verify and name == "charge":
 		var hit_circle := _boss.get_node("CollisionShape2D") as CollisionShape2D
@@ -317,8 +331,8 @@ func _report(name: String) -> void:
 			and boss_sprite.global_position == _boss._ultimate_laser_start)
 		print("[BATTLE] opaque_hull=", hull, " player=", swift, " hit_radius=", hit_circle.shape.radius)
 	if _verify and name == "shield_release":
-		_check("one_release_in_boss_row", hud._boss_status_phase.text == "护盾解除 · 可攻击"
-			and not hud._boss_status_hatch.visible and hud._draft_panel.visible and boss_rect.end.y <= cards.position.y)
+		_check("one_release_in_boss_row", hud._boss_status_phase.text == "破盾 · 可攻击"
+			and hud._boss_shield_fill.size.x == 0.0 and hud._draft_panel.visible and boss_rect.end.y <= cards.position.y)
 
 func _check_safe_area() -> void:
 	var viewport := get_viewport()

@@ -168,7 +168,7 @@ func _physics_process(delta: float) -> void:
 			boss_wait_other += 1
 	if boss_seen and is_instance_valid(game._boss):
 		_observe_boss_hp(game._boss)
-		if game._boss._shield_active:
+		if game._boss.has_impact_shield():
 			boss_shield += 1
 		elif _can_hit_in_view(game._boss, "boss"):
 			boss_open += 1

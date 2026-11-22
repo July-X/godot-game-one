@@ -16,6 +16,7 @@ var _travel_time := 0.0
 var _beam_start := Vector2.ZERO
 var _beam_end := Vector2.ZERO
 var _beam_width := 0.0
+var _charge_direction := Vector2.ZERO
 
 func _ready() -> void:
 	physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_OFF
@@ -45,6 +46,10 @@ func setup_beam(from: Vector2, to: Vector2, travel_time: float, width: float, ho
 
 func advance_to_age(age: float) -> void:
 	_age = maxf(age, _age)
+
+func set_charge_direction(direction: Vector2) -> void:
+	_charge_direction = direction.normalized()
+	queue_redraw()
 
 func finish_beam() -> bool:
 	if _mode != VisualMode.BEAM:
@@ -76,6 +81,12 @@ func _draw() -> void:
 
 func _draw_charge() -> void:
 	var level := clampf(_age / _duration, 0.0, 1.0)
+	if not _charge_direction.is_zero_approx():
+		# 炮口前只在锁向后给出短引线，预告与实际推进共用方向。
+		var sideways := _charge_direction.orthogonal() * Boss.BOSS_ULTIMATE_LASER_WIDTH * 0.5
+		for edge in [sideways, -sideways]:
+			draw_dashed_line(edge + _charge_direction * 58.0, edge + _charge_direction * 210.0,
+				Color(AMBER, 0.46), 2.0, 13.0)
 	var time := floorf(_age * 30.0) / 30.0
 	for i in 28:
 		var amount := fposmod(time * (1.25 + (i % 5) * 0.17) + i * 0.618, 1.0)

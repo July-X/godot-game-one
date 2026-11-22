@@ -260,7 +260,7 @@ func _on_area_entered(area: Area2D) -> void:
 					_recycle()
 
 func _impact_for(target: Node) -> Pool.Impact:
-	if target.has_method("has_impact_shield") and target.has_impact_shield():
+	if not target.is_in_group("boss") and target.has_method("has_impact_shield") and target.has_impact_shield():
 		return Pool.Impact.SHIELD
 	return Pool.contact_for(target)
 
@@ -271,7 +271,7 @@ func _spawn_hit(impact: Pool.Impact) -> void:
 	## 所以强度压到 0.06，并把"手感"主要交给命中音的连击升调。
 	var scene := get_tree().current_scene
 	if scene != null and scene.has_method("emit_hit_feedback"):
-		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, _is_player_bullet and impact != Pool.Impact.SHIELD)
+		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, _is_player_bullet and not Pool.is_shield_contact(impact))
 	Pool.spawn_hit(global_position, impact)
 	if _is_player_bullet and NetworkManager.is_online() and multiplayer.is_server():
 		if scene and scene.has_method("register_projectile_impact"):
