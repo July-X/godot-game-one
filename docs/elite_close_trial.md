@@ -38,13 +38,21 @@ godot --headless --path . res://tests/mobile_check.tscn
 bash tests/run_probe.sh 19572
 ```
 
-同一目录保存 `summary.csv`、逐帧 `replays.json` 和各条航线的摇杆文件。以下命令录制完整的 20:9 贴近后撤 B。删除 `--close-b` 录 A，用 1280×720 和对应的 1280 路线文件录 16:9。
+同一目录保存 `summary.csv`、逐帧 `replays.json` 和各条航线的摇杆文件。以下命令在临时项目副本中录制完整的 20:9 贴近后撤 B。Godot 4.6.2 的影片尺寸由录制用窗口设置决定，`--resolution` 负责运行窗口尺寸。[Godot 录制器源码](https://github.com/godotengine/godot/blob/4.6.2-stable/main/main.cpp#L4374-L4389)
 
 ```bash
-godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync \
+capture=$(mktemp -d)
+git archive HEAD | tar -xf - -C "$capture"
+printf '%s\n' '[application]' 'config/name="Space Bullet Hell - Elite Close Recording"' \
+  '[display]' 'window/size/window_width_override.movie=1600' \
+  'window/size/window_height_override.movie=720' > "$capture/override.cfg"
+godot --headless --path "$capture" --editor --import
+godot --path "$capture" --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync \
   --audio-driver Dummy --write-movie "$out/close-b.avi" --quit-after 1210 \
   res://tests/elite_close_trial_probe.tscn \
   -- press "--flight=$out/1600-press-flight.json" --close-b --hold-result
 ```
+
+删除 `--close-b` 并换输出名可录 A。录 16:9 时，把配置和命令中的宽度改为 1280，使用对应的 1280 路线文件。录贪攻使用 `hold` 和对应的贪攻路线文件。
 
 记录来自 Mac 实际渲染和模拟摇杆。脚本清除了由墙钟恢复的命中定格，保留真实伤害、投射物、惯性与碰撞。绕行指令由脚本读取可见弹体生成，再在 B 重播。手机真机以及玩家能否读懂窗口、愿不愿意冒险或重试，仍待试玩验证。
