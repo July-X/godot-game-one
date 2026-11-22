@@ -98,6 +98,9 @@ func _lock_on(label: String, expected: int) -> Dictionary:
 	if _role == "host":
 		boss.global_position = AT
 		boss._pulse_used_this_shield = false # 隔离下一盾轮首招，常规节奏另由实弹矩阵覆盖。
+		# 此夹具要固定谁倒地/重连；全招式的自然轮换另由 boss-aggro 验证。
+		boss._aggro = BossModel.AggroLedger.new()
+		boss._aggro.record_damage(expected, (boss.get_network_max_health() + boss.get_max_shield_hp()) * .10)
 		boss._next_attack = 0
 		boss._shoot_timer = 0.0
 		boss._tick_attack_schedule(0.0)

@@ -17,6 +17,7 @@ var _mode: LobbyMode = LobbyMode.NONE
 @onready var _lbl_ssid_hint: Label = $VBox/PanelHost/LblSsidHint
 @onready var _lbl_password: Label = $VBox/PanelHost/LblPassword
 @onready var _btn_start: Button = $VBox/PanelHost/BtnStart
+@onready var _btn_rift: Button = $VBox/PanelHost/BtnRiftRoute
 @onready var _lbl_host_status: Label = $VBox/PanelHost/LblHostStatus
 
 @onready var _panel_join: VBoxContainer = $VBox/PanelJoin
@@ -74,6 +75,7 @@ func _connect_signals() -> void:
 	_btn_be_client.pressed.connect(_on_join_mode_selected)
 	_btn_back.pressed.connect(_on_back_pressed, CONNECT_DEFERRED)
 	_btn_start.pressed.connect(_on_start_pressed)
+	_btn_rift.pressed.connect(_on_start_pressed.bind(true))
 	_btn_quick_join.pressed.connect(_on_quick_join_pressed)
 
 	NetworkManager.player_connected.connect(_on_player_connected)
@@ -107,6 +109,7 @@ func _show_host_panel() -> void:
 	_panel_host.visible = true
 	_panel_join.visible = false
 	_btn_start.visible = false
+	_btn_rift.visible = false
 	_btn_start.disabled = true
 	_set_legacy_controls_visible(false)
 
@@ -161,11 +164,11 @@ func _on_join_mode_selected() -> void:
 	_show_join_panel()
 
 
-func _on_start_pressed() -> void:
+func _on_start_pressed(rift_route := false) -> void:
 	if not NetworkManager.is_host:
 		return
 	_stop_discovery_services()
-	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE)
+	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE, rift_route)
 
 
 func _on_back_pressed() -> void:
@@ -176,7 +179,7 @@ func _on_back_pressed() -> void:
 
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_start_game(battle_size: Vector2i) -> void:
+func _rpc_start_game(battle_size: Vector2i, rift_route := false) -> void:
 	_stop_discovery_services()
 	if battle_size != NetworkManager.LAN_BATTLE_SIZE:
 		NetworkManager.disconnect_network()
@@ -184,7 +187,7 @@ func _rpc_start_game(battle_size: Vector2i) -> void:
 		_status_label.text = "战场尺寸不兼容，请确认双方的游戏版本"
 		return
 	game_start_requested.emit()
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	get_tree().change_scene_to_file("res://scenes/rift_route_trial.tscn" if rift_route else "res://scenes/main.tscn")
 
 
 func _on_host_list_updated(hosts: Array) -> void:
@@ -271,6 +274,7 @@ func _deferred_join_host(ip: String, port: int) -> void:
 func _on_player_connected(peer_id: int) -> void:
 	if NetworkManager.is_host:
 		_btn_start.visible = true
+		_btn_rift.visible = true
 		_btn_start.disabled = false
 		_lbl_host_status.text = "✅ 玩家 %d 已加入！" % peer_id
 
@@ -279,6 +283,7 @@ func _on_player_disconnected(_peer_id: int) -> void:
 	if NetworkManager.is_host and NetworkManager.connected_peers.is_empty():
 		_btn_start.disabled = true
 		_btn_start.visible = false
+		_btn_rift.visible = false
 		_lbl_host_status.text = "玩家已离开，等待重新加入…"
 
 
