@@ -156,6 +156,7 @@ func _count_overlapping_volley(node: Node) -> void:
 
 func _shield_cycle() -> bool:
 	var hull_hp: float = _boss.get_network_health()
+	var after_open_hit := hull_hp - 3.0 * BossModel.BOSS_EXPOSED_DAMAGE_MULTIPLIER
 	var full_shield: float = _boss.get_max_shield_hp()
 	_check("starts_with_a_full_shield_separate_from_hull", _has_boss_shield() and full_shield > 0.0
 		and is_equal_approx(full_shield * 7.0, hull_hp), "HP=%.2f shield=%.2f" % [hull_hp, full_shield])
@@ -203,13 +204,13 @@ func _shield_cycle() -> bool:
 			return shot_hit and _boss.get_network_health() < hull_hp, 1.2), "")
 		_main._player.global_position = Vector2(640, 655)
 	_check("damaged_hull_agrees_on_hud", await _wait_until(func():
-		return (is_equal_approx(_boss.get_network_health(), hull_hp - 3.0)
+		return (is_equal_approx(_boss.get_network_health(), after_open_hit)
 			and _main._hud._boss_status_fill.size.x < 500.0), 1.5), str(_boss.get_network_health()))
 	_check("warns_before_regenerating", await _wait_until(func():
 		return _boss.is_shield_recharging() and _hud_says("即将回盾") and not _has_boss_shield(), 4.0), "")
 	if not _require("returns_at_full_shield_without_healing", await _wait_until(func():
 			return (_has_boss_shield() and is_equal_approx(_boss.get_shield_hp(), full_shield)
-				and is_equal_approx(_boss.get_network_health(), hull_hp - 3.0)), 1.4)):
+				and is_equal_approx(_boss.get_network_health(), after_open_hit)), 1.4)):
 		return false
 	if _role != "client":
 		var sampled := await _wait_until(func(): return first_raised_frame >= 0, 0.2)
@@ -247,7 +248,7 @@ func _shield_cycle() -> bool:
 	var in_flight_from := in_flight._beam_start
 	var in_flight_to := in_flight._beam_end
 	_check("open_while_beam_stays_same_node_and_geometry", is_same(in_flight, _main._boss_laser_visual)
-		and _faces_laser_beam() and is_equal_approx(_boss.get_network_health(), hull_hp - 3.0), "")
+		and _faces_laser_beam() and is_equal_approx(_boss.get_network_health(), after_open_hit), "")
 	_check("combined_beam_and_shield_state_in_hud", await _wait_until(func():
 		return (_main._hud._boss_status_phase.text.begins_with("破盾 · 可攻击 · 激光")
 			and _main._hud._boss_shield_fill.size.x == 0.0), 0.22), "")

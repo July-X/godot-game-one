@@ -182,6 +182,7 @@ const BOSS_FEINT_INTERVAL_MAX: float = 1.25
 const BOSS_HULL_RATIO := 0.70
 const BOSS_SHIELD_RATIO := 0.10
 const BOSS_EXPOSURE_SECONDS := 4.5
+const BOSS_EXPOSED_DAMAGE_MULTIPLIER := 2.2
 const BOSS_RECHARGE_WARNING := 0.8
 const BOSS_ATTACK_GAP_LIMIT := 2.0
 const BOSS_LASER_AIM_LOCK := 0.55
@@ -870,7 +871,7 @@ func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 			SFX.play_shield_hit()
 			_record_fire_pressure(killer_peer_id)
 		return
-	_health = maxf(0.0, _health - applied)
+	_health = maxf(0.0, _health - applied * BOSS_EXPOSED_DAMAGE_MULTIPLIER)
 	if _health == 0.0:
 		die()
 		return
