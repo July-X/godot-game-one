@@ -80,7 +80,6 @@ func _ready() -> void:
 	_fps_label.visible = OS.get_cmdline_user_args().has("--fps")
 	for child in get_children():
 		_set_control_ignore_input(child)
-	_draft_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_draft_panel.minimum_size_changed.connect(_position_draft_panel)
 	_restart_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	_restart_button.pressed.connect(Callable(get_parent(), "_restart"), CONNECT_DEFERRED)
@@ -147,9 +146,6 @@ var _draft_card_buttons: Array[Button] = []
 func _on_draft_opened(pid: int, _cards: Array) -> void:
 	if pid != _local_peer_id():
 		return
-	var stick := get_parent().get_node_or_null("MobileControls")
-	if stick and _draft_prompt.is_empty():
-		stick.cancel_move_touch()
 	_update_draft_panel()
 
 func _update_draft_panel() -> void:
@@ -207,6 +203,8 @@ func _populate_draft(cards: Array) -> void:
 
 func set_draft_prompt(text: String) -> void:
 	_draft_prompt = text
+	# 教学保留紧凑面板的热区。普通局只有真正的卡片按钮接收新触摸。
+	_draft_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE if text.is_empty() else Control.MOUSE_FILTER_STOP
 	_update_draft_title()
 	if not _draft_cards.is_empty():
 		_layout_draft_cards()

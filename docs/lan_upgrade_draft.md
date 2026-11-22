@@ -35,3 +35,18 @@ python3 tests/run_elite_close_trial_probe.py /tmp/sbh-elite-close
 常规联机 40/40、战斗反馈 27/27、Boss 104/104、移动交互 13/13。普通单人、首卡与 45 秒、90 秒、近身对照试飞的原有探针通过。难度曲线 14/14，退出时的资源清理日志也在修复前出现。
 
 验证使用 macOS 双进程 ENet 和模拟触摸。手机真机、鸿蒙发现和实际弱网重连仍待验证。
+
+## 三选一打开时的触摸回归
+
+基线 `7f0bb23` 在普通单人和真实双进程中都能复现。升级通知让摇杆立刻从手指 0 切到无主，方向清零，继续拖动时机体滑停。随后在计时栏处重新按下，容器又吞掉了这次触摸。模拟里的激光、散射和闪避按钮本身仍有响应，手机报告的技能单独失灵未复现。
+
+普通战斗保留原左指，只让卡片按钮参与三选一的触摸命中。探针通过引擎输入注入屏幕按下、拖动、抬起和合成鼠标事件，核对实际机体位移、技能只入队一次、出弹和冷却。加入端的激光按房主回传的弹体计数。实际选卡仍只有一份房主确认，超时仍取第一张。
+
+```bash
+godot --headless --path . res://tests/draft_touch_probe.tscn -- solo 0
+godot --headless --path . res://tests/draft_touch_probe.tscn -- solo 0 wide
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19912 draft-touch-wide-client
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19913 draft-touch-wide-host
+```
+
+基线单人及双端各为 9/15。修复后，16:9 和 20:9 单人各通过 15 项，互换宽端房主的两个双进程组合各通过 30 项。普通选卡门禁通过 25 项，移动端探针通过 13 项。

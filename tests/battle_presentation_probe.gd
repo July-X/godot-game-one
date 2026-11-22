@@ -384,7 +384,7 @@ func _exercise_touch_lifecycle() -> void:
 	_drag(0, Vector2(safe.get_center().x + 30, edge.y))
 	_check("owned_touch_survives_crossing_half", _stick._move_touch_id == 0 and motion.touch_move == Vector2.RIGHT)
 	UpgradeDraft.offer_cards(1, ["splash", "graze_focus", "pierce"])
-	_check("reward_open_releases_owned_finger", _stick._move_touch_id == -1 and motion.touch_move == Vector2.ZERO)
+	_check("reward_open_keeps_owned_finger", _stick._move_touch_id == 0 and motion.touch_move == Vector2.RIGHT)
 	await get_tree().process_frame
 	var card: Button = hud._draft_card_buttons[0]
 	var card_point := card.get_global_rect().get_center()
