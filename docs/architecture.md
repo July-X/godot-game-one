@@ -32,6 +32,7 @@
 │   ├── main.tscn              # 战斗主场景 (Node2D)
 │   ├── offense_window_trial.tscn # 45 秒单人试飞，继承战斗主场景
 │   ├── offense_window_trial_v1.tscn # 同入口的旧版对照预设
+│   ├── opening_trial.tscn # 90 秒独立开场试飞
 │   ├── effects/
 │   │   ├── explosion.tscn     # 爆炸序列帧
 │   │   ├── hit_effect.tscn    # 命中闪光
@@ -625,6 +626,8 @@ Main 在房主和加入端的 `_rpc_set_boss_bg` 里应用同一个阶段值并�
 ## 16. 验证
 
 `scenes/offense_window_trial.tscn` 由标题单独启动。它继承战斗主场景，在 `scripts/offense_window_trial.gd` 接管试飞的出生和发射时钟。扇弹复用普通敌机的弹体生成入口，由后排在场状态决定。新版在发射者的死亡信号上核对当前蓄力的截止帧，用试飞自带的绘制节点和短音反馈中断。选卡前可切到 `offense_window_trial_v1.tscn` 的旧版预设。重试沿用预设，离场清除临时选卡。[搭配与复跑](offense_window_trial.md)
+
+`scenes/opening_trial.tscn` 也是独立单人入口。`scripts/opening_trial.gd` 给普通敌机安排站位、蓄力和齐射，在第 20 秒用 `UpgradeDraft.offer_cards` 调用正式三选一，在镜像编队入场后调用主场景的精英生成。试飞结束走主场景的实体、控件清理，使用自己的结果面板。[输入、实弹与验收](opening_trial.md)
 
 首卡试飞复用 `scenes/main.tscn`。子场景 `scenes/first_card_trial.tscn` 和 `scripts/first_card_trial.gd` 只接管首次二级选择与随后 550 个物理帧。固定出生表、撤离、预告和扇弹都在该脚本内。常规抽卡和试飞通过 `UpgradeDraft.offer_cards` 共用确认、加卡及超时路径。
 

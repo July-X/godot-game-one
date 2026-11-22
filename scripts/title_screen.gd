@@ -18,6 +18,7 @@ func _ready() -> void:
 	_btn_multi.pressed.connect(_on_multiplayer_pressed, CONNECT_DEFERRED)
 	_btn_first_card.pressed.connect(_show_trial_choices.bind(true))
 	$Menu/BtnOffenseWindow.pressed.connect(_start_game.bind("res://scenes/offense_window_trial.tscn"), CONNECT_DEFERRED)
+	$Menu/BtnOpeningTrial.pressed.connect(_start_game.bind("res://scenes/opening_trial.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/Back.pressed.connect(_show_trial_choices.bind(false))
