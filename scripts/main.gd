@@ -493,7 +493,7 @@ func _restore_resume_bullets(data: Array) -> void:
 		shot.modulate = row[6]
 		shot.set_network_ghost(true)
 		shot._lifetime = row[8]
-		shot._has_bounced = row[9]
+		shot.set_bounced(row[9])
 
 
 ## 多人死亡与救援由房主结算。

@@ -27,6 +27,9 @@ const ENEMY_BULLET_SLOW: Color = Color(1.0, 0.34, 0.80)
 ## ── 玩家（冷色高亮 = 我的）───────────────────────────────
 ## 冷色与敌方暖色形成硬分离，即使弹幕重叠也能一眼分清归属
 const PLAYER_BULLET: Color = Color(0.62, 0.95, 1.0)
+# 折返弹在敌弹（默认 0）与 Boss 蓄力光束（-2）后，在星空（-19/-20）前。
+const FRIENDLY_RICOCHET_Z: int = -3
+const FRIENDLY_RICOCHET: Color = Color(0.39, 0.75, 0.82, 0.57)
 const PLAYER_HULL: Color = Color(0.86, 0.92, 1.0)
 ## 引擎尾焰是画面里唯一的暖色，属于"玩家自己"，与敌方弹幕同色系但更橙
 const PLAYER_ENGINE: Color = Color(1.0, 0.58, 0.18)

@@ -1,5 +1,7 @@
 extends Area2D
 
+const Palette = preload("res://scripts/palette.gd")
+
 var _direction: Vector2 = Vector2.ZERO
 var _speed: float = 1200.0
 var _damage: float = 5.0
@@ -27,8 +29,17 @@ func setup(pos: Vector2, angle: float, damage: float, owner_id: int = -1) -> voi
 	rotation = angle
 	_damage = damage
 	_target = null
-	_has_bounced = false
+	set_bounced(false)
 	owner_peer_id = owner_id
+
+func set_bounced(value: bool) -> void:
+	if value == _has_bounced:
+		return
+	_has_bounced = value
+	z_index = Palette.FRIENDLY_RICOCHET_Z if value else 0
+	_line_points.clear()
+	queue_redraw()
+
 
 func set_network_ghost(v: bool) -> void:
 	_is_network_ghost = v
@@ -49,7 +60,8 @@ func _physics_process(delta: float) -> void:
 
 	global_position += _direction * _speed * delta
 	_lifetime -= delta
-	_line_points.append(global_position)
+	if not _has_bounced:
+		_line_points.append(global_position)
 
 	if _lifetime <= 0:
 		queue_free()
@@ -66,7 +78,7 @@ func _physics_process(delta: float) -> void:
 		elif global_position.y > screen.y - 20:
 			_direction.y = -abs(_direction.y); bounced = true
 		if bounced:
-			_has_bounced = true
+			set_bounced(true)
 			_direction = _direction.normalized()
 			rotation = _direction.angle()
 			_speed = 1200.0
@@ -110,6 +122,10 @@ func _is_priority_enemy(node: Node) -> bool:
 	return node.is_in_group("boss") or node.has_method("get_network_shield")
 
 func _draw() -> void:
+	if _has_bounced:
+		# _draw 坐标已经随弹体转向，尾迹从局部 -X 伸出。
+		draw_line(Vector2(-11.0, 0.0), Vector2.ZERO, Palette.FRIENDLY_RICOCHET, 2.0, true)
+		return
 	if _line_points.size() > 1:
 		var pts: PackedVector2Array = []
 		for p in _line_points:

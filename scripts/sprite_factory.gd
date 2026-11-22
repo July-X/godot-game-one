@@ -612,6 +612,21 @@ func create_elite_sprite() -> ImageTexture:
 
 var _bullet_cache: Dictionary = {}
 
+## 复用一张短划贴图，不给每颗折返弹分配新图或叠加光晕。
+func create_ricochet_sprite() -> ImageTexture:
+	const KEY := "friendly_ricochet"
+	if not _bullet_cache.has(KEY):
+		var img := Image.create(3, 9, false, Image.FORMAT_RGBA8)
+		for y in range(9):
+			var alpha := 0.45 + 0.55 * (1.0 - absf(y - 4.0) / 4.0)
+			img.set_pixel(1, y, Color(1, 1, 1, alpha))
+			if y > 1 and y < 7:
+				img.set_pixel(0, y, Color(1, 1, 1, alpha * 0.7))
+				img.set_pixel(2, y, Color(1, 1, 1, alpha * 0.7))
+		_bullet_cache[KEY] = ImageTexture.create_from_image(img)
+	return _bullet_cache[KEY]
+
+
 func create_bullet_sprite(is_player: bool, level: int = 1) -> ImageTexture:
 	var key: String = "p%d_%d" % [int(is_player), level]
 	if _bullet_cache.has(key):
