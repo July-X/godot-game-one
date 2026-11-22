@@ -1111,10 +1111,11 @@ func _on_boss_died() -> void:
 	_clear_boss_laser_visual()
 	if _boss != null:
 		var eid: int = _boss.entity_id
-		if _entities.has(eid):
-			_entities.erase(eid)
 		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
-			_rpc_despawn_entity.rpc(eid)
+			_despawned_entity_ids[eid] = true
+			_entities.erase(eid)
+			_entity_target_positions.erase(eid)
+			_rpc_despawn_entity.rpc(eid, true)
 	_boss = null
 	_exit_boss_fight_mode()
 	if _hud and _hud.has_method("hide_boss_status"):
@@ -1788,6 +1789,8 @@ func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
 	_despawned_entity_ids[eid] = true
 	if is_instance_valid(_boss) and _boss.entity_id == eid:
 		_clear_boss_laser_visual()
+		_boss.hide()
+		_hud.hide_boss_status()
 	if _entities.has(eid):
 		var node = _entities[eid]
 		if is_instance_valid(node):

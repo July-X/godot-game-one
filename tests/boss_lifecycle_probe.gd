@@ -30,6 +30,10 @@ var origin := TARGET
 var reward_before := {}
 var p2 := 0
 var p2_speed := 0
+var fatal_frame := -1
+var death_frame := -1
+var explosions := 0
+var stale_probe_done := -1
 
 func _run() -> void:
 	await get_tree().process_frame
@@ -64,6 +68,12 @@ func _run() -> void:
 			_ack.rpc_id(1, 0)
 		elif not _require("both_peers_in_cruise_before_boss", await _wait_until(func(): return client_stage >= 0, 5)):
 			return
+	if OS.get_cmdline_user_args().has("boss-kill"):
+		await _beam_kill_matrix()
+		if _role == "client":
+			await _wait_seconds(0.25)
+		get_tree().quit(_summarize())
+		return
 	if _role != "client":
 		_main._spawn_boss(5)
 	if not _require("boss_in_tree", await _wait_until(func(): return is_instance_valid(_main._boss), 5)):
@@ -135,6 +145,8 @@ func _observe(node: Node) -> void:
 	elif recording and node.scene_file_path == POWERUP.resource_path:
 		drops.append(node.get_instance_id())
 		birth_positions.append(node.global_position)
+	elif recording and node.scene_file_path == "res://scenes/effects/explosion.tscn":
+		explosions += 1
 	elif is_instance_valid(_boss) and _boss._ultimate_laser_firing and node.scene_file_path == "res://scenes/entities/bullet.tscn":
 		_count_overlapping_volley.call_deferred(node)
 
@@ -471,27 +483,11 @@ func _check_drops() -> void:
 		_check("registered_on_this_peer", registered, "")
 
 func _alternate_death() -> void:
-	_boss.boss_died.connect(_observe_death)
+	if _role != "finishing-beam":
+		_boss.boss_died.connect(_observe_death)
 	match _role:
 		"finishing-beam":
-			_boss._stop_entry_motion()
-			_boss.global_position = TARGET
-			_boss._start_ultimate_laser()
-			_boss._tick_ultimate_laser(_boss.BOSS_ULTIMATE_LASER_CHARGE + 0.01)
-			_boss._ultimate_laser_fire_timer = 1.25
-			_boss.take_damage(_boss.get_shield_hp())
-			recording = true
-			_shoot_at_boss(ceili(_boss.get_network_health()))
-			_check("fatal_physical_round_during_live_beam", await _wait_until(func():
-				return shot_hit and _boss.get_network_health() == 0.0, 1.0), "")
-			var beam: LaserModel = _main._boss_laser_visual
-			_check("fatal_round_does_not_cut_beam_or_pay_early", beam._mode == LaserModel.VisualMode.BEAM
-				and deaths == 0 and drops.is_empty(), "")
-			_main._player.global_position = Vector2(1100, 640)
-			_boss.set_physics_process(true)
-			if _require("finishing_beam_releases_loot_afterward", await _wait_until(func(): return drops.size() == 6, 2.0)):
-				_check_drops()
-				_check("finishing_beam_reward_once", deaths == 1 and _reward_count(1) == reward_before[1] + 1, "")
+			await _kill_in_beam_phase(BossModel.AttackWindow.SWEEP, 0)
 		"bomb":
 			_boss._drop_supply_fragments()
 			var supplies := []
@@ -537,6 +533,123 @@ func _alternate_death() -> void:
 			_check("no_late_loot", drops.is_empty() and get_tree().get_nodes_in_group("powerups").is_empty(), str(drops.size()))
 			_check("no_shards_after_exit", bursts.size() == 1 and not is_instance_id_valid(bursts[0]), "")
 			_check("no_laser_after_exit", not is_instance_valid(cooling), "")
+
+func _beam_kill_matrix() -> void:
+	_main._wave_director._cooldown = INF
+	_main._asteroid_timer = INF
+	var stages := [BossModel.AttackWindow.CHARGING, BossModel.AttackWindow.SWEEP, BossModel.AttackWindow.HOLD]
+	for i in stages.size():
+		if _role != "client":
+			_main._spawn_boss(5)
+		if not await _kill_in_beam_phase(stages[i], i):
+			return
+
+func _kill_in_beam_phase(stage: BossModel.AttackWindow, sample: int) -> bool:
+	var label: String = BossModel.AttackWindow.keys()[stage].to_lower()
+	var handshake := 10 + sample * 2
+	var old_snapshot := {}
+	var score_before := GameState.score
+	var local_id: int = _main._player.peer_id
+	var reward := _reward_count(local_id)
+	var p1_health := GameState.get_current_health(1)
+	_main._player.get_node("PickupArea").monitoring = false
+	fatal_frame = -1
+	death_frame = -1
+	deaths = 0
+	explosions = 0
+	drops.clear()
+	birth_positions.clear()
+	recording = true
+	var beam_contact := TARGET + Vector2(0, 100)
+	if _role != "client":
+		_boss = _main._boss
+		_prepare_fatal_beam(stage)
+		old_snapshot = _main._boss_snapshot(_boss)
+		_boss.boss_died.connect(func():
+			deaths += 1
+			death_frame = Engine.get_physics_frames()
+			_check(label + "_same_frame_signal_clears_beam_and_hud",
+				_main._boss == null and _main._boss_laser_visual == null and not _main._hud._boss_status_root.visible
+					and not _boss._ultimate_laser_charging and not _boss._ultimate_laser_firing and drops.is_empty(), "")
+			_boss.die())
+	var ready := await _wait_until(func():
+		return (is_instance_valid(_main._boss) and _main._boss.get_attack_window() == stage
+			and is_instance_valid(_main._boss_laser_visual) and is_instance_valid(_main._hud._boss_status_root)
+			and _main._hud._boss_status_root.visible), 3.0)
+	if not _require(label + "_phase_visible_before_impact", ready):
+		return false
+	var target: BossModel = _main._boss
+	var eid := target.entity_id
+	if _role == "client":
+		_ack.rpc_id(1, handshake)
+	else:
+		if _role == "host" and not _require(label + "_guest_observes_phase",
+				await _wait_until(func(): return client_stage >= handshake, 3.0)):
+			return false
+		if stage != BossModel.AttackWindow.CHARGING:
+			_check(label + "_future_pilot_position_is_inside_live_beam",
+				is_zero_approx(target._distance_to_beam_center(beam_contact)), str(beam_contact))
+		target.set_physics_process(true)
+		var round := Pool.acquire("bullet", preload("res://scenes/entities/bullet.tscn"))
+		_main.add_child(round)
+		round.setup(TARGET + Vector2(0, 105), -PI * 0.5, ceili(target.get_network_health()), true, 1, 780.0, 1)
+		round.body_entered.connect(func(body):
+			if body == target:
+				fatal_frame = Engine.get_physics_frames()
+				_main._player.global_position = beam_contact)
+		var contacted := await _wait_until(func(): return fatal_frame >= 0, 0.8)
+		await get_tree().physics_frame
+		_check(label + "_fatal_projectile_settles_by_next_physics_tick",
+			contacted and deaths == 1 and death_frame >= fatal_frame and death_frame <= fatal_frame + 1,
+			"hit=%d death=%d" % [fatal_frame, death_frame])
+		if _role == "host":
+			_main._rpc_spawn_boss.rpc(eid, 5, 1, old_snapshot)
+			_main._rpc_sync_boss_window.rpc(eid, old_snapshot.stamp, old_snapshot.from, old_snapshot.to, old_snapshot.age, old_snapshot.hp)
+			_main._rpc_sync_boss_shield.rpc(eid, old_snapshot.shield_stamp, old_snapshot.shield, old_snapshot.max_shield, TARGET)
+			_main._rpc_despawn_entity.rpc(eid, true)
+			_mark_stale_probe.rpc(sample)
+	var cleaned := await _wait_until(func():
+		return not _main._has_active_boss() and _main._boss_laser_visual == null and not _main._hud._boss_status_root.visible, 1.0)
+	_check(label + "_beam_hull_and_hud_clear", cleaned, "")
+	await _wait_seconds(0.24)
+	_check(label + "_no_followup_damage", GameState.is_player_alive(1) and GameState.get_current_health(1) == p1_health,
+		"HP=%d → %d" % [p1_health, GameState.get_current_health(1)])
+	var settled := await _wait_until(func(): return drops.size() >= 6 and GameState.score >= score_before + 1000, 1.0)
+	_check(label + "_exactly_one_score_reward_drop_and_explosion", settled and drops.size() == 6
+		and explosions == 1 and _reward_count(local_id) == reward + 1 and GameState.score == score_before + 1000,
+		"drops=%d explosions=%d score=%d" % [drops.size(), explosions, GameState.score - score_before])
+	_check(label + "_old_packets_cannot_restore_retired_boss",
+		(_role != "client" or stale_probe_done == sample) and not is_instance_valid(target)
+			and not _main._has_active_boss() and _main._boss_laser_visual == null
+			and (not NetworkManager.is_online() or _main._despawned_entity_ids.has(eid)), "")
+	if _role == "client":
+		_ack.rpc_id(1, handshake + 1)
+	elif _role == "host":
+		if not _require(label + "_guest_checks_cleanup", await _wait_until(func(): return client_stage >= handshake + 1, 3.0)):
+			return false
+	recording = false
+	return true
+
+func _prepare_fatal_beam(stage: BossModel.AttackWindow) -> void:
+	_boss.set_physics_process(false)
+	_boss._stop_entry_motion()
+	_boss.global_position = TARGET
+	_main._player.global_position = TARGET + Vector2(0, 320)
+	if stage == BossModel.AttackWindow.CHARGING:
+		# 合法破盾会取消蓄力。这里故意注入无盾蓄力，检验死亡兜底。
+		_boss.take_damage(_boss.get_shield_hp())
+		_boss._start_ultimate_laser()
+	else:
+		_boss._start_ultimate_laser()
+		_boss._tick_ultimate_laser(BossModel.BOSS_ULTIMATE_LASER_CHARGE + 0.01)
+		_boss.take_damage(_boss.get_shield_hp())
+	_main._player.global_position = Vector2(1070, 650)
+	if stage != BossModel.AttackWindow.CHARGING:
+		_boss._tick_ultimate_laser(0.8 if stage == BossModel.AttackWindow.SWEEP else 3.2)
+
+@rpc("authority", "reliable", "call_remote")
+func _mark_stale_probe(sample: int) -> void:
+	stale_probe_done = sample
 
 func _reward_count(id: int) -> int:
 	return roundi(GameState.get_laser_cd_bonus(id) + GameState.get_extra_bullet_count(id) +

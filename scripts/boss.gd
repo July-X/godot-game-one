@@ -254,14 +254,12 @@ func _stop_entry_motion() -> void:
 	_entry_tween = null
 
 func _physics_process(delta: float) -> void:
-	if not GameState.game_running:
+	if _dead or not GameState.game_running:
 		return
 	if _is_network_ghost:
 		global_rotation = lerp_angle(global_rotation, _network_target_rotation, 0.45)
 		return
 	if _health <= 0.0:
-		if _ultimate_laser_firing:
-			_tick_ultimate_laser(delta)
 		return
 	if not _target or not is_instance_valid(_target):
 		return
@@ -550,8 +548,6 @@ func _finish_ultimate_laser() -> void:
 	_finished_laser_cycles += 1
 	_shoot_timer = 0.55
 	_publish_attack_window()
-	if _health <= 0.0:
-		die()
 
 func face_laser_direction(direction: Vector2) -> void:
 	global_rotation = direction.angle() + PI * 0.5
@@ -875,13 +871,11 @@ func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 			_record_fire_pressure(killer_peer_id)
 		return
 	_health = maxf(0.0, _health - applied)
+	if _health == 0.0:
+		die()
+		return
 	_hit_flash()
 	_hit_recoil()
-	# 已经推出的光束仍是危险区，收束后再结束该遭遇。
-	if _health == 0.0:
-		queue_redraw()
-		if not _ultimate_laser_firing:
-			die()
 
 func _record_fire_pressure(killer_peer_id: int) -> void:
 	_fire_pressure_hits += 1
@@ -910,12 +904,17 @@ func die() -> void:
 	if _dead:
 		return
 	_dead = true
+	_ultimate_laser_charging = false
+	_ultimate_laser_firing = false
 	var death_pos := global_position
 	_queue_core_fragments(death_pos)
 	GameState.add_score(200 * _level, -1)
+	play_death_feedback()
 	boss_died.emit()
-	_spawn_explosion.call_deferred(death_pos)
 	queue_free()
+
+func play_death_feedback() -> void:
+	_spawn_explosion.call_deferred(global_position)
 
 func _spawn_explosion(death_pos: Vector2) -> void:
 	if not is_inside_tree() or not GameState.game_running:
