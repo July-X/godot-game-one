@@ -11,7 +11,9 @@ extends Node
 ## 关闭后第一档也走原有等级贴图和程序化回退。
 const USE_SWIFT_HULL := true
 const SWIFT_EXHAUST := "res://assets/sprites/player/swift_exhaust.png"
+const DOWNED_HULL := preload("res://scripts/player/downed_hull.gdshader")
 var _using_swift := false
+var _downed_tween: Tween
 
 var _walk_cycle: float = 0.0
 var _invincible_timer: float = 0.0
@@ -67,10 +69,32 @@ func _update_walk_animation(delta: float) -> void:
 func _update_invincible_flash() -> void:
 	if not _sprite:
 		return
-	if _invincible_timer > 0:
+	if _invincible_timer > 0 and not _player.is_downed:
 		_sprite.modulate.a = 0.3 + abs(sin(_invincible_timer * 20)) * 0.7
 	else:
 		_sprite.modulate.a = 1.0
+
+
+func set_downed_visual(active: bool) -> void:
+	if _engine_glow:
+		_engine_glow.visible = not active
+	if not _sprite:
+		return
+	if _downed_tween:
+		_downed_tween.kill()
+		_downed_tween = null
+	if not active:
+		_sprite.material = null
+		_sprite.self_modulate.a = 1.0
+		return
+	var material := ShaderMaterial.new()
+	material.shader = DOWNED_HULL
+	_sprite.material = material
+	_sprite.self_modulate.a = 0.82
+	# 绑定到节点的 Tween 也更新对端幽灵，且退场时随节点释放。
+	_downed_tween = create_tween().set_loops().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_downed_tween.tween_property(_sprite, "self_modulate:a", 0.52, 0.75)
+	_downed_tween.tween_property(_sprite, "self_modulate:a", 0.82, 0.75)
 
 
 ## ── 外观刷新 ────────────────────────────────────────
@@ -90,7 +114,7 @@ func update_appearance() -> void:
 		_sprite.texture = hull if _using_swift else SpriteFactory.create_player_sprite(visual_tier)
 		_apply_peer_tint()
 	if _engine_glow:
-		_engine_glow.visible = true
+		_engine_glow.visible = not _player.is_downed
 		_engine_glow.position.y = 32.0
 		_base_breath_alpha = 0.6 + shoot_level * 0.2
 		_engine_glow.modulate = Color(1.0, 0.6, 0.2, _base_breath_alpha)

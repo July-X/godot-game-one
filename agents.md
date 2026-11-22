@@ -102,6 +102,8 @@ godot --headless --path . res://tests/lan_probe.tscn -- client 7788
 
 改联机三选一时加跑 `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19616 draft`，核对同批确认、超时、连升补发和断线清理。[复现口径](docs/lan_upgrade_draft.md)
 
+改倒地或救援时加跑 `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19711 rescue`。专项覆盖双向救援、共用次数、到期帧和跨局快照。[复现口径](docs/lan_rescue.md)
+
 **改任何难度数值后必须跑难度曲线门禁**（防止难度墙悄悄长回来）：
 
 ```bash

@@ -98,6 +98,15 @@ func is_dashing() -> bool:
 	return _dash_left > 0.0
 
 
+func stop_for_downed() -> void:
+	_dash_left = 0.0
+	_dash_recover = 0.0
+	_player.velocity = Vector2.ZERO
+	mouse_vel = Vector2.ZERO
+	mobile_vel = Vector2.ZERO
+	touch_move = Vector2.ZERO
+
+
 func _tick_dash(delta: float) -> void:
 	if _dash_cd > 0.0:
 		_dash_cd = maxf(_dash_cd - delta, 0.0)

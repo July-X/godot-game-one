@@ -114,9 +114,8 @@ const SHAKE_ELITE_DEATH: float = 0.55
 const SHAKE_BOSS_PHASE: float = 0.40
 const SHAKE_EXPLOSION: float = 0.60
 const SHAKE_LASER_CHARGE: float = 0.50
-## 救援：按住 E 持续 REVIVE_HOLD_SECONDS 才算完成，必须有代价
-const REVIVE_RADIUS: float = 60.0
-var _revive_hold_active: bool = false
+## 房主用物理帧判定倒地截止时间。
+var _rescue_expires_at := 0
 var _hitstop_left: float = 0.0
 var _hitstop_target: float = 1.0
 var _hitstop_last_usec: int = 0
@@ -201,6 +200,7 @@ func _ready() -> void:
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
 	GameState.game_over.connect(_on_game_over_triggered)
+	GameState.rescue_synced.connect(_on_rescue_synced)
 	_debug_log_variant_assets()
 	var online := NetworkManager.is_online()
 	print("[Main] online=", online)
@@ -339,161 +339,108 @@ func _on_multiplayer_server_disconnected() -> void:
 	_fallback_to_single_player("房主已退出，切换为单人模式")
 
 
-## 多人模式：某玩家死亡回调
-func _on_networked_player_died(p_peer_id: int) -> void:
-	## 2 人合作：队友还活着时不直接 despawn，而是进入倒地状态等救援。
-	## 原来"一个人失误 → 变成旁观者看着队友打"是合作体验最大的坑。
-	## 单机、以及全员阵亡时仍走原来的直接结束流程。
-	if _try_go_downed(p_peer_id):
+## 多人死亡与救援由房主结算。
+func _on_networked_player_died(peer_id: int) -> void:
+	if _try_go_downed(peer_id):
 		return
-	if NetworkManager.is_online() and multiplayer.is_server():
-		_rpc_despawn_player.rpc(p_peer_id)
-	_rpc_despawn_player(p_peer_id)
-	_players.erase(p_peer_id)
-	_alive_players.erase(p_peer_id)
-	## 合作模式：仅当全员死亡（或全部离场）才结束。
+	_remove_networked_player(peer_id)
 	if _alive_players.is_empty():
+		if GameState.rescue_peer_id > 0:
+			_remove_networked_player(GameState.rescue_peer_id)
+			_clear_rescue()
 		_finish_multiplayer_game_over(GameState.score, GameState.level)
 	else:
 		_refresh_primary_player_target()
 
 
-## ── 倒地与救援 ────────────────────────────────────────────
+func _remove_networked_player(peer_id: int) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_despawn_player.rpc(peer_id)
+	_rpc_despawn_player(peer_id)
 
-## 本机玩家请求救援最近的倒地队友
-func _request_revive_nearest_downed() -> void:
-	if not NetworkManager.is_online():
-		return
-	if _player == null or not is_instance_valid(_player) or _player.is_downed:
-		return
-	var best_pid: int = -1
-	var best_d: float = REVIVE_RADIUS
-	for pid: Variant in _players.keys():
-		var node: Node = _players[pid]
-		if node == null or not is_instance_valid(node) or not node.is_downed:
-			continue
-		var d: float = _player.global_position.distance_to((node as Node2D).global_position)
-		if d <= best_d:
-			best_d = d
-			best_pid = int(pid)
-	if best_pid < 0:
-		return
-	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
-		_rpc_request_revive.rpc_id(1, best_pid)
-		return
-	var target: Node = _players[best_pid]
-	if is_instance_valid(target) and target.has_method("update_revive_hold"):
-		target.update_revive_hold(true, 0.0)
-		_revive_hold_active = true
 
-##
-## 只有 Host 决定是否倒地，避免两端各自判断导致不同步。
-
-## 倒地救援总开关。联机回归探针测的是「真死亡 ≠ 断线」这条不变量，
-## 需要绕过倒地；真实对局保持开启。
+## 常规联机探针用真死亡检查断线隔离，救援专项保持此开关开启。
 var rescue_enabled: bool = true
 
 
-func _try_go_downed(p_peer_id: int) -> bool:
-	if not rescue_enabled:
+func _try_go_downed(peer_id: int) -> bool:
+	if not rescue_enabled or not NetworkManager.is_online() or not multiplayer.is_server():
 		return false
-	if not NetworkManager.is_online() or not multiplayer.is_server():
+	if _alive_players.size() < 2 or not _alive_players.has(peer_id) or GameState.rescues_left == 0:
 		return false
-	if _alive_players.size() < 2:
+	var node: Variant = _players.get(peer_id)
+	if not is_instance_valid(node):
 		return false
-	var node: Node = _players.get(p_peer_id)
-	if node == null or not is_instance_valid(node) or not node.has_method("go_downed"):
-		return false
-	## 倒地者仍留在 _players 里（位置要继续同步给队友看），
-	## 但要退出可被选中的主目标，否则敌人会去打一个不能还手的人
-	node.go_downed()
-	_alive_players.erase(p_peer_id)
-	_rpc_set_downed.rpc(p_peer_id)
+	var at: Vector2 = _player_target_positions.get(peer_id, node.global_position)
+	_rescue_expires_at = Engine.get_physics_frames() + GameState.RESCUE_SECONDS * Engine.physics_ticks_per_second
+	GameState.set_rescue_target(peer_id, at, GameState.RESCUE_SECONDS)
+	_freeze_downed_player(peer_id, at)
 	_refresh_primary_player_target()
-	_show_death_marquee_text("队友已坠毁！靠近并按住 E 救援")
+	GameState.force_sync_to_peer(-1)
+	queue_redraw()
 	return true
 
 
-## Host → Client：同步倒地状态
-@rpc("authority", "reliable", "call_remote")
-func _rpc_set_downed(p_peer_id: int) -> void:
-	if not _players.has(p_peer_id):
+func _physics_process(_delta: float) -> void:
+	var peer_id := GameState.rescue_peer_id
+	if peer_id == 0 or not GameState.game_running or not NetworkManager.is_online() or not multiplayer.is_server():
 		return
-	var node: Node = _players[p_peer_id]
-	if is_instance_valid(node) and node.has_method("go_downed"):
-		node.go_downed()
-	_alive_players.erase(p_peer_id)
-	_refresh_primary_player_target()
-
-
-## Host 每帧：推进倒地者的流血与救援按住进度
-func _tick_downed_rescue(delta: float) -> void:
-	if not NetworkManager.is_online() or not multiplayer.is_server():
+	var frames_left := _rescue_expires_at - Engine.get_physics_frames()
+	if frames_left <= 0:
+		_remove_networked_player(peer_id)
+		_clear_rescue()
+		_refresh_primary_player_target()
+		GameState.force_sync_to_peer(-1)
 		return
-	## 遍历 _players 时必须先取 Variant 再判有效性、直接用 `var node: Node = _players[pid]`
-	## 会在节点已被 queue_free 时抛"assign invalid previously freed instance"——
-	## 因为类型转换发生在 is_instance_valid 检查**之前**。
-	## 同时对 keys 取快照：循环体内 _do_revive 会触发信号回调，可能改动字典。
-	for pid: Variant in _players.keys().duplicate():
-		var raw: Variant = _players.get(pid)
-		if not is_instance_valid(raw):
+	var at := GameState.rescue_position
+	var seconds := ceili(float(frames_left) / Engine.physics_ticks_per_second)
+	if seconds != GameState.rescue_seconds:
+		GameState.set_rescue_target(peer_id, at, seconds)
+		queue_redraw()
+	var victim: Variant = _players.get(peer_id)
+	for pid: int in _alive_players:
+		var rescuer: Variant = _players.get(pid)
+		if not is_instance_valid(rescuer) or not is_instance_valid(victim):
 			continue
-		var node := raw as Node
-		if node == null or not node.has_method("update_revive_hold"):
-			continue
-		if not node.is_downed:
-			continue
-		node.update_revive_hold(_is_someone_reviving(node), delta)
-		if node.get_revive_ratio() >= 1.0:
-			_do_revive(int(pid), node)
+		# 判定取有效的最新位置，插值只影响画面。
+		var pos: Vector2 = _player_target_positions.get(pid, rescuer.global_position)
+		if pos.distance_squared_to(at) <= GameState.RESCUE_RADIUS * GameState.RESCUE_RADIUS \
+				and GameState.revive_player(peer_id):
+			_rescue_expires_at = 0
+			victim.complete_revive()
+			_alive_players[peer_id] = true
+			_refresh_primary_player_target()
+			GameState.force_sync_to_peer(-1)
+			queue_redraw()
+			break
 
 
-## 本机玩家是否在救援范围内且按住了救援键
-func _is_someone_reviving(downed_node: Node) -> bool:
-	if not _revive_hold_active:
-		return false
-	if _player == null or not is_instance_valid(_player) or _player.is_downed:
-		return false
-	return _player.global_position.distance_to(downed_node.global_position) <= REVIVE_RADIUS
+func _freeze_downed_player(peer_id: int, at: Vector2) -> void:
+	var node: Variant = _players.get(peer_id)
+	if is_instance_valid(node):
+		node.go_downed(at)
+	_alive_players.erase(peer_id)
+	_player_target_positions.erase(peer_id)
 
 
-func _do_revive(pid: int, node: Node) -> void:
-	if not node.has_method("complete_revive") or not node.complete_revive():
+func _on_rescue_synced(previous_peer_id: int, revived: bool) -> void:
+	queue_redraw()
+	if previous_peer_id == GameState.rescue_peer_id:
 		return
-	_alive_players[pid] = true
-	_rpc_revive_done.rpc(pid)
-	_refresh_primary_player_target()
-	_show_death_marquee_text("救援成功！")
-
-
-## Client → Host：本地玩家想救援，Host 校验距离与倒计时后裁决
-@rpc("any_peer", "reliable", "call_remote")
-func _rpc_request_revive(target_pid: int) -> void:
-	if not multiplayer.is_server():
-		return
-	var sender: int = multiplayer.get_remote_sender_id()
-	if sender <= 0 or not _players.has(target_pid):
-		return
-	var target: Node = _players[target_pid]
-	var rescuer: Node = _players.get(sender)
-	if not is_instance_valid(target) or not is_instance_valid(rescuer):
-		return
-	if not target.is_downed:
-		return
-	if rescuer.global_position.distance_to(target.global_position) > REVIVE_RADIUS:
-		return
-	_do_revive(target_pid, target)
-
-
-@rpc("authority", "reliable", "call_remote")
-func _rpc_revive_done(p_peer_id: int) -> void:
-	if not _players.has(p_peer_id):
-		return
-	var node: Node = _players[p_peer_id]
-	if is_instance_valid(node) and node.has_method("complete_revive"):
+	var node: Variant = _players.get(previous_peer_id)
+	if revived and is_instance_valid(node):
 		node.complete_revive()
-	_alive_players[p_peer_id] = true
+		_alive_players[previous_peer_id] = true
+	if GameState.rescue_peer_id > 0:
+		_freeze_downed_player(GameState.rescue_peer_id, GameState.rescue_position)
 	_refresh_primary_player_target()
+
+
+func _clear_rescue() -> void:
+	GameState.set_rescue_target(0)
+	_rescue_expires_at = 0
+	queue_redraw()
+
 
 func _fallback_to_single_player(message: String = "") -> void:
 	if _fallback_in_progress:
@@ -510,6 +457,7 @@ func _fallback_to_single_player(message: String = "") -> void:
 
 func _clear_network_runtime_state() -> void:
 	UpgradeDraft.clear_drafts()
+	_clear_rescue()
 	_pending_bullet_spawns.clear()
 	_pending_laser_spawns.clear()
 	_entity_target_positions.clear()
@@ -577,7 +525,6 @@ func _spawn_mobile_controls() -> void:
 
 func _process(delta: float) -> void:
 	_tick_hitstop()
-	_tick_downed_rescue(delta)
 	if not GameState.game_running:
 		return
 	_update_boss_hud()
@@ -594,14 +541,17 @@ func _process(delta: float) -> void:
 			if _health_sync_timer <= 0.0:
 				_health_sync_timer = 0.1
 				_batch_sync_entity_health()
-		elif _player != null and is_instance_valid(_player):
-			## 客户端只上报自己的坐标，由 Host 转发给其他端
-			_player_report_timer -= delta
-			if _player_report_timer <= 0.0:
-				_player_report_timer = ENTITY_SYNC_INTERVAL
-				_player_report_sent += 1
-				_rpc_report_player_state.rpc_id(1, _player.peer_id,
-					_player.global_position.x, _player.global_position.y, _player.rotation)
+		else:
+			# _player 可能是观战时供敌人瞄准的队友。只发送本机仍在行动的飞机。
+			var local_id := multiplayer.get_unique_id()
+			var local_pilot: Variant = _players.get(local_id)
+			if _alive_players.has(local_id) and is_instance_valid(local_pilot):
+				_player_report_timer -= delta
+				if _player_report_timer <= 0.0:
+					_player_report_timer = ENTITY_SYNC_INTERVAL
+					_player_report_sent += 1
+					_rpc_report_player_state.rpc_id(1, local_id,
+						local_pilot.global_position.x, local_pilot.global_position.y, local_pilot.rotation)
 		## 客户端玩家的幽灵节点在 Host 侧也要插值
 		_apply_player_interpolation(delta)
 		_flush_bullet_spawns()
@@ -741,6 +691,9 @@ func _draw() -> void:
 	if view.y > field.y + 1.0:
 		draw_line(Vector2(0, 0.5), Vector2(field.x, 0.5), edge, 1)
 		draw_line(Vector2(0, field.y - 0.5), Vector2(field.x, field.y - 0.5), edge, 1)
+	if GameState.rescue_peer_id > 0 and GameState.game_running:
+		var ink := Palette.DOWNED_CRITICAL if GameState.rescue_seconds <= GameState.RESCUE_WARNING_SECONDS else Palette.DOWNED_SAFE
+		draw_arc(to_local(GameState.rescue_position), GameState.RESCUE_RADIUS, 0, TAU, 64, ink, 2.0, true)
 
 
 ## 敌速上限：优先取本机玩家的真实极速，玩家节点没就绪时用兜底常量。
@@ -1352,6 +1305,7 @@ func _rpc_force_game_over(final_score: int, final_level: int) -> void:
 		_hud._on_game_over(final_score, final_level)
 
 func _clear_runtime_entities_on_game_over() -> void:
+	queue_redraw()
 	var stick := get_node_or_null("MobileControls")
 	if stick:
 		stick.disable_for_results()
@@ -1424,14 +1378,6 @@ func _alive_peer_ids() -> Array[int]:
 
 
 func _input(event: InputEvent) -> void:
-	## 救援键：按住 E。客户端按下的瞬间向 Host 发一次请求，
-	## 之后的按住进度由 Host 依据距离推进（避免两端各自判定）。
-	if event is InputEventKey and (event.keycode == KEY_E or event.keycode == KEY_F):
-		if event is InputEventKey:
-			_revive_hold_active = event.pressed
-			if event.pressed and not event.echo:
-				_request_revive_nearest_downed()
-
 	## 选卡用 1/2/3 键而不是鼠标点击：进入战斗后鼠标被捕获用于走位，
 	## 用鼠标选卡会打断操作，而"选卡时不能停下手"是本作的设计要求。
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1467,12 +1413,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _restart() -> void:
 	if NetworkManager.is_online():
 		if multiplayer.is_server():
-			_rpc_restart_game.rpc()
+			_rpc_restart_game.rpc(GameState.next_sync_round())
 		return
 	get_tree().reload_current_scene()
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_restart_game() -> void:
+func _rpc_restart_game(round_id: int) -> void:
+	if not multiplayer.is_server():
+		GameState.expect_sync_round(round_id)
 	get_tree().reload_current_scene()
 
 ## ── 多人模式 RPC ──────────────────────────────────────────────
@@ -1514,6 +1462,8 @@ func _rpc_spawn_networked_player(p_peer_id: int, pos_x: float, pos_y: float) -> 
 	player.died.connect(_on_networked_player_died.bind(p_peer_id))
 	_players[p_peer_id] = player
 	_alive_players[p_peer_id] = true
+	if GameState.rescue_peer_id == p_peer_id:
+		_freeze_downed_player(p_peer_id, GameState.rescue_position)
 	if p_peer_id == multiplayer.get_unique_id():
 		_player = player
 	if player.has_method("on_level_up"):
@@ -2062,7 +2012,7 @@ func _apply_remote_player_state(p_peer_id: int, pos: Vector2, rot: float) -> voi
 	if not _players.has(p_peer_id) or not is_instance_valid(_players[p_peer_id]):
 		return
 	var node: Node2D = _players[p_peer_id] as Node2D
-	if node == null:
+	if node == null or node.is_downed:
 		return
 	if node.get_meta("player_sync_inited", false) == false:
 		node.global_position = pos
@@ -2184,6 +2134,8 @@ func _rpc_spawn_bullets(data: Array) -> void:
 	if multiplayer.is_server():
 		var sender_id := multiplayer.get_remote_sender_id()
 		if sender_id > 1:
+			if not _alive_players.has(sender_id):
+				return
 			_rpc_spawn_bullets.rpc(data)
 	for entry in data:
 		var bullet := Pool.acquire("bullet", _bullet_scene)
@@ -2225,6 +2177,8 @@ func _rpc_spawn_lasers(data: Array) -> void:
 	if not NetworkManager.is_online():
 		return
 	if multiplayer.is_server():
+		if not _alive_players.has(multiplayer.get_remote_sender_id()):
+			return
 		for entry in data:
 			var bolt = _laser_scene.instantiate()
 			add_child(bolt)

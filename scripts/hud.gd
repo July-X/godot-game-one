@@ -18,7 +18,6 @@ const SafeArea = preload("res://scripts/battle_safe_area.gd")
 @onready var _draft_row: HBoxContainer = $DraftPanel/CardRow
 @onready var _evolution_label: Label = $EvolutionLabel
 @onready var _downed_label: Label = $DownedLabel
-@onready var _revive_bar: ProgressBar = $ReviveBar
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _fps_label: Label = $FpsLabel
 @onready var _game_over_panel: Panel = $GameOverPanel
@@ -125,55 +124,21 @@ func _process(_delta: float) -> void:
 	_update_fps(_delta)
 
 
-## 倒地 / 救援 HUD
-##
-## 救援的时间压力必须可视化：倒地者只剩 20 秒，队友必须知道还剩多少时间、
-## 自己的按住进度到哪了。没有这个反馈，1.2 秒的按住会显得像"没反应"。
 func _update_downed_display() -> void:
-	if _downed_label == null or _revive_bar == null:
+	var visible := NetworkManager.is_online() and GameState.game_running
+	if visible != _downed_label.visible:
+		_downed_label.visible = visible
+		_position_draft_panel()
+	if not visible:
 		return
-	var downed_node: Node = _nearest_downed_node()
-	if downed_node == null:
-		_downed_label.visible = false
-		_revive_bar.visible = false
-		return
-	var left: float = float(downed_node.get_downed_time_left())
-	_downed_label.visible = true
-	_revive_bar.visible = true
-	var warn: bool = left <= 5.0
-	_downed_label.text = "队友倒地！按住 E 救援  剩余 %.0f 秒" % left
-	_downed_label.add_theme_color_override("font_color",
-		Palette.DOWNED_CRITICAL if warn else Palette.DOWNED_SAFE)
-	_revive_bar.value = float(downed_node.get_revive_ratio()) * 100.0
-
-
-## 场景里最近的倒地队友
-func _nearest_downed_node() -> Node:
-	var scene := get_tree().current_scene
-	if scene == null or not scene.has_method("_players"):
-		return null
-	var players: Dictionary = scene.get("_players")
-	var me: Node = scene.get("_player")
-	var best: Node = null
-	var best_d: float = INF
-	for pid: Variant in players.keys().duplicate():
-		## 同 _tick_downed_rescue：先取 Variant 判有效性再强转，
-		## 否则节点已 queue_free 时会抛 "assign invalid previously freed instance"
-		var raw: Variant = players.get(pid)
-		if not is_instance_valid(raw):
-			continue
-		var node := raw as Node
-		if node == null or not node.has_method("go_downed") or not node.is_downed:
-			continue
-		if node == me:
-			continue
-		var d: float = 0.0
-		if me != null and is_instance_valid(me) and node is Node2D:
-			d = (me as Node2D).global_position.distance_to((node as Node2D).global_position)
-		if d < best_d:
-			best_d = d
-			best = node
-	return best
+	var text := "救援 %d/%d" % [GameState.rescues_left, GameState.RESCUE_LIMIT]
+	var downed := GameState.rescue_peer_id
+	if downed > 0:
+		text = "%s 倒地 · %d 秒 · 入圈%s" % [_peer_label(downed), GameState.rescue_seconds, text]
+	if _downed_label.text != text:
+		_downed_label.text = text
+		var warn := downed > 0 and GameState.rescue_seconds <= GameState.RESCUE_WARNING_SECONDS
+		_downed_label.add_theme_color_override("font_color", Palette.DOWNED_CRITICAL if warn else Palette.DOWNED_SAFE)
 
 
 ## 同一排 Button 显示常规三选一和试飞的四张卡，确认仍由 UpgradeDraft 处理。
@@ -417,6 +382,9 @@ func _layout_in_safe_area(safe: Rect2) -> void:
 func _layout_top_rows() -> void:
 	var center := _safe_rect.get_center().x
 	var top := _safe_rect.position.y + 12.0
+	var rescue_width := minf(360.0, _safe_rect.size.x - EDGE_MARGIN * 2.0)
+	_downed_label.position = Vector2(center - rescue_width * 0.5, top + 42.0)
+	_downed_label.size = Vector2(rescue_width, 24)
 	if is_instance_valid(_boss_status_root):
 		_boss_status_root.position = Vector2(center - BOSS_BAR_SIZE.x * 0.5, top)
 	if is_instance_valid(_alert_label):
@@ -475,6 +443,8 @@ func _position_draft_panel() -> void:
 	var alert_visible := is_instance_valid(_alert_label) and _alert_label.visible
 	if boss_visible or alert_visible:
 		top += 42.0
+	if _downed_label.visible:
+		top = maxf(top, _downed_label.position.y + _downed_label.size.y + 6.0)
 	var y := top if not _draft_prompt.is_empty() else maxf(top, _safe_rect.get_center().y - _draft_panel.size.y * 0.5)
 	_draft_panel.position = Vector2(_safe_rect.get_center().x - _draft_panel.size.x * 0.5, y)
 
@@ -988,8 +958,6 @@ func _update_platform_hints() -> void:
 		_restart_button.text = "重新开始 · R" if can_restart else "等待房主重新开始"
 		_controls_label.show()
 		_controls_label.text = "Esc 释放鼠标"
-		if NetworkManager.is_online():
-			_controls_label.text += "  ·  E 救援"
 
 func _on_restart_touch(event: InputEvent) -> void:
 	if _accept_touch_press(event, _restart_button) and not _restart_button.disabled:

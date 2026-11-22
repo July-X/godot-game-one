@@ -11,9 +11,19 @@ signal laser_used(peer_id)
 signal player_scores_changed(scores, total_score)
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
+signal rescue_synced(previous_peer_id: int, revived: bool)
 
 const START_HEALTH: int = 50
 const HEALTH_CAP: int = 2000
+const RESCUE_LIMIT := 3
+const RESCUE_SECONDS := 15
+const RESCUE_WARNING_SECONDS := 5
+const RESCUE_RADIUS := 60.0
+
+var rescues_left := RESCUE_LIMIT
+var rescue_peer_id := 0
+var rescue_position := Vector2.ZERO
+var rescue_seconds := 0
 
 var score: int = 0
 var level: int = 1
@@ -55,6 +65,11 @@ var _player_scores: Dictionary = {}
 var _sync_dirty: bool = false
 var _sync_timer: float = 0.0
 const SYNC_INTERVAL: float = 0.1  # 每 100ms 发送一次
+var _sync_sequence := 0
+var _sync_round := 0
+var _received_sync_sequence := 0
+var _sync_connection_id := 0
+var _minimum_sync_round := 0
 var _server_player_states: Dictionary = {}
 var _pending_skill_ack: Dictionary = {}
 var _pending_laser_ack: Dictionary = {}
@@ -151,7 +166,10 @@ func _process(delta: float) -> void:
 		_rpc_sync_game_state.rpc(_to_dict())
 
 func _to_dict() -> Dictionary:
+	_sync_sequence += 1
 	return {
+		"sequence": _sync_sequence,
+		"round": _sync_round,
 		"score": score,
 		"level": level,
 		"kills": kills,
@@ -166,11 +184,39 @@ func _to_dict() -> Dictionary:
 		"player_states": _player_states.duplicate(true),
 		"player_scores": _player_scores.duplicate(true),
 		"upgrade_drafts": UpgradeDraft.snapshot(),
+		"rescue": {"peer": rescue_peer_id, "at": rescue_position, "seconds": rescue_seconds, "left": rescues_left},
 	}
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_sync_game_state(data: Dictionary) -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer == null:
+		return
+	_prepare_sync_connection(peer)
+	var sequence := int(data.get("sequence", 0))
+	var round_id := int(data.get("round", 0))
+	if sequence <= _received_sync_sequence or round_id < _minimum_sync_round:
+		return
+	_received_sync_sequence = sequence
+	_minimum_sync_round = round_id
 	_from_dict(data)
+
+func _prepare_sync_connection(peer: MultiplayerPeer) -> void:
+	# Autoload 跨场景保留序号，新连接使用各自的房主序列。
+	var connection_id := peer.get_instance_id()
+	if connection_id != _sync_connection_id:
+		_sync_connection_id = connection_id
+		_received_sync_sequence = 0
+		_minimum_sync_round = 0
+
+func next_sync_round() -> int:
+	return _sync_round + 1
+
+func expect_sync_round(round_id: int) -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer != null:
+		_prepare_sync_connection(peer)
+		_minimum_sync_round = maxi(_minimum_sync_round, round_id)
 
 func force_sync_to_peer(peer_id: int) -> void:
 	if not multiplayer.is_server():
@@ -259,6 +305,14 @@ func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
 	laser_used.emit(peer_id)
 
 func _from_dict(data: Dictionary) -> void:
+	var previous_rescue_peer := rescue_peer_id
+	var previous_rescue_seconds := rescue_seconds
+	var previous_rescues_left := rescues_left
+	var rescue: Dictionary = data.get("rescue", {})
+	rescue_peer_id = int(rescue.get("peer", 0))
+	rescue_position = rescue.get("at", Vector2.ZERO)
+	rescue_seconds = int(rescue.get("seconds", 0))
+	rescues_left = int(rescue.get("left", RESCUE_LIMIT))
 	score = data.get("score", 0)
 	var previous_level := level
 	level = data.get("level", 1)
@@ -292,6 +346,8 @@ func _from_dict(data: Dictionary) -> void:
 		var peer_id := _local_peer_id()
 		var drafts: Dictionary = data.get("upgrade_drafts", {})
 		UpgradeDraft.receive_draft(peer_id, drafts.get(peer_id, {}))
+	if rescue_peer_id != previous_rescue_peer or rescue_seconds != previous_rescue_seconds:
+		rescue_synced.emit(previous_rescue_peer, rescues_left < previous_rescues_left)
 
 func _mark_dirty() -> void:
 	if not multiplayer.has_multiplayer_peer():
@@ -311,7 +367,11 @@ func ensure_player_state(peer_id: int) -> void:
 	_mark_dirty()
 
 func reset_game() -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_sync_round += 1
 	UpgradeDraft.clear_drafts()
+	rescues_left = RESCUE_LIMIT
+	set_rescue_target(0)
 	score = 0
 	level = 1
 	kills = 0
@@ -533,6 +593,8 @@ func collect_powerup(type: String, peer_id: int = -1) -> void:
 func use_skill(peer_id: int = -1) -> bool:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
+	if NetworkManager.is_online() and not bool(s.is_alive):
+		return false
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if float(s.skill_cooldown) > 0.0 or not game_running:
 			return false
@@ -583,6 +645,8 @@ func tick_skill_cooldown(delta: float, peer_id: int = -1) -> void:
 func use_laser(peer_id: int = -1) -> bool:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
+	if NetworkManager.is_online() and not bool(s.is_alive):
+		return false
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if float(s.laser_cooldown) > 0.0 or not game_running:
 			return false
@@ -757,7 +821,8 @@ func apply_card(peer_id: int, card_id: String) -> void:
 			s.shoot_level = mini(int(s.shoot_level) + 2, 10)
 		"vitality":
 			s.max_health = mini(int(s.max_health) + 20, HEALTH_CAP)
-			s.current_health = mini(int(s.current_health) + 20, int(s.max_health))
+			if not NetworkManager.is_online() or bool(s.is_alive):
+				s.current_health = mini(int(s.current_health) + 20, int(s.max_health))
 		"shield":
 			s.shield_interval = maxf(float(s.get("shield_interval", 8.0)) - 2.0, 3.0)
 	_player_states[_peer_key(pid)] = s
@@ -932,29 +997,37 @@ func is_player_alive(peer_id: int = -1) -> bool:
 	return bool(_state(peer_id).get("is_alive", true))
 
 
-## 救援成功：回血到比例、给护盾、清除死亡标记。
-## 只由 Host 调用（救援的距离与时长校验都在 Host 侧），
-## Client 收到的是 Host 下发的状态，不要本地自结算。
-func revive_player(peer_id: int, health_ratio: float = 0.5,
-		invincible_seconds: float = 3.0, shield_layers: int = 1) -> void:
-	var pid: int = peer_id if peer_id > 0 else _local_peer_id()
-	var s := _state(pid)
+func set_rescue_target(peer_id: int, at := Vector2.ZERO, seconds := 0) -> void:
+	rescue_peer_id = peer_id
+	rescue_position = at
+	rescue_seconds = seconds
+	_mark_dirty()
+
+
+## 只由房主结算。先消费倒地状态，再发布属性变化。
+func revive_player(peer_id: int) -> bool:
+	if not NetworkManager.is_online() or not multiplayer.is_server():
+		return false
+	if peer_id != rescue_peer_id or rescues_left <= 0:
+		return false
+	rescues_left -= 1
+	set_rescue_target(0)
+	var s := _state(peer_id)
 	var mhp: int = maxi(1, int(s.get("max_health", START_HEALTH)))
 	s.is_alive = true
-	s.current_health = maxi(1, int(float(mhp) * health_ratio))
-	s.shield_layers = maxi(int(s.get("shield_layers", 0)), shield_layers)
-	s.downed = false
-	_player_states[_peer_key(pid)] = s
-	if _is_local_peer(pid):
+	s.current_health = maxi(1, int(float(mhp) * 0.5))
+	s.shield_layers = 0
+	_player_states[_peer_key(peer_id)] = s
+	if _is_local_peer(peer_id):
 		_sync_local_view()
 		health_changed.emit(current_health, max_health)
-		_emit_shield_changed_for_peer(pid)
-	_mark_dirty()
+	_emit_shield_changed_for_peer(peer_id)
+	return true
 
 
 ## 是否处于倒地（被救前）状态
 func is_player_downed(peer_id: int = -1) -> bool:
-	return bool(_state(peer_id).get("downed", false))
+	return rescue_peer_id == (peer_id if peer_id > 0 else _local_peer_id())
 
 func get_alive_player_ids() -> Array[int]:
 	return _alive_peer_ids()

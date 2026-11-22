@@ -57,8 +57,8 @@ const DASH_COOLDOWN: Color = Color(0.45, 0.50, 0.60)
 ## 进化提示用金，和卡面区分开
 const EVOLUTION: Color = Color(1.0, 0.84, 0.42)
 ## 倒地告警：安全时琥珀，临死变红
-const DOWNED_SAFE: Color = Color(1.0, 0.80, 0.50)
-const DOWNED_CRITICAL: Color = Color(1.0, 0.42, 0.38)
+const DOWNED_SAFE := Color("#95d2e6")
+const DOWNED_CRITICAL := Color("#ffae5e")
 
 
 ## 按弹速取弹幕色（弹速分层与配色一一对应）

@@ -44,6 +44,11 @@ func reset_shoot_timer() -> void:
 	_shoot_timer = GameState.get_shoot_cooldown(_player.peer_id)
 
 
+func cancel_pending_casts() -> void:
+	_pending_skill_cast = false
+	_pending_laser_cast = false
+
+
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
 
 func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, level: int, speed: float) -> void:
@@ -189,7 +194,7 @@ func _consume_actions() -> void:
 
 
 func _on_skill_used(peer_id: int) -> void:
-	if peer_id != _player.peer_id:
+	if peer_id != _player.peer_id or _player.is_downed:
 		return
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if not _pending_skill_cast:
@@ -199,7 +204,7 @@ func _on_skill_used(peer_id: int) -> void:
 
 
 func _on_laser_used(peer_id: int) -> void:
-	if peer_id != _player.peer_id:
+	if peer_id != _player.peer_id or _player.is_downed:
 		return
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		if not _pending_laser_cast:
