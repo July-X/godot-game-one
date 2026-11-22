@@ -212,6 +212,21 @@ func _prepare_sync_connection(peer: MultiplayerPeer) -> void:
 func next_sync_round() -> int:
 	return _sync_round + 1
 
+func get_sync_round() -> int:
+	if multiplayer.is_server():
+		return _sync_round
+	var peer := multiplayer.multiplayer_peer
+	if peer != null:
+		_prepare_sync_connection(peer)
+	return _minimum_sync_round
+
+## 已经发出的旧快照不包含刚结算的拾取。
+func next_sync_sequence() -> int:
+	return _sync_sequence + 1
+
+func has_received_sync(round_id: int, sequence: int) -> bool:
+	return get_sync_round() == round_id and _received_sync_sequence >= sequence
+
 func expect_sync_round(round_id: int) -> void:
 	var peer := multiplayer.multiplayer_peer
 	if peer != null:
@@ -531,7 +546,7 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 	_mark_dirty()
 	return int(s.current_health) <= 0
 
-func heal(amount: int = 1, peer_id: int = -1) -> void:
+func heal(amount: int = 1, peer_id: int = -1, play_sound := true) -> void:
 	if amount <= 0:
 		return
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
@@ -555,43 +570,59 @@ func heal(amount: int = 1, peer_id: int = -1) -> void:
 	_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
 		_sync_local_view()
-	SFX.play_ui_select()
+	if play_sound:
+		SFX.play_ui_select()
 	_mark_dirty()
 
-func collect_powerup(type: String, peer_id: int = -1) -> void:
+func collect_powerup(type: String, peer_id: int = -1) -> String:
+	var online := NetworkManager.is_online()
+	if online and not multiplayer.is_server():
+		return ""
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
 	if not bool(s.get("is_alive", true)):
-		return
+		return ""
 	var changed_in_place := false
-	SFX.play_ui_confirm()
+	var reward := type
+	var health_before := int(s.current_health)
+	if not online:
+		SFX.play_ui_confirm()
 	match type:
 		"spread":
 			if int(s.shoot_level) < 10:
 				s.shoot_level = min(int(s.shoot_level) + 1, 10)
+			else:
+				reward = ""
 		"speed":
 			if int(s.shoot_speed_level) < 15:
 				s.shoot_speed_level = min(int(s.shoot_speed_level) + 1, 15)
+			else:
+				reward = ""
 		"power":
 			if int(s.bullet_power_level) >= 15:
-				heal(1, pid)
+				heal(1, pid, not online)
 				changed_in_place = true
 			else:
 				s.bullet_power_level = min(int(s.bullet_power_level) + 1, 50)
 		"heal":
-			heal(1, pid)
+			heal(1, pid, not online)
 			changed_in_place = true
 		"bomb":
 			pass
 		"core":
+			if float(s.skill_cooldown) <= 0.0 and float(s.laser_cooldown) <= 0.0:
+				reward = ""
 			s.skill_cooldown = max(float(s.skill_cooldown) * 0.7, 0.0)
 			s.laser_cooldown = max(float(s.laser_cooldown) * 0.7, 0.0)
 	if not changed_in_place:
 		_player_states[_peer_key(pid)] = s
+	else:
+		reward = "heal" if int(_state(pid).current_health) > health_before else ""
 	if _is_local_peer(pid):
 		_sync_local_view()
 		powerup_collected.emit(type)
 	_mark_dirty()
+	return reward
 
 func use_skill(peer_id: int = -1) -> bool:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()

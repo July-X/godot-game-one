@@ -57,6 +57,7 @@ var _entity_target_positions: Dictionary = {}
 ## { peer_id : 远端玩家节点的目标坐标 }，客户端插值用
 var _player_target_positions: Dictionary = {}
 var _despawned_entity_ids: Dictionary = {}
+var _pending_pickup_feedback: Array[Dictionary] = []
 var _entity_sync_timer: float = 0.0
 var _health_sync_timer: float = 0.0
 var _player_report_timer: float = 0.0
@@ -465,6 +466,7 @@ func _clear_network_runtime_state() -> void:
 	_entity_target_positions.clear()
 	_player_target_positions.clear()
 	_despawned_entity_ids.clear()
+	_pending_pickup_feedback.clear()
 	_boss_reward_claimed_peers.clear()
 	_entities.clear()
 	_players.clear()
@@ -561,6 +563,7 @@ func _process(delta: float) -> void:
 
 	_backdrop.scroll(delta)
 	if NetworkManager.is_online() and not multiplayer.is_server():
+		_flush_pickup_feedback()
 		_apply_entity_interpolation(delta)
 		_apply_player_interpolation(delta)
 		return
@@ -792,16 +795,9 @@ func _on_network_player_hit(damage: int, target_peer_id: int) -> void:
 		player_node.take_damage(damage)
 
 ## Client → Host：请求拾取掉落物
-func request_network_powerup_collect(entity_id: int) -> void:
-	if not NetworkManager.is_online():
-		return
-	_rpc_request_powerup_collect.rpc_id(1, entity_id)
-
 ## Client → Host：请求开始磁吸某个掉落物
 func request_network_powerup_magnet(entity_id: int) -> void:
-	if not NetworkManager.is_online():
-		return
-	_rpc_request_powerup_magnet.rpc_id(1, entity_id)
+	_rpc_request_powerup_magnet.rpc_id(1, GameState.get_sync_round(), entity_id)
 
 ## Boss 死亡信号可触发结算或换场，延迟到达的掉落只属于原战场。
 func spawn_boss_fragment(kind: String, world_pos: Vector2, assigned_peer_id := 0) -> void:
@@ -830,63 +826,61 @@ func register_powerup_entity(powerup: Node2D, powerup_type: String) -> void:
 	powerup.entity_id = eid
 	_entities[eid] = powerup
 	var assigned_peer_id: int = int(powerup.get_meta("assigned_peer_id", 0))
-	_rpc_spawn_powerup.rpc(eid, powerup_type, powerup.global_position.x, powerup.global_position.y, assigned_peer_id)
+	_rpc_spawn_powerup.rpc(GameState.get_sync_round(), eid, powerup_type, powerup.global_position, assigned_peer_id)
 
-## Host：掉落物被拾取后广播销毁
+## 房主先从本局物品表退场，再发奖。重复调用连结算入口都到不了。
 func _on_network_powerup_collected(entity_id: int, collector_peer_id: int = 0) -> void:
-	if not multiplayer.is_server():
+	if not NetworkManager.is_online() or not multiplayer.is_server() or not GameState.game_running:
 		return
-	if _despawned_entity_ids.has(entity_id):
+	var item: Variant = _entities.get(entity_id)
+	if not is_instance_valid(item) or not item.is_in_group("powerups"):
 		return
+	var touched := collector_peer_id > 0
+	var recipient := maxi(1, collector_peer_id)
+	if touched and (item._magnet_owner_peer_id != recipient or not _alive_players.has(recipient)):
+		return
+	var kind: String = item.get_powerup_type()
+	var at: Vector2 = item.global_position
+	_retire_network_powerup(entity_id, at, touched)
+	# 保留过期给房主的现有结算，仅实际吸到手的核心显示断环。
+	var eligible := GameState.is_player_alive(recipient)
+	var reward := GameState.collect_powerup(kind, recipient)
+	var round_id := GameState.get_sync_round()
+	var owner := recipient if eligible and recipient != 1 else 0
+	_rpc_finish_powerup.rpc(round_id, entity_id, kind if touched else "", at, owner,
+		reward if owner > 0 else "", GameState.next_sync_sequence() if owner > 0 else 0)
+	if eligible and recipient == 1:
+		on_local_powerup_feedback(kind, at, touched, reward)
+
+func _retire_network_powerup(entity_id: int, at: Vector2, animate: bool) -> void:
 	_despawned_entity_ids[entity_id] = true
-	var powerup_type := ""
-	var feedback_pos := Vector2.ZERO
-	if _entities.has(entity_id):
-		var node = _entities[entity_id]
-		if is_instance_valid(node) and node.has_method("get_powerup_type"):
-			powerup_type = node.get_powerup_type()
-			if node is Node2D:
-				feedback_pos = (node as Node2D).global_position
-			# 超时回收沿用房主原有收益；只有实际拾取才播放近身断环。
-			GameState.collect_powerup(powerup_type, maxi(1, collector_peer_id))
-			_send_powerup_feedback(collector_peer_id, powerup_type, feedback_pos)
 	_entity_target_positions.erase(entity_id)
-	if _entities.has(entity_id):
-		var node2 = _entities[entity_id]
-		if is_instance_valid(node2):
-			node2.queue_free()
-		_entities.erase(entity_id)
-	_rpc_despawn_entity.rpc(entity_id)
+	var item: Variant = _entities.get(entity_id)
+	_entities.erase(entity_id)
+	if is_instance_valid(item) and item.is_in_group("powerups"):
+		if animate:
+			item.finish_network_pickup(at)
+		else:
+			item.queue_free()
 
 @rpc("any_peer", "reliable", "call_remote")
-func _rpc_request_powerup_collect(entity_id: int) -> void:
+func _rpc_request_powerup_magnet(round_id: int, entity_id: int) -> void:
 	if not multiplayer.is_server():
 		return
-	if _despawned_entity_ids.has(entity_id):
+	if round_id != GameState.get_sync_round() or not GameState.game_running:
 		return
-	var collector_peer_id := multiplayer.get_remote_sender_id()
-	if collector_peer_id <= 0:
-		collector_peer_id = 1
-	_on_network_powerup_collected(entity_id, collector_peer_id)
-
-@rpc("any_peer", "reliable", "call_remote")
-func _rpc_request_powerup_magnet(entity_id: int) -> void:
-	if not multiplayer.is_server():
+	var item: Variant = _entities.get(entity_id)
+	if not is_instance_valid(item) or not item.is_in_group("powerups"):
 		return
-	if _despawned_entity_ids.has(entity_id):
+	var requester := multiplayer.get_remote_sender_id()
+	var pilot: Variant = _players.get(requester)
+	if not is_instance_valid(pilot) or not _alive_players.has(requester):
 		return
-	if not _entities.has(entity_id):
-		return
-	var node: Node = _entities[entity_id]
-	if not is_instance_valid(node) or not node.has_method("start_magnet"):
-		return
-	var requester_peer := multiplayer.get_remote_sender_id()
-	var player_node: Node2D = _players.get(requester_peer)
-	if player_node and is_instance_valid(player_node):
-		node.start_magnet(player_node)
-		return
-	if _player and is_instance_valid(_player):
-		node.start_magnet(_player)
+	var pickup: CircleShape2D = pilot.get_node("PickupArea/CollisionShape2D").shape
+	var drop: CircleShape2D = item.get_node("CollisionShape2D").shape
+	var at: Vector2 = _player_target_positions.get(requester, pilot.global_position)
+	if item.global_position.distance_to(at) <= pickup.radius + drop.radius:
+		item.start_magnet(pilot)
 
 func _spawn_asteroid() -> void:
 	var asteroid = _asteroid_scene.instantiate()
@@ -1192,11 +1186,9 @@ func _clear_non_boss_entities() -> void:
 			if NetworkManager.is_online() and multiplayer.is_server() and p.has_method("get"):
 				var despawn_pid: int = int(p.get("entity_id"))
 				if despawn_pid > 0:
-					_despawned_entity_ids[despawn_pid] = true
-					_entity_target_positions.erase(despawn_pid)
-					if _entities.has(despawn_pid):
-						_entities.erase(despawn_pid)
-					_rpc_despawn_entity.rpc(despawn_pid)
+					_retire_network_powerup(despawn_pid, Vector2.ZERO, false)
+					_rpc_finish_powerup.rpc(GameState.get_sync_round(), despawn_pid, "", Vector2.ZERO, 0, "", 0)
+					continue
 			p.queue_free()
 
 func _show_boss_warning() -> void:
@@ -1443,6 +1435,10 @@ func _request_player_sync() -> void:
 	if requester > 1:
 		_rpc_set_boss_bg.rpc_id(requester, _boss_fight_active)
 		GameState.force_sync_to_peer(requester)
+		# 载入或补玩家时补齐仍在场的掉落。旧局和已退场的 ID 不重放。
+		for item in get_tree().get_nodes_in_group("powerups"):
+			if _entities.get(item.entity_id) == item:
+				_send_entity_spawn_to_peer(requester, item.entity_id, item)
 
 ## Client -> Host：请求确保本机玩家节点存在（修复偶发漏生成）
 @rpc("any_peer", "reliable", "call_remote")
@@ -1550,7 +1546,7 @@ func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node) -> void:
 		var powerup_node := node as Node2D
 		if powerup_node:
 			var assigned_peer_id: int = int(node.get_meta("assigned_peer_id", 0))
-			_rpc_spawn_powerup.rpc_id(peer_id, eid, node.get_powerup_type(), powerup_node.global_position.x, powerup_node.global_position.y, assigned_peer_id)
+			_rpc_spawn_powerup.rpc_id(peer_id, GameState.get_sync_round(), eid, node.get_powerup_type(), powerup_node.global_position, assigned_peer_id)
 		return
 	if node.is_in_group("asteroids"):
 		var asteroid_node := node as Node2D
@@ -1704,29 +1700,43 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary
 
 ## Host → Client：生成掉落物幽灵副本
 @rpc("authority", "reliable", "call_remote")
-func _rpc_spawn_powerup(eid: int, powerup_type: String, pos_x: float, pos_y: float, assigned_peer_id: int = 0) -> void:
-	if not NetworkManager.is_online():
+func _rpc_spawn_powerup(round_id: int, eid: int, powerup_type: String, world_pos: Vector2, assigned_peer_id: int = 0) -> void:
+	if not NetworkManager.is_online() or round_id <= 0 or round_id != GameState.get_sync_round():
 		return
-	if _despawned_entity_ids.has(eid):
+	if _despawned_entity_ids.has(eid) or is_instance_valid(_entities.get(eid)):
 		return
-	if _entities.has(eid):
-		var old_node: Node = _entities[eid]
-		if is_instance_valid(old_node):
-			old_node.queue_free()
 	var pu = _powerup_scene.instantiate()
 	pu.name = str(eid)
 	pu.entity_id = eid
 	pu._is_network_ghost = true
-	pu.position = to_local(Vector2(pos_x, pos_y))
+	pu.position = to_local(world_pos)
 	pu.setup(powerup_type)
 	if assigned_peer_id > 0:
 		pu.set_meta("assigned_peer_id", assigned_peer_id)
 	_entities[eid] = pu
 	add_child(pu)
 
-func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2, confirmed := true) -> void:
+@rpc("authority", "reliable", "call_remote")
+func _rpc_finish_powerup(round_id: int, eid: int, kind: String, world_pos: Vector2, recipient: int, reward: String, sequence: int) -> void:
+	if not NetworkManager.is_online() or round_id <= 0 or round_id != GameState.get_sync_round() or _despawned_entity_ids.has(eid):
+		return
+	_retire_network_powerup(eid, world_pos, not kind.is_empty())
+	if recipient == multiplayer.get_unique_id():
+		_pending_pickup_feedback.append({"round": round_id, "seq": sequence, "kind": kind, "at": world_pos, "reward": reward})
+
+func _flush_pickup_feedback() -> void:
+	while not _pending_pickup_feedback.is_empty():
+		var pickup := _pending_pickup_feedback.front() as Dictionary
+		if not GameState.has_received_sync(pickup.round, pickup.seq):
+			return
+		_pending_pickup_feedback.pop_front()
+		on_local_powerup_feedback(pickup.kind, pickup.at, true, pickup.reward)
+
+func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2, confirmed := true, reward: Variant = null) -> void:
 	if _hud and _hud.has_method("show_pickup_toast"):
-		_hud.show_pickup_toast(powerup_type, world_pos)
+		_hud.show_pickup_toast(powerup_type, world_pos, powerup_type if reward == null else str(reward))
+	if NetworkManager.is_online():
+		SFX.play_ui_confirm()
 	if powerup_type == "core" and confirmed:
 		var ring = Pool.acquire("core_pickup", _hit_effect_scene)
 		ring.position = to_local(world_pos)
@@ -1739,23 +1749,12 @@ func on_local_boss_reward_feedback(_reward_type: String) -> void:
 	if _hud.has_method("show_boss_bonus_attribute_feedback"):
 		_hud.show_boss_bonus_attribute_feedback()
 
-func _send_powerup_feedback(peer_id: int, powerup_type: String, world_pos: Vector2) -> void:
-	var target_peer := peer_id if peer_id > 0 else 1
-	if target_peer == multiplayer.get_unique_id():
-		on_local_powerup_feedback(powerup_type, world_pos, peer_id > 0)
-	else:
-		_rpc_show_powerup_feedback.rpc_id(target_peer, powerup_type, world_pos.x, world_pos.y)
-
 func _send_boss_reward_feedback(peer_id: int, reward_type: String) -> void:
 	var target_peer := peer_id if peer_id > 0 else 1
 	if target_peer == multiplayer.get_unique_id():
 		on_local_boss_reward_feedback(reward_type)
 	else:
 		_rpc_show_boss_reward_feedback.rpc_id(target_peer, reward_type)
-
-@rpc("authority", "reliable", "call_remote")
-func _rpc_show_powerup_feedback(powerup_type: String, pos_x: float, pos_y: float) -> void:
-	on_local_powerup_feedback(powerup_type, Vector2(pos_x, pos_y))
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_boss_reward_feedback(reward_type: String) -> void:

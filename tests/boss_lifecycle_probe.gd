@@ -418,8 +418,11 @@ func _shoot_and_collect() -> void:
 		return
 	_check_drops()
 	if _role == "client":
-		# 两次真实磁吸请求：P2 可以收速射，房主专属核心须留在场内。
-		instance_from_id(drops[0]).start_magnet(_main._player)
+		# 前段的束外站位距速射掉落 602。先回到生产吸附范围，再发真实请求。
+		_main._player.global_position = origin + Vector2(0, 160)
+		await _wait_seconds(0.15)
+		# 绕过本机过滤，仍须在房主拒绝 P2 请求 P1 专属核心。
+		_main._rpc_request_powerup_magnet.rpc_id(1, GameState.get_sync_round(), instance_from_id(drops[0]).entity_id)
 		instance_from_id(drops[2]).start_magnet(_main._player)
 		_ack.rpc_id(1, 1)
 	else:

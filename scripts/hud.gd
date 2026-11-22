@@ -1109,36 +1109,50 @@ func _label(font_size: int, at: Vector2, extent: Vector2, alignment := HORIZONTA
 	label.add_theme_font_size_override("font_size", font_size)
 	return label
 
-func show_pickup_toast(powerup_type: String, world_pos: Vector2) -> void:
-	var text := _pickup_text(powerup_type)
-	if text.is_empty():
-		return
+func show_pickup_toast(powerup_type: String, world_pos: Vector2, reward: String) -> void:
 	var toast := Label.new()
-	toast.text = text
+	toast.text = _pickup_text(reward) if not reward.is_empty() else ("核心已拾取" if powerup_type == "core" else "已拾取")
 	toast.add_theme_font_size_override("font_size", 14)
 	toast.add_theme_color_override("font_color", Color(1.0, 0.95, 0.85, 1.0))
 	toast.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.88))
 	toast.add_theme_constant_override("shadow_outline_size", 2)
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	toast.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	toast.position = world_pos + Vector2(-60.0, -36.0)
 	toast.size = Vector2(120.0, 24.0)
+	var field_parent := get_parent() as Node2D
+	var camera := get_viewport().get_canvas_transform()
+	var anchor := camera * world_pos
+	var area := _safe_rect.grow(-14.0)
+	var at := anchor + Vector2(-toast.size.x * 0.5, -36.0)
+	var basis := get_final_transform()
+	var parent: Node = self
 	if powerup_type == "core":
-		# 把文字放在断环外，和断环一起画在战斗层的敌弹下方。
-		var anchor := get_viewport().get_canvas_transform() * world_pos
+		# 世界标签需要同时框在安全区和渲染裁剪区内，文字字号按本地画布。
+		if NetworkManager.is_online():
+			var field := Rect2(camera.origin, camera.basis_xform(NetworkManager.battle_size(field_parent)))
+			area = area.intersection(field.grow(-4.0))
 		var gap := 34.0
-		var room_right := anchor.x + gap + toast.size.x <= _get_design_canvas_size().x
-		toast.position = world_pos + Vector2(gap if room_right else -gap - toast.size.x,
-			-22.0 if anchor.y >= 42.0 else 22.0)
+		var room_right := anchor.x + gap + toast.size.x <= area.end.x
+		at = anchor + Vector2(gap if room_right else -gap - toast.size.x,
+			-22.0 if anchor.y >= area.position.y + 42.0 else 22.0)
 		toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if room_right else HORIZONTAL_ALIGNMENT_RIGHT
 		toast.z_index = -1
-		get_parent().add_child(toast)
-	else:
-		add_child(toast)
+		basis = field_parent.get_global_transform_with_canvas()
+		parent = field_parent
+	var rise := 20.0
+	at = at.clamp(area.position + Vector2(0.0, rise), (area.end - toast.size).max(area.position + Vector2(0.0, rise)))
+	# 右下角靠边拾取时，技能按钮处于文字前面。把整段上浮轨迹放到按钮上方。
+	var skills := _skill_bar.get_global_rect().grow(14.0)
+	var toast_path := Rect2(at - Vector2(0.0, rise), toast.size + Vector2(0.0, rise))
+	if _skill_bar.is_visible_in_tree() and toast_path.intersects(skills):
+		at.y = maxf(area.position.y + rise, skills.position.y - toast.size.y)
+	toast.position = basis.affine_inverse() * at
+	toast.scale = Vector2.ONE / basis.get_scale()
 	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(toast)
 	_active_pickup_toasts.append(toast)
 	var tween := create_tween()
-	tween.tween_property(toast, "position:y", toast.position.y - 20.0, 0.8)
+	tween.tween_property(toast, "position:y", toast.position.y - rise * toast.scale.y, 0.8)
 	tween.parallel().tween_property(toast, "modulate:a", 0.0, 0.8)
 	tween.tween_callback(func():
 		_active_pickup_toasts.erase(toast)
@@ -1148,7 +1162,7 @@ func show_pickup_toast(powerup_type: String, world_pos: Vector2) -> void:
 func _pickup_text(powerup_type: String) -> String:
 	match powerup_type:
 		"heal":
-			return "治疗 +5"
+			return "治疗 +1"
 		"power":
 			return "威力 +1"
 		"speed":
@@ -1156,7 +1170,7 @@ func _pickup_text(powerup_type: String) -> String:
 		"spread":
 			return "扩散 +1"
 		"bomb":
-			return "炸弹清场"
+			return "炸弹已拾取" if NetworkManager.is_online() else "炸弹清场"
 		"core":
 			return "核心 · 冷却缩短"
 	return ""
