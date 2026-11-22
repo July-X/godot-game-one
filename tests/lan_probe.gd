@@ -271,6 +271,9 @@ func _host_scenario() -> void:
 	await _verify_pending_boss()
 	await _verify_ultimate_laser(client_id)
 
+	## 第一束已完整验过。观察会话期间停掉后续主动激光，避免第二束秒杀 P2 污染断线断言。
+	if _cond_boss_alive():
+		_boss.set_physics_process(false)
 	## P1 已死，Hold 8 秒确认联机会话不被拖回单机
 	await _wait_seconds(8.0)
 	_verify_session_alive(client_id, "h21")

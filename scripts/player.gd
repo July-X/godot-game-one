@@ -3,7 +3,7 @@
 ## 编排 MotionController / CombatController / FeedbackController / ActionRouter 的执行顺序。
 ## 不再直接实现移动、战斗、动画逻辑，而是委托给子组件。
 ##
-## 多人设计：每个玩家节点的 multiplayer_authority = 该玩家的 peer_id。
+## 多人设计：peer_id 标识原战斗槽位，multiplayer_authority 指向当前的传输身份。
 ## 单机模式下 multiplayer_authority 默认为 1（服务器），与原逻辑兼容。
 extends CharacterBody2D
 
@@ -42,6 +42,15 @@ func complete_revive() -> void:
 	add_to_group("player")
 	set_deferred("collision_layer", _collision_layer_before_down)
 
+func clear_lan_input() -> void:
+	_action_router.consume_actions()
+	_combat.cancel_pending_casts()
+	_motion.stop_for_downed()
+
+func extend_rescue_protection(ticks: int) -> void:
+	if _rescue_protected_until > 0:
+		_rescue_protected_until += ticks
+
 
 @export var move_speed: float = 260.0
 @export var friction: float = 500.0
@@ -77,14 +86,9 @@ func _ready() -> void:
 func _init_multiplayer() -> void:
 	if name.is_valid_int():
 		peer_id = name.to_int()
-	## 必须递归设置：player.tscn 里的 MultiplayerSynchronizer 是子节点，
-	## 不递归的话它的权威会停在默认值 1（Host），造成两个方向都错位：
-	##   - Host 上 P2 幽灵的同步器权威=Host → Host 把幽灵坐标广播给客户端，
-	##     客户端本机 P2 被拽向幽灵位置（Host 幽灵不动，玩家像被橡皮筋拽住）
-	##   - 客户端本机 P2 的同步器权威=Host → 客户端不发送自己的位置，
-	##     Host 上的幽灵永远冻结在出生点
-	## 递归后：每个玩家节点只有自己的持有端发送坐标，对端只负责应用。
-	set_multiplayer_authority(peer_id, true)
+	# 位置由 Main 手动同步，引擎权限仍递归跟随当前传输。
+	var wire := NetworkManager.peer_for_slot(peer_id)
+	set_multiplayer_authority(wire if wire > 0 else 1, true)
 
 
 func _init_components() -> void:
@@ -131,7 +135,7 @@ func _on_graze_area_entered(area: Area2D) -> void:
 	## 联机下擦弹必须由"自己那一端"结算再同步，不能两端各算一份，
 	## 否则同一个擦弹会被记两次、层数翻倍
 	if NetworkManager.is_online() and not multiplayer.is_server():
-		if peer_id != multiplayer.get_unique_id():
+		if peer_id != NetworkManager.local_player_id():
 			return
 	GameState.add_graze(Time.get_ticks_msec(), peer_id)
 	SFX.play_graze_tick(GameState.get_graze_stacks())
@@ -264,7 +268,7 @@ func _is_locally_controlled_player() -> bool:
 	if has_method("is_multiplayer_authority") and is_multiplayer_authority():
 		return true
 	if multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
-		var local_peer_id := multiplayer.get_unique_id()
+		var local_peer_id := NetworkManager.local_player_id()
 		return peer_id == local_peer_id
 	## 兜底：联机初始化早期未取到 peer 时，先允许本机节点执行，避免战斗逻辑被误拦截。
 	return true

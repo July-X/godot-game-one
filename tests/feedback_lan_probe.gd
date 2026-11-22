@@ -15,6 +15,7 @@ const MOB_CONTACT := Vector2(250, 200)
 const SHIELD_CONTACT := Vector2(430, 180)
 const ELITE_CONTACT := Vector2(434, 180)
 var _watch := false
+var _guest_observing := false
 
 func _process(_delta: float) -> void:
 	if not _watch:
@@ -70,8 +71,13 @@ func _run() -> void:
 			_watch = true
 			_main._player.set_physics_process(false)
 			if _role == "host":
-				await _break_twice()
+				# 双端载入与鉴权用时不同。收到观察端确认后再发送第一颗短命火花。
+				var observing := await _wait_until(func(): return _guest_observing, 5.0)
+				_check("guest_observer_ready", observing, "")
+				if observing:
+					await _break_twice()
 			else:
+				_observe_ready.rpc_id(1)
 				var spawned := await _wait_until(_cond_elite_alive, 5.0)
 				_check("elite_spawned", spawned, "")
 				if spawned:
@@ -92,6 +98,12 @@ func _run() -> void:
 				[MOB_CONTACT, SHIELD_CONTACT, ELITE_CONTACT].all(_contact_births.has), str(_contact_births))
 			await _wait_seconds(0.25)
 	get_tree().quit(_summarize())
+
+@rpc("any_peer", "reliable", "call_remote")
+func _observe_ready() -> void:
+	if not multiplayer.is_server():
+		return
+	_guest_observing = true
 
 func _contact(target: Node2D, point: Vector2, sync_delay := 0.0) -> void:
 	var shot := Pool.acquire("bullet", preload("res://scenes/entities/bullet.tscn"))

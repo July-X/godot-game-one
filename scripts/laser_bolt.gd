@@ -179,7 +179,7 @@ func _report_enemy_hit(enemy: Node2D, damage: float) -> void:
 		return
 	var attacker_peer := owner_peer_id
 	if attacker_peer <= 0 and multiplayer.has_multiplayer_peer():
-		attacker_peer = multiplayer.get_unique_id()
+		attacker_peer = NetworkManager.local_player_id()
 	GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), _normalized_damage(damage), attacker_peer)
 
 func _apply_or_report_enemy_damage(enemy: Node2D, damage: float) -> void:

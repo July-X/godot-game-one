@@ -20,6 +20,7 @@ case "$CASE" in
   "") SCENE=res://tests/lan_probe.tscn ;;
   wide-host|wide-client|wide-tablet-host|wide-tablet-client) SCENE=res://tests/mixed_viewport_probe.tscn ;;
   pickup-tablet-host|pickup-tablet-client) SCENE=res://tests/pickup_lan_probe.tscn ;;
+  resume-guest|resume-host|resume-timeout|resume-exit|resume-quiet) SCENE=res://tests/lan_resume_probe.tscn ;;
   feedback) SCENE=res://tests/feedback_lan_probe.tscn ;;
   draft) SCENE=res://tests/draft_lan_probe.tscn ;;
   draft-touch-wide-host|draft-touch-wide-client) SCENE=res://tests/draft_touch_probe.tscn ;;
@@ -27,12 +28,17 @@ case "$CASE" in
   rescue) SCENE=res://tests/rescue_lan_probe.tscn ;;
   boss|boss-kill) SCENE=res://tests/boss_lifecycle_probe.tscn ;;
   boss-dodge) SCENE=res://tests/boss_dodge_probe.tscn ;;
-  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}]" >&2; exit 2 ;;
+  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
 esac
 HOST_DISPLAY=(--headless)
 CLIENT_DISPLAY=(--headless)
 PROBE_ARGS=("$CASE")
-if [[ $# -ge 3 ]]; then
+if [[ "$CASE" == resume-* ]]; then
+  if [[ $# -lt 3 || ! -d "$3" || -n "$(ls -A "$3")" ]]; then
+    echo "恢复探针需要一个空的协调目录" >&2; exit 2
+  fi
+  PROBE_ARGS+=("$(cd "$3" && pwd)")
+elif [[ $# -ge 3 ]]; then
   if [[ ( "$CASE" != wide-* && "$CASE" != pickup-tablet-* && "$CASE" != rescue ) || ! -d "$3" ]]; then
     echo "截图需要 rescue、wide-* 或 pickup-tablet-* 模式，以及一个已有目录" >&2
     exit 2

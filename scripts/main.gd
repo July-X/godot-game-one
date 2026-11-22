@@ -58,6 +58,10 @@ var _entity_target_positions: Dictionary = {}
 var _player_target_positions: Dictionary = {}
 var _despawned_entity_ids: Dictionary = {}
 var _pending_pickup_feedback: Array[Dictionary] = []
+var _lan_frozen_frame := -1
+var _lan_frozen_msec := 0
+var _lan_mouse_mode := Input.MOUSE_MODE_VISIBLE
+var _lan_message: Label
 var _entity_sync_timer: float = 0.0
 var _health_sync_timer: float = 0.0
 var _player_report_timer: float = 0.0
@@ -213,19 +217,20 @@ func _ready() -> void:
 
 	## 多人模式：订阅连接/断线信号，服务器端负责生成所有玩家
 	if online:
+		NetworkManager.bind_battle(self)
 		NetworkManager.player_connected.connect(_on_multiplayer_player_connected)
 		NetworkManager.player_disconnected.connect(_on_multiplayer_player_disconnected)
 		NetworkManager.server_disconnected.connect(_on_multiplayer_server_disconnected)
 		## 服务器端：为自己和已连接的所有 peer 生成玩家
 		if multiplayer.is_server():
 			_spawn_networked_player(1, true)  # Host 自己
-			for pid in NetworkManager.connected_peers:
-				_spawn_networked_player(pid, true)
+			for wire in NetworkManager.connected_peers:
+				_spawn_networked_player(NetworkManager.slot_for_peer(wire), true)
 		## 客户端：向服务器请求一次完整玩家同步，避免错过早期生成 RPC
 		else:
 			await get_tree().process_frame
 			_request_player_sync.rpc_id(1)
-			var my_id := multiplayer.get_unique_id()
+			var my_id := NetworkManager.local_player_id()
 			# 两端同时载入时帧率不同，按网络等待时间检查，避免补帧期间误报掉队。
 			await get_tree().create_timer(1.0, true, false, true).timeout
 			if NetworkManager.is_online() and not has_node(str(my_id)):
@@ -288,7 +293,7 @@ func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
 	player.died.connect(_on_networked_player_died.bind(p_peer_id))
 	_players[p_peer_id] = player
 	## 兼容 _player 引用（指向本机玩家）
-	var my_id := multiplayer.get_unique_id()
+	var my_id := NetworkManager.local_player_id()
 	if p_peer_id == my_id:
 		_player = player
 	if player.has_method("on_level_up"):
@@ -300,7 +305,8 @@ func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
 ## 多人模式：新 peer 连接时（只在服务器端触发）
 func _on_multiplayer_player_connected(p_peer_id: int) -> void:
 	if multiplayer.is_server():
-		_spawn_networked_player(p_peer_id, true)
+		_spawn_networked_player(NetworkManager.slot_for_peer(p_peer_id), true)
+		NetworkManager.bind_battle(self)
 		## Host 自己的玩家节点是在 main._ready() 里 announce 的，那时新 peer 还没连上，
 		## 广播进了虚空。新加入端只能靠主动请求补齐，而请求可能在 Host 建好
 		## _players 之前就到达（Host 刚进战斗场景就有人 join），此时拿到空名单，
@@ -339,6 +345,155 @@ func _on_multiplayer_player_disconnected(p_peer_id: int) -> void:
 ## 多人模式：服务器断开（Client 端触发）
 func _on_multiplayer_server_disconnected() -> void:
 	_fallback_to_single_player("房主已退出，切换为单人模式")
+
+
+func set_lan_hold(held: bool) -> void:
+	if held:
+		_lan_frozen_frame = Engine.get_physics_frames()
+		_lan_frozen_msec = Time.get_ticks_msec()
+		_lan_mouse_mode = Input.mouse_mode
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var stick := get_node_or_null("MobileControls")
+		if stick:
+			stick.cancel_move_touch()
+		for pilot in _players.values():
+			if is_instance_valid(pilot):
+				pilot.clear_lan_input()
+		_pending_bullet_spawns.clear()
+		_pending_scatter_spawns.clear()
+		_pending_laser_spawns.clear()
+		GameState.clear_unconfirmed_actions()
+		_lan_message = _hud.show_lan_wait()
+		return
+	if _lan_frozen_frame < 0:
+		return
+	var lost_ticks := int(Engine.get_physics_frames() - _lan_frozen_frame)
+	GameState.extend_graze_time(Time.get_ticks_msec() - _lan_frozen_msec)
+	_lan_frozen_frame = -1
+	if _rescue_expires_at > 0:
+		_rescue_expires_at += lost_ticks
+	for id: int in _players:
+		var pilot: Variant = _players[id]
+		if is_instance_valid(pilot):
+			pilot.set_multiplayer_authority(maxi(1, NetworkManager.peer_for_slot(id)), true)
+			pilot.extend_rescue_protection(lost_ticks)
+	if is_instance_valid(_lan_message):
+		_lan_message.hide()
+		_lan_message.queue_free()
+	Input.mouse_mode = _lan_mouse_mode
+
+func update_lan_wait(seconds: int, synchronizing: bool) -> void:
+	if is_instance_valid(_lan_message):
+		_lan_message.text = ("正在同步原局" if synchronizing else "等待联机恢复") + " · %d 秒" % maxi(seconds, 0)
+
+
+## 可靠同序通道先补齐属性和生成，末尾快照校验当前局号及状态序号。
+func send_lan_resume_snapshot(wire: int) -> Dictionary:
+	GameState.force_sync_to_peer(wire, true)
+	_rpc_set_boss_bg.rpc_id(wire, _boss_fight_active)
+	_send_player_snapshot_to(wire)
+	var players := {}
+	for id: int in _players:
+		var pilot: Variant = _players[id]
+		if is_instance_valid(pilot):
+			players[id] = [_player_target_positions.get(id, pilot.global_position), pilot.rotation, pilot.is_downed,
+				maxi(0, pilot._rescue_protected_until - _lan_frozen_frame)]
+	var entities := {}
+	for id: int in _entities:
+		var item: Variant = _entities[id]
+		if not is_instance_valid(item) or item.is_queued_for_deletion() or _despawned_entity_ids.has(id):
+			continue
+		_send_entity_spawn_to_peer(wire, id, item, true)
+		var stats := []
+		if item.has_method("get_network_health"):
+			stats = [item.get_network_health(), item.get_network_max_health()]
+		if item.has_method("get_network_shield") and not item is Boss:
+			stats.append_array([item.get_network_shield(), item.get_network_max_shield()])
+		entities[id] = [item.global_position, item.rotation, stats]
+	return {"round": GameState.get_sync_round(), "sequence": GameState.next_sync_sequence() - 1,
+		"players": players, "entities": entities, "bullets": _resume_bullets(), "result": not GameState.game_running}
+
+func apply_lan_resume_snapshot(state: Dictionary) -> bool:
+	if not GameState.has_received_sync(state.round, state.sequence):
+		return false
+	for id: int in state.players:
+		if not is_instance_valid(_players.get(id)):
+			return false
+	for id: int in state.entities:
+		if not is_instance_valid(_entities.get(id)):
+			return false
+	for id: int in _players.keys():
+		if not state.players.has(id):
+			_rpc_despawn_player(id)
+	_player_target_positions.clear()
+	for id: int in state.players:
+		var pilot: Variant = _players[id]
+		var row: Array = state.players[id]
+		pilot.global_position = row[0]
+		pilot.rotation = row[1]
+		pilot.reset_physics_interpolation()
+		if row[2]:
+			_freeze_downed_player(id, row[0])
+		else:
+			pilot.complete_revive()
+			_alive_players[id] = true
+		pilot._rescue_protected_until = _lan_frozen_frame + int(row[3]) if int(row[3]) > 0 else 0
+	_refresh_primary_player_target()
+	for id: int in _entities.keys():
+		if not state.entities.has(id):
+			_rpc_despawn_entity(id)
+	_entity_target_positions.clear()
+	for id: int in state.entities:
+		var item: Variant = _entities[id]
+		var row: Array = state.entities[id]
+		item.global_position = row[0]
+		item.rotation = row[1]
+		item.reset_physics_interpolation()
+		var stats: Array = row[2]
+		if not stats.is_empty():
+			item.apply_network_health(stats[0], stats[1])
+		if stats.size() == 4:
+			item.apply_network_shield(stats[2], stats[3])
+	# 重建当前权威弹幕，不重新播射击声、命中或掉落奖励。
+	_restore_resume_bullets(state.bullets)
+	UpgradeDraft.release_unconfirmed_choice(NetworkManager.local_player_id())
+	if state.result and not _hud._game_over_panel.visible:
+		_rpc_force_game_over(GameState.score, GameState.level)
+	return true
+
+func _resume_bullets() -> Array:
+	var data := []
+	for group in ["player_bullets", "enemy_bullets"]:
+		for shot in get_tree().get_nodes_in_group(group):
+			if shot.is_queued_for_deletion() or shot.get_parent() != self:
+				continue
+			if shot.scene_file_path == _bullet_scene.resource_path:
+				data.append([shot.global_position, shot._direction.angle(), shot._damage, shot._is_player_bullet,
+					shot._level, shot._speed, shot.modulate, shot.owner_peer_id, shot._lifetime, shot._has_bounced, false])
+			elif shot.scene_file_path == _laser_scene.resource_path:
+				data.append([shot.global_position, shot._direction.angle(), shot._damage, true,
+					1, shot._speed, shot.modulate, shot.owner_peer_id, shot._lifetime, shot._has_bounced, true])
+	return data
+
+func _restore_resume_bullets(data: Array) -> void:
+	for group in ["player_bullets", "enemy_bullets"]:
+		for shot in get_tree().get_nodes_in_group(group):
+			if shot.scene_file_path == _bullet_scene.resource_path:
+				Pool.release(shot)
+			elif shot.scene_file_path == _laser_scene.resource_path:
+				shot.queue_free()
+	for row: Array in data:
+		var shot: Node2D = _laser_scene.instantiate() if row[10] else Pool.acquire("bullet", _bullet_scene)
+		add_child(shot)
+		if row[10]:
+			shot.setup(row[0], row[1], row[2], row[7])
+			shot._speed = row[5]
+		else:
+			shot.setup(row[0], row[1], row[2], row[3], row[4], row[5], row[7])
+		shot.modulate = row[6]
+		shot.set_network_ghost(true)
+		shot._lifetime = row[8]
+		shot._has_bounced = row[9]
 
 
 ## 多人死亡与救援由房主结算。
@@ -489,7 +644,7 @@ func _rpc_despawn_player(p_peer_id: int) -> void:
 	var was_local_player := NetworkManager.is_online() \
 		and multiplayer.has_multiplayer_peer() \
 		and multiplayer.multiplayer_peer != null \
-		and p_peer_id == multiplayer.get_unique_id()
+		and p_peer_id == NetworkManager.local_player_id()
 	var node: Node = _players[p_peer_id]
 	if is_instance_valid(node):
 		node.queue_free()
@@ -547,7 +702,7 @@ func _process(delta: float) -> void:
 				_batch_sync_entity_health()
 		else:
 			# _player 可能是观战时供敌人瞄准的队友。只发送本机仍在行动的飞机。
-			var local_id := multiplayer.get_unique_id()
+			var local_id := NetworkManager.local_player_id()
 			var local_pilot: Variant = _players.get(local_id)
 			if _alive_players.has(local_id) and is_instance_valid(local_pilot):
 				_player_report_timer -= delta
@@ -656,7 +811,7 @@ func _apply_player_interpolation(delta: float) -> void:
 		if not _players.has(pid) or not is_instance_valid(_players[pid]):
 			continue
 		## 本机节点只由输入驱动，任何情况下都不接受远端坐标
-		if NetworkManager.is_online() and pid == multiplayer.get_unique_id():
+		if NetworkManager.is_online() and pid == NetworkManager.local_player_id():
 			continue
 		var pnode: Node2D = _players[pid] as Node2D
 		if pnode == null:
@@ -872,7 +1027,7 @@ func _rpc_request_powerup_magnet(round_id: int, entity_id: int) -> void:
 	var item: Variant = _entities.get(entity_id)
 	if not is_instance_valid(item) or not item.is_in_group("powerups"):
 		return
-	var requester := multiplayer.get_remote_sender_id()
+	var requester := NetworkManager.gameplay_sender()
 	var pilot: Variant = _players.get(requester)
 	if not is_instance_valid(pilot) or not _alive_players.has(requester):
 		return
@@ -1250,8 +1405,10 @@ func _apply_boss_reward_for_peer(reward_type: String, peer_id: int) -> void:
 			return
 		_boss_reward_claimed_peers[resolved_peer] = true
 	GameState.apply_reward(reward_type, resolved_peer)
-	if NetworkManager.is_online() and multiplayer.is_server() and resolved_peer != multiplayer.get_unique_id():
-		GameState.force_sync_to_peer(resolved_peer)
+	if NetworkManager.is_online() and multiplayer.is_server() and resolved_peer != NetworkManager.local_player_id():
+		var wire := NetworkManager.peer_for_slot(resolved_peer)
+		if wire > 0:
+			GameState.force_sync_to_peer(wire)
 	_send_boss_reward_feedback(resolved_peer, reward_type)
 	if _player and is_instance_valid(_player) and _player.has_method("_update_appearance"):
 		_player._update_appearance()
@@ -1264,7 +1421,7 @@ func _boss_reward_pool() -> Array[String]:
 
 func _on_player_died() -> void:
 	if NetworkManager.is_online():
-		var peer_id := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null else 1
+		var peer_id := NetworkManager.local_player_id()
 		_on_networked_player_died(peer_id)
 		return
 	if _player and is_instance_valid(_player):
@@ -1384,7 +1541,7 @@ func _input(event: InputEvent) -> void:
 		var my_pid: int = -1
 		if NetworkManager.is_online() and multiplayer != null \
 				and multiplayer.has_multiplayer_peer():
-			my_pid = multiplayer.get_unique_id()
+			my_pid = NetworkManager.local_player_id()
 		elif _player != null and is_instance_valid(_player):
 			my_pid = int(_player.get("peer_id"))
 		if my_pid > 0 and UpgradeDraft.has_draft(my_pid):
@@ -1430,6 +1587,8 @@ func _rpc_restart_game(round_id: int) -> void:
 func _request_player_sync() -> void:
 	if not multiplayer.is_server():
 		return
+	if NetworkManager.gameplay_sender() <= 1:
+		return
 	var requester := multiplayer.get_remote_sender_id()
 	_send_player_snapshot_to(requester)
 	if requester > 1:
@@ -1445,8 +1604,8 @@ func _request_player_sync() -> void:
 func _request_spawn_self(expected_peer_id: int = -1) -> void:
 	if not multiplayer.is_server():
 		return
-	var sender := multiplayer.get_remote_sender_id()
-	if expected_peer_id > 0 and expected_peer_id != sender:
+	var sender := NetworkManager.gameplay_sender()
+	if sender <= 1 or (expected_peer_id > 0 and expected_peer_id != sender):
 		return
 	_spawn_networked_player(sender, true)
 
@@ -1468,7 +1627,7 @@ func _rpc_spawn_networked_player(p_peer_id: int, pos_x: float, pos_y: float) -> 
 	_alive_players[p_peer_id] = true
 	if GameState.rescue_peer_id == p_peer_id:
 		_freeze_downed_player(p_peer_id, GameState.rescue_position)
-	if p_peer_id == multiplayer.get_unique_id():
+	if p_peer_id == NetworkManager.local_player_id():
 		_player = player
 	if player.has_method("on_level_up"):
 		player.on_level_up()
@@ -1478,7 +1637,7 @@ func _refresh_primary_player_target() -> void:
 	var new_target: Node2D = null
 	if _players.is_empty():
 		return
-	var preferred_id := multiplayer.get_unique_id() if NetworkManager.is_online() else 1
+	var preferred_id := NetworkManager.local_player_id()
 	if _alive_players.has(preferred_id):
 		if _players.has(preferred_id) and is_instance_valid(_players[preferred_id]):
 			new_target = _players[preferred_id]
@@ -1513,6 +1672,8 @@ func _retarget_hostile_entities(target_player: Node2D) -> void:
 func _rpc_request_entity_snapshot() -> void:
 	if not multiplayer.is_server():
 		return
+	if NetworkManager.gameplay_sender() <= 1:
+		return
 	var requester := multiplayer.get_remote_sender_id()
 	if requester <= 0:
 		return
@@ -1533,11 +1694,11 @@ func _request_entity_snapshot_from_host() -> void:
 	_last_entity_resync_request_msec = now
 	_rpc_request_entity_snapshot.rpc_id(1)
 
-func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node) -> void:
+func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node, recovering := false) -> void:
 	if peer_id <= 0 or not is_instance_valid(node):
 		return
 	if node is Boss:
-		_rpc_spawn_boss.rpc_id(peer_id, eid, node.get_network_level(), node.get_sprite_variant_id(), _boss_snapshot(node))
+		_rpc_spawn_boss.rpc_id(peer_id, eid, node.get_network_level(), node.get_sprite_variant_id(), _boss_snapshot(node), recovering)
 		return
 	if node == _elite or (node.is_in_group("enemies") and node.has_method("get_network_shield")):
 		_rpc_spawn_elite.rpc_id(peer_id, eid, GameState.post_elite_multiplier)
@@ -1660,7 +1821,7 @@ func _boss_snapshot(boss: Boss) -> Dictionary:
 
 ## 同 ID 快照补齐当前状态，保留在播的激光和已经消费的解除事件。
 @rpc("authority", "reliable", "call_remote")
-func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary) -> void:
+func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary, recovering := false) -> void:
 	if not NetworkManager.is_online() or not GameState.game_running or _despawned_entity_ids.has(eid):
 		return
 	var stamp: int = snapshot.stamp
@@ -1692,6 +1853,8 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary
 	_boss.apply_network_health(hp, snapshot.max_hp)
 	if stamp < previous:
 		return
+	if recovering:
+		_clear_boss_laser_visual()
 	if _boss.get_sprite_variant_id() != variant_id:
 		_boss.set_sprite_variant(variant_id)
 		_boss._apply_visual_state()
@@ -1721,7 +1884,7 @@ func _rpc_finish_powerup(round_id: int, eid: int, kind: String, world_pos: Vecto
 	if not NetworkManager.is_online() or round_id <= 0 or round_id != GameState.get_sync_round() or _despawned_entity_ids.has(eid):
 		return
 	_retire_network_powerup(eid, world_pos, not kind.is_empty())
-	if recipient == multiplayer.get_unique_id():
+	if recipient == NetworkManager.local_player_id():
 		_pending_pickup_feedback.append({"round": round_id, "seq": sequence, "kind": kind, "at": world_pos, "reward": reward})
 
 func _flush_pickup_feedback() -> void:
@@ -1751,10 +1914,12 @@ func on_local_boss_reward_feedback(_reward_type: String) -> void:
 
 func _send_boss_reward_feedback(peer_id: int, reward_type: String) -> void:
 	var target_peer := peer_id if peer_id > 0 else 1
-	if target_peer == multiplayer.get_unique_id():
+	if target_peer == NetworkManager.local_player_id():
 		on_local_boss_reward_feedback(reward_type)
 	else:
-		_rpc_show_boss_reward_feedback.rpc_id(target_peer, reward_type)
+		var wire := NetworkManager.peer_for_slot(target_peer)
+		if wire > 0:
+			_rpc_show_boss_reward_feedback.rpc_id(wire, reward_type)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_show_boss_reward_feedback(reward_type: String) -> void:
@@ -1822,6 +1987,8 @@ func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
 ## Host → Client：实体位置批量同步
 @rpc("authority", "unreliable", "call_remote")
 func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat32Array()) -> void:
+	if NetworkManager.recovery.deadline > 0:
+		return
 	if impact.size() == 3:
 		var kind := Pool.Impact.LEGACY
 		if impact[2] == Pool.Impact.ORDINARY_ENEMY:
@@ -1857,6 +2024,8 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 ## Host → Client：同步实体血量（低频 10Hz）
 @rpc("authority", "unreliable", "call_remote")
 func _rpc_sync_entity_health(data: PackedFloat32Array, boss_shield_stamp := -1, boss_shield_hp := -1.0) -> void:
+	if NetworkManager.recovery.deadline > 0:
+		return
 	var i := 0
 	while i + 2 < data.size():
 		var eid := int(data[i])
@@ -1891,6 +2060,8 @@ func _rpc_sync_entity_shields(data: PackedFloat32Array) -> void:
 ## Host → Client：同步少数需要朝向的实体；主位置包仍保持 5 字段，避免所有实体承担 rotation 成本。
 @rpc("authority", "unreliable", "call_remote")
 func _rpc_sync_entity_rotations(data: PackedFloat32Array) -> void:
+	if NetworkManager.recovery.deadline > 0:
+		return
 	var i := 0
 	while i + ENTITY_ROTATION_SYNC_STRIDE - 1 < data.size():
 		var eid := int(data[i])
@@ -1982,13 +2153,15 @@ func _batch_sync_players() -> void:
 ## Host → Client：应用远端玩家坐标
 @rpc("authority", "unreliable", "call_remote")
 func _rpc_sync_player_states(data: PackedFloat32Array) -> void:
+	if NetworkManager.recovery.deadline > 0:
+		return
 	var i := 0
 	while i + PLAYER_SYNC_STRIDE - 1 < data.size():
 		var pid := int(data[i])
 		var pos := Vector2(data[i + 1], data[i + 2])
 		var rot := data[i + 3]
 		i += PLAYER_SYNC_STRIDE
-		if NetworkManager.is_online() and pid == multiplayer.get_unique_id():
+		if NetworkManager.is_online() and pid == NetworkManager.local_player_id():
 			continue
 		_apply_remote_player_state(pid, pos, rot)
 
@@ -1999,8 +2172,8 @@ func _rpc_report_player_state(p_peer_id: int, pos_x: float, pos_y: float, rot: f
 	if not multiplayer.is_server():
 		return
 	_player_report_received += 1
-	var sender: int = multiplayer.get_remote_sender_id()
-	if sender > 0 and p_peer_id != sender:
+	var sender := NetworkManager.gameplay_sender()
+	if sender <= 1 or p_peer_id != sender:
 		_player_report_rejected += 1
 		if _player_report_rejected <= 3:
 			print("[SYNC] 上报被拒 p_peer_id=%d sender=%d" % [p_peer_id, sender])
@@ -2177,18 +2350,17 @@ func _rpc_spawn_bullets(data: Array) -> void:
 		return
 	## Client → Host：Host 接收后需要再广播一次，确保加入端能看到自己的子弹。
 	if multiplayer.is_server():
-		var sender_id := multiplayer.get_remote_sender_id()
-		if sender_id > 1:
-			if not _alive_players.has(sender_id):
-				return
-			_rpc_spawn_bullets.rpc(data)
+		var sender := NetworkManager.gameplay_sender()
+		if sender <= 1 or not _alive_players.has(sender):
+			return
+		_rpc_spawn_bullets.rpc(data)
 	_spawn_network_bullets(data)
 
 @rpc("any_peer", "reliable", "call_remote")
 func _rpc_request_scatter(data: Array) -> void:
 	if not multiplayer.is_server():
 		return
-	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(multiplayer.get_remote_sender_id()):
+	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(NetworkManager.gameplay_sender()):
 		return
 	_spawn_network_bullets(data)
 	_rpc_spawn_scatter.rpc(data)
@@ -2238,7 +2410,7 @@ func _rpc_set_boss_bg(active: bool) -> void:
 func _rpc_request_laser_spawns(data: Array) -> void:
 	if not multiplayer.is_server():
 		return
-	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(multiplayer.get_remote_sender_id()):
+	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(NetworkManager.gameplay_sender()):
 		return
 	_spawn_network_lasers(data, false)
 	_rpc_spawn_lasers.rpc(data)

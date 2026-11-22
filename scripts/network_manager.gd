@@ -6,9 +6,11 @@
 ## 连接拓扑：Wi-Fi 热点 LAN（Host 开热点，Client 连热点后输入 IP）
 ## 无需互联网，局域网内延迟 < 10ms，适合移动端面对面对战。
 extends Node
+const LanRecovery = preload("res://scripts/lan_recovery.gd")
 
 ## 默认端口，可在项目设置中覆盖
 const DEFAULT_PORT: int = 7777
+const DEPARTURE_FLUSH_SECONDS := 0.25
 ## 最大同时连接客户端数量（合作模式最多 1 个 Client）
 const MAX_CLIENTS: int = 1
 ## 大厅开局协议的逻辑像素，世界原点为左上角。
@@ -39,15 +41,36 @@ var connected_peers: Array[int] = []
 var transport_mode: String = TRANSPORT_ENET
 ## 当前是否处于联机会话（create_host/join_host 后置 true，disconnect 后置 false）
 var _session_active: bool = false
+var recovery: Node
+var _address := ""
+var _port := DEFAULT_PORT
+var _quitting_after_lan := false
+var _owns_quit_settings := false
+var _auto_quit := true
+var _go_back_quits := true
 
 
 func _ready() -> void:
+	recovery = LanRecovery.new()
+	recovery.name = "LanRecovery"
+	add_child(recovery)
 	## 监听 Godot 多人底层信号
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_WM_CLOSE_REQUEST, NOTIFICATION_WM_GO_BACK_REQUEST] and is_instance_valid(recovery):
+		if recovery.is_reserved() and not _quitting_after_lan:
+			_quitting_after_lan = true
+			_leave_app_after_notification.call_deferred()
+
+func _leave_app_after_notification() -> void:
+	disconnect_network()
+	await get_tree().create_timer(DEPARTURE_FLUSH_SECONDS + 0.05, true, false, true).timeout
+	get_tree().quit()
 
 
 ## ── 公开 API ──────────────────────────────────────────────
@@ -63,6 +86,7 @@ func create_host(port: int = DEFAULT_PORT, mode: String = TRANSPORT_ENET) -> Err
 		status_changed.emit("创建房间失败: %s" % error_string(err))
 		return err
 	multiplayer.multiplayer_peer = peer
+	_port = port
 	is_host = true
 	_session_active = true
 	connected_peers.clear()
@@ -83,6 +107,8 @@ func join_host(address: String, port: int = DEFAULT_PORT, mode: String = TRANSPO
 		status_changed.emit("连接失败: %s" % error_string(err))
 		return err
 	multiplayer.multiplayer_peer = peer
+	_address = address
+	_port = port
 	is_host = false
 	_session_active = true
 	status_changed.emit("正在连接 %s:%d …" % [address, port])
@@ -92,15 +118,78 @@ func join_host(address: String, port: int = DEFAULT_PORT, mode: String = TRANSPO
 
 ## 断开网络并清理状态（Host/Client 均可调用）
 func disconnect_network() -> void:
-	if multiplayer.multiplayer_peer != null:
-		multiplayer.multiplayer_peer.close()
+	var departing := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	var graceful: bool = recovery.notify_exit()
+	recovery.clear()
+	if _owns_quit_settings:
+		get_tree().auto_accept_quit = _auto_quit
+		get_tree().quit_on_go_back = _go_back_quits
+		_owns_quit_settings = false
 	multiplayer.multiplayer_peer = null
+	if departing != null:
+		if graceful:
+			# ENet 的 close 在同一轮 poll 收到时会丢弃尚未派发的退出消息。
+			get_tree().create_timer(DEPARTURE_FLUSH_SECONDS, true, false, true).timeout.connect(func(): departing.close())
+		else:
+			departing.close()
 	is_host = false
 	_session_active = false
 	transport_mode = TRANSPORT_ENET
 	connected_peers.clear()
 	status_changed.emit("已断开")
 	print("[NetworkManager] 网络已断开")
+
+
+func bind_battle(node: Node) -> void:
+	recovery.bind_battle(node, GameState.get_sync_round() if is_host else 0)
+	if not _owns_quit_settings:
+		_owns_quit_settings = true
+		_auto_quit = get_tree().auto_accept_quit
+		_go_back_quits = get_tree().quit_on_go_back
+		get_tree().auto_accept_quit = false
+		get_tree().quit_on_go_back = false
+
+func local_player_id() -> int:
+	if not is_host and is_instance_valid(recovery) and recovery.guest_slot > 0:
+		return recovery.guest_slot
+	return get_my_peer_id()
+
+func slot_for_peer(peer_id: int) -> int:
+	return recovery.slot_for_wire(peer_id)
+
+func peer_for_slot(slot: int) -> int:
+	return recovery.wire_for_slot(slot)
+
+## RPC 输入只从当前已完成恢复的传输接收。
+func gameplay_sender() -> int:
+	return 0 if recovery.deadline > 0 else slot_for_peer(multiplayer.get_remote_sender_id())
+
+func drop_lan_transport() -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer != null:
+		peer.close()
+		multiplayer.multiplayer_peer = null
+	connected_peers.clear()
+	recovery.on_transport_lost()
+
+func _drop_lan_transport_if_current(failed_peer: MultiplayerPeer) -> void:
+	if multiplayer.multiplayer_peer == failed_peer:
+		drop_lan_transport()
+
+func retry_lan_transport() -> void:
+	if is_host and multiplayer.multiplayer_peer != null:
+		return  # 监听仍有效，等待已知加入者重新握手。
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer.close()
+	var peer := ENetMultiplayerPeer.new()
+	var err := peer.create_server(_port, MAX_CLIENTS) if is_host else peer.create_client(_address, _port)
+	multiplayer.multiplayer_peer = peer if err == OK else null
+
+func finish_lan_wait(message: String) -> void:
+	var battle: Node = recovery.battle
+	recovery.clear()
+	if is_instance_valid(battle):
+		battle._fallback_to_single_player(message)
 
 
 ## 判断当前是否处于联机状态（已建立 peer 连接）
@@ -142,6 +231,9 @@ func _on_peer_connected(peer_id: int) -> void:
 	print("[NetworkManager] Peer 已连接: ", peer_id)
 	if not connected_peers.has(peer_id):
 		connected_peers.append(peer_id)
+	if recovery.is_reserved() and recovery.deadline > 0:
+		recovery.on_wire_ready(peer_id)
+		return
 	player_connected.emit(peer_id)
 	if is_host:
 		status_changed.emit("玩家 %d 已加入！" % peer_id)
@@ -150,6 +242,10 @@ func _on_peer_connected(peer_id: int) -> void:
 func _on_peer_disconnected(peer_id: int) -> void:
 	print("[NetworkManager] Peer 已断开: ", peer_id)
 	connected_peers.erase(peer_id)
+	if recovery.is_reserved():
+		if (is_host and peer_id == recovery.guest_wire) or (not is_host and peer_id == 1):
+			recovery.on_transport_lost()
+		return
 	player_disconnected.emit(peer_id)
 	if is_host:
 		status_changed.emit("玩家 %d 已离开" % peer_id)
@@ -162,6 +258,9 @@ func _on_connected_to_server() -> void:
 
 
 func _on_connection_failed() -> void:
+	if recovery.is_reserved():
+		_drop_lan_transport_if_current.call_deferred(multiplayer.multiplayer_peer)
+		return
 	push_warning("[NetworkManager] 连接服务器失败")
 	status_changed.emit("连接失败，请检查 IP 地址")
 	multiplayer.multiplayer_peer = null
@@ -170,6 +269,9 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
+	if recovery.is_reserved():
+		_drop_lan_transport_if_current.call_deferred(multiplayer.multiplayer_peer)
+		return
 	push_warning("[NetworkManager] 服务器已断开")
 	status_changed.emit("连接已断开")
 	multiplayer.multiplayer_peer = null

@@ -112,8 +112,8 @@ func set_target(target: Node2D) -> void:
 func set_difficulty(mult: float) -> void:
 	var total_hp := GameState.get_max_health(1)
 	if NetworkManager.is_online():
-		for pid in NetworkManager.connected_peers:
-			total_hp += GameState.get_max_health(pid)
+		for wire in NetworkManager.connected_peers:
+			total_hp += GameState.get_max_health(NetworkManager.slot_for_peer(wire))
 	_health = int(total_hp * 2.5 * mult)
 	_max_health = _health
 	_shield = int(total_hp * 1.0 * mult)

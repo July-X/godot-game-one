@@ -154,7 +154,7 @@ func choose_card(peer_id: int, index: int, source := "direct") -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	if NetworkManager.is_online() and not multiplayer.is_server():
-		if peer_id != multiplayer.get_unique_id() or rpc_id(1, "_rpc_request_card", d.id, index, source) != OK:
+		if peer_id != NetworkManager.local_player_id() or rpc_id(1, "_rpc_request_card", d.id, index, source) != OK:
 			return false
 		d.pending = true
 		return true
@@ -165,8 +165,10 @@ func choose_card(peer_id: int, index: int, source := "direct") -> bool:
 	GameState.apply_card(peer_id, card_id)
 	card_chosen.emit(peer_id, card_id, index)
 	# 先把确认和实际卡层一起送达，再推进排队批次。
-	if NetworkManager.is_online() and peer_id != multiplayer.get_unique_id():
-		GameState.force_sync_to_peer(peer_id)
+	if NetworkManager.is_online() and peer_id != NetworkManager.local_player_id():
+		var wire := NetworkManager.peer_for_slot(peer_id)
+		if wire > 0:
+			GameState.force_sync_to_peer(wire)
 	var queued := int(_queued_upgrades.get(peer_id, 0))
 	if queued > 0:
 		if queued == 1:
@@ -184,6 +186,11 @@ func has_draft(peer_id: int) -> bool:
 
 func get_draft(peer_id: int) -> Dictionary:
 	return _drafts.get(peer_id, {})
+
+func release_unconfirmed_choice(peer_id: int) -> void:
+	var draft := get_draft(peer_id)
+	if not draft.is_empty() and not bool(draft.chosen):
+		draft.erase("pending")
 
 
 func clear_drafts() -> void:
@@ -220,8 +227,8 @@ func receive_draft(peer_id: int, incoming: Dictionary) -> void:
 func _rpc_request_card(draft_id: int, index: int, source: String) -> void:
 	if not multiplayer.is_server():
 		return
-	var sender := multiplayer.get_remote_sender_id()
-	if not GameState.game_running or source not in ["tap", "key"]:
+	var sender := NetworkManager.gameplay_sender()
+	if sender <= 1 or not GameState.game_running or source not in ["tap", "key"]:
 		return
 	if int(get_draft(sender).get("id", 0)) == draft_id:
 		choose_card(sender, index, source)

@@ -102,7 +102,7 @@ func start_magnet(target: Node2D) -> void:
 			return
 		if not multiplayer.is_server():
 			# 本机只提醒房主检查吸附。远端飞机的幽灵节点不能代本机发请求。
-			if not _magnet_requested and peer_id == multiplayer.get_unique_id():
+			if not _magnet_requested and peer_id == NetworkManager.local_player_id():
 				_magnet_requested = true
 				get_parent().request_network_powerup_magnet(entity_id)
 			return

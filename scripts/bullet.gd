@@ -208,7 +208,7 @@ func _on_body_entered(body: Node2D) -> void:
 				if body.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
-						attacker_peer = multiplayer.get_unique_id()
+						attacker_peer = NetworkManager.local_player_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
 				_spawn_hit(impact)
 				_recycle()
@@ -249,7 +249,7 @@ func _on_area_entered(area: Area2D) -> void:
 				if enemy.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
-						attacker_peer = multiplayer.get_unique_id()
+						attacker_peer = NetworkManager.local_player_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
 				_spawn_hit(impact)
 				_recycle()

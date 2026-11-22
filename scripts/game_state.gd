@@ -75,9 +75,7 @@ var _pending_skill_ack: Dictionary = {}
 var _pending_laser_ack: Dictionary = {}
 
 func _local_peer_id() -> int:
-	if NetworkManager.is_online() and multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
-		return multiplayer.get_unique_id()
-	return 1
+	return NetworkManager.local_player_id()
 
 func _peer_key(peer_id: int) -> String:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
@@ -188,9 +186,12 @@ func _to_dict() -> Dictionary:
 	}
 
 @rpc("authority", "reliable", "call_remote")
-func _rpc_sync_game_state(data: Dictionary) -> void:
+func _rpc_sync_game_state(data: Dictionary, for_recovery := false) -> void:
 	var peer := multiplayer.multiplayer_peer
 	if peer == null:
+		return
+	# 已经在途的周期快照也不能让暂停画面上的冷却和选卡继续变化。
+	if NetworkManager.recovery.deadline > 0 and not for_recovery:
 		return
 	_prepare_sync_connection(peer)
 	var sequence := int(data.get("sequence", 0))
@@ -206,11 +207,18 @@ func _prepare_sync_connection(peer: MultiplayerPeer) -> void:
 	var connection_id := peer.get_instance_id()
 	if connection_id != _sync_connection_id:
 		_sync_connection_id = connection_id
-		_received_sync_sequence = 0
-		_minimum_sync_round = 0
+		if NetworkManager.recovery.deadline == 0:
+			_received_sync_sequence = 0
+			_minimum_sync_round = 0
+		else:
+			_minimum_sync_round = maxi(_minimum_sync_round, NetworkManager.recovery.round_id)
 
 func next_sync_round() -> int:
 	return _sync_round + 1
+
+func clear_unconfirmed_actions() -> void:
+	_pending_skill_ack.clear()
+	_pending_laser_ack.clear()
 
 func get_sync_round() -> int:
 	if multiplayer.is_server():
@@ -233,11 +241,11 @@ func expect_sync_round(round_id: int) -> void:
 		_prepare_sync_connection(peer)
 		_minimum_sync_round = maxi(_minimum_sync_round, round_id)
 
-func force_sync_to_peer(peer_id: int) -> void:
+func force_sync_to_peer(peer_id: int, for_recovery := false) -> void:
 	if not multiplayer.is_server():
 		return
 	if peer_id > 0:
-		_rpc_sync_game_state.rpc_id(peer_id, _to_dict())
+		_rpc_sync_game_state.rpc_id(peer_id, _to_dict(), for_recovery)
 	else:
 		_rpc_sync_game_state.rpc(_to_dict())
 
@@ -262,14 +270,19 @@ func _rpc_play_sfx(sound: String) -> void:
 func _rpc_report_enemy_hit(entity_id: int, damage: int, attacker_peer_id: int = -1) -> void:
 	if not multiplayer.is_server():
 		return
+	var sender := NetworkManager.gameplay_sender()
+	if sender <= 1 or (attacker_peer_id > 0 and attacker_peer_id != sender):
+		return
 	var scene = get_tree().current_scene
 	if scene and scene.has_method("_on_network_enemy_hit"):
-		scene._on_network_enemy_hit(entity_id, damage, attacker_peer_id)
+		scene._on_network_enemy_hit(entity_id, damage, sender)
 
 ## Client → Host：报告玩家受击
 @rpc("any_peer", "reliable")
 func _rpc_report_player_hit(damage: int, target_peer_id: int) -> void:
 	if not multiplayer.is_server():
+		return
+	if NetworkManager.gameplay_sender() <= 1:
 		return
 	var scene = get_tree().current_scene
 	if scene and scene.has_method("_on_network_player_hit"):
@@ -279,16 +292,16 @@ func _rpc_report_player_hit(damage: int, target_peer_id: int) -> void:
 func _rpc_request_use_skill(peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
-	var owner_peer_id := multiplayer.get_remote_sender_id()
-	if peer_id != owner_peer_id:
+	var owner_peer_id := NetworkManager.gameplay_sender()
+	if owner_peer_id <= 1 or peer_id != owner_peer_id:
 		return
 	if not use_skill(peer_id):
 		return
-	_rpc_confirm_skill_used.rpc_id(owner_peer_id, peer_id)
+	_rpc_confirm_skill_used.rpc_id(NetworkManager.peer_for_slot(owner_peer_id), peer_id)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_confirm_skill_used(peer_id: int) -> void:
-	if _local_peer_id() != peer_id:
+	if _local_peer_id() != peer_id or NetworkManager.recovery.deadline > 0:
 		return
 	_pending_skill_ack.erase(_peer_key(peer_id))
 	_apply_confirmed_cooldown(peer_id, "skill_cooldown", SKILL_COOLDOWN_MAX)
@@ -298,16 +311,16 @@ func _rpc_confirm_skill_used(peer_id: int) -> void:
 func _rpc_request_use_laser(peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
-	var owner_peer_id := multiplayer.get_remote_sender_id()
-	if peer_id != owner_peer_id:
+	var owner_peer_id := NetworkManager.gameplay_sender()
+	if owner_peer_id <= 1 or peer_id != owner_peer_id:
 		return
 	if not use_laser(peer_id):
 		return
-	_rpc_confirm_laser_used.rpc_id(owner_peer_id, peer_id, get_laser_cooldown_max(peer_id))
+	_rpc_confirm_laser_used.rpc_id(NetworkManager.peer_for_slot(owner_peer_id), peer_id, get_laser_cooldown_max(peer_id))
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
-	if _local_peer_id() != peer_id:
+	if _local_peer_id() != peer_id or NetworkManager.recovery.deadline > 0:
 		return
 	_pending_laser_ack.erase(_peer_key(peer_id))
 	_apply_confirmed_cooldown(peer_id, "laser_cooldown", cooldown)
@@ -414,9 +427,8 @@ func reset_game() -> void:
 	if NetworkManager.is_online():
 		if multiplayer.is_server():
 			_player_scores["1"] = 0
-			for pid in NetworkManager.connected_peers:
-				if pid > 0:
-					_player_scores[str(pid)] = 0
+			for wire in NetworkManager.connected_peers:
+				_player_scores[str(NetworkManager.slot_for_peer(wire))] = 0
 		else:
 			_player_scores["1"] = int(_player_scores.get("1", 0))
 			_player_scores[_peer_key(local_peer)] = int(_player_scores.get(_peer_key(local_peer), 0))
@@ -529,8 +541,9 @@ func take_damage(amount: int = 1, peer_id: int = -1) -> bool:
 			health_changed.emit(current_health, max_health)
 		SFX.play_player_hurt()
 		# P2 的扣血在房主结算，沿用音效消息通知受击者。
-		if NetworkManager.is_online() and multiplayer.is_server() and pid in NetworkManager.connected_peers:
-			_rpc_play_sfx.rpc_id(pid, "player_hurt")
+		var wire := NetworkManager.peer_for_slot(pid)
+		if NetworkManager.is_online() and multiplayer.is_server() and wire in NetworkManager.connected_peers:
+			_rpc_play_sfx.rpc_id(wire, "player_hurt")
 		if int(s.current_health) <= 0 and _is_local_peer(pid) and not NetworkManager.is_online():
 			game_over.emit(score, level)
 	if int(s.current_health) <= 0:
@@ -816,6 +829,10 @@ func reset_graze() -> void:
 	_graze_stacks = 0
 	_graze_since_stack = 0
 	_graze_last_msec = 0
+
+func extend_graze_time(msec: int) -> void:
+	if _graze_last_msec > 0:
+		_graze_last_msec += msec
 
 
 ## ── 升级卡（构筑）───────────────────────────────────────────

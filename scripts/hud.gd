@@ -256,7 +256,7 @@ func _update_evolution_display() -> void:
 func _local_peer_id() -> int:
 	if NetworkManager.is_online() and multiplayer != null \
 			and multiplayer.has_multiplayer_peer():
-		return multiplayer.get_unique_id()
+		return NetworkManager.local_player_id()
 	return 1
 
 
@@ -538,7 +538,7 @@ func _resolve_local_player() -> Node:
 			return p
 		if p.has_method("get") and multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer != null:
 			var maybe_peer: Variant = p.get("peer_id")
-			if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) == multiplayer.get_unique_id():
+			if typeof(maybe_peer) == TYPE_INT and int(maybe_peer) == NetworkManager.local_player_id():
 				return p
 		if p.has_method("is_multiplayer_authority") and p.is_multiplayer_authority():
 			return p
@@ -652,7 +652,7 @@ func _update_pilots() -> void:
 	var peers := NetworkManager.connected_peers
 	_wingman.visible = NetworkManager.is_online() and not peers.is_empty()
 	if _wingman.visible:
-		_update_pilot(_wingman, peers[0], "队友")
+		_update_pilot(_wingman, NetworkManager.slot_for_peer(peers[0]), "队友")
 
 func _update_pilot(panel: Control, peer_id: int, role: String) -> void:
 	var tint := Palette.CARD_STYLE if peer_id == 1 else Color("#cfb7ff")
@@ -1108,6 +1108,15 @@ func _label(font_size: int, at: Vector2, extent: Vector2, alignment := HORIZONTA
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_size_override("font_size", font_size)
 	return label
+
+func show_lan_wait() -> Label:
+	var banner := _label(22, Vector2.ZERO, Vector2(420, 56), HORIZONTAL_ALIGNMENT_CENTER)
+	banner.process_mode = Node.PROCESS_MODE_ALWAYS
+	banner.add_theme_color_override("font_shadow_color", Color.BLACK)
+	banner.add_theme_constant_override("shadow_outline_size", 8)
+	add_child(banner)
+	banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
+	return banner
 
 func show_pickup_toast(powerup_type: String, world_pos: Vector2, reward: String) -> void:
 	var toast := Label.new()
