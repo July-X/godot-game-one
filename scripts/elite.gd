@@ -54,6 +54,7 @@ func apply_network_shield(shield: float, max_shield: float) -> void:
 		if _is_network_ghost and _shield < previous:
 			SFX.play_shield_hit()
 	if _is_network_ghost and previous > 0 and _shield <= 0:
+		_clear_route_dodge_preview()
 		_play_shield_break_feedback()
 		shield_broken_window_started.emit()
 	_update_shield_visual_color(0.45)
@@ -183,7 +184,10 @@ var _route_dodge_cd := 0.0
 var _route_dodge_left := 0.0
 var _route_dodge_vector := Vector2.ZERO
 var _route_dodge_cue := 0.0
+var _route_dodge_flash: Tween
 var _route_pressure_slot := 0
+const ROUTE_DODGE_CUE_SECONDS := 0.20
+signal route_dodge_charging(seconds: float)
 signal route_evaded
 
 func _tick_route_evasion(delta: float) -> void:
@@ -225,10 +229,30 @@ func _tick_route_evasion(delta: float) -> void:
 		or left.distance_squared_to(bounds.get_center()) < right.distance_squared_to(bounds.get_center())) else -side
 	_route_pressure_hits = 0
 	_route_dodge_cd = 4.0
-	_route_dodge_cue = .20
-	var flash := create_tween()
-	flash.tween_property(self, "modulate", Color(0.55, 1.0, 1.0), .12)
-	flash.tween_property(self, "modulate", Color.WHITE, .08)
+	_route_dodge_cue = ROUTE_DODGE_CUE_SECONDS
+	play_route_dodge_preview(_route_dodge_cue)
+	route_dodge_charging.emit(_route_dodge_cue)
+
+func get_route_dodge_cue_left() -> float:
+	return _route_dodge_cue if _shield > 0 and not _dead else 0.0
+
+func play_route_dodge_preview(seconds: float) -> void:
+	if _dead or _shield <= 0 or seconds <= 0.0:
+		return
+	_clear_route_dodge_preview()
+	_render_route_dodge_preview(seconds)
+	_route_dodge_flash = create_tween().set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	_route_dodge_flash.tween_method(_render_route_dodge_preview, seconds, 0.0, seconds)
+
+func _render_route_dodge_preview(left: float) -> void:
+	var elapsed := ROUTE_DODGE_CUE_SECONDS - left
+	var intensity := minf(elapsed / 0.12, left / 0.08)
+	modulate = Color.WHITE.lerp(Color(0.55, 1.0, 1.0), clampf(intensity, 0.0, 1.0))
+
+func _clear_route_dodge_preview() -> void:
+	if _route_dodge_flash and _route_dodge_flash.is_running():
+		_route_dodge_flash.kill()
+		modulate = Color.WHITE
 
 var _dodge_frame_skip: int = 0
 
@@ -378,10 +402,10 @@ func _attack_triple_predictive() -> void:
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 30, a, 3.0, 620.0, Color(1.0, 0.1, 0.12, 1.0))
 
 func _attack_summon_minions() -> void:
-	var count: int = 2
-	for i in range(count):
+	var battle := get_tree().current_scene as Node2D
+	for i in range(2):
 		var enemy := _enemy_scene.instantiate()
-		enemy.position = global_position + Vector2(randf_range(-40, 40), randf_range(-40, 40))
+		enemy.position = battle.to_local(global_position + Vector2(randf_range(-40, 40), randf_range(-40, 40)))
 		enemy.enemy_type = randi() % 3
 		enemy.health = 2
 		enemy.move_speed = 50.0
@@ -389,11 +413,7 @@ func _attack_summon_minions() -> void:
 		enemy.drop_chance = 0.0
 		if _target and is_instance_valid(_target):
 			enemy.set_target(_target)
-		enemy.enemy_died.connect(_on_minion_died)
-		get_tree().current_scene.add_child(enemy)
-
-func _on_minion_died() -> void:
-	pass
+		battle.add_enemy(enemy)
 
 func _update_angry_mode() -> void:
 	_angry_mode = _health <= _max_health * 0.35 and _shield <= 0
@@ -443,6 +463,7 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 		var tween := create_tween()
 		tween.tween_callback(func(): if _shield_circle: _shield_circle.set_color(Color(0.8, 0.5, 0.1, 0.5)))
 		if _shield <= 0:
+			_clear_route_dodge_preview()
 			_shield_break_effect()
 			_phase_b_timer = PHASE_B_EXPOSE_DURATION
 			shield_broken_window_started.emit()
@@ -473,6 +494,7 @@ func _shield_break_effect() -> void:
 
 func force_network_shield_destroyed() -> void:
 	_shield = 0
+	_clear_route_dodge_preview()
 	_play_shield_break_feedback()
 	_update_shield_visual_color(0.0)
 	_update_shield_bar()

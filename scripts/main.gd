@@ -917,17 +917,21 @@ func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> CharacterBody2D:
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	enemy.enemy_died.connect(_on_enemy_died)
+	add_enemy(enemy, mult)
+	return enemy
+
+## 普通波次和精英召唤先各自配置属性，再共用实体登记、生成与销毁。
+func add_enemy(enemy: CharacterBody2D, spawn_multiplier := 1.0) -> void:
 	if NetworkManager.is_online() and multiplayer.is_server():
 		var eid := _next_entity_id
 		_next_entity_id += 1
 		enemy.entity_id = eid
 		_entities[eid] = enemy
 		enemy.enemy_died.connect(_on_network_enemy_died.bind(eid))
-		_rpc_spawn_enemy.rpc(eid, enemy_type, pos.x, pos.y, enemy.health,
-			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, mult,
+		_rpc_spawn_enemy.rpc(eid, enemy.enemy_type, enemy.position.x, enemy.position.y, enemy.health,
+			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, spawn_multiplier,
 			enemy.bullet_speed_mult)
 	add_child(enemy)
-	return enemy
 
 func _on_enemy_died() -> void:
 	pass
@@ -1095,6 +1099,7 @@ func _spawn_elite() -> void:
 		_next_entity_id += 1
 		_elite.entity_id = eid
 		_entities[eid] = _elite
+		_elite.route_dodge_charging.connect(_publish_elite_dodge_cue.bind(eid))
 		_rpc_spawn_elite.rpc(eid, elite_mult)
 		_rpc_show_elite_warning.rpc()
 	add_child(_elite)
@@ -1713,6 +1718,9 @@ func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node, recovering :
 		return
 	if node == _elite or (node.is_in_group("enemies") and node.has_method("get_network_shield")):
 		_rpc_spawn_elite.rpc_id(peer_id, eid, GameState.post_elite_multiplier)
+		var cue_left: float = node.get_route_dodge_cue_left()
+		if cue_left > 0.0:
+			_rpc_elite_dodge_cue.rpc_id(peer_id, eid, cue_left)
 		return
 	if node.is_in_group("powerups") and node.has_method("get_powerup_type"):
 		var powerup_node := node as Node2D
@@ -1799,6 +1807,16 @@ func _rpc_spawn_elite(eid: int, elite_mult: float) -> void:
 	if _elite.has_signal("shield_broken_window_started"):
 		_elite.shield_broken_window_started.connect(_on_elite_shield_broken_window_started)
 	add_child(_elite)
+
+## 侧移预警与变位分开同步。加入端只播放青闪，位移仍走实体位置包。
+func _publish_elite_dodge_cue(seconds: float, eid: int) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server() and GameState.game_running:
+		_rpc_elite_dodge_cue.rpc(eid, seconds)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_elite_dodge_cue(eid: int, seconds: float) -> void:
+	if GameState.game_running and is_instance_valid(_elite) and _elite.entity_id == eid:
+		_elite.play_route_dodge_preview(seconds)
 
 ## Host → Client：强制销毁精英护盾光晕（护盾同步包可能丢包或迟到）
 @rpc("authority", "reliable", "call_remote")
@@ -2371,20 +2389,22 @@ func _rpc_spawn_bullets(data: Array) -> void:
 	if not NetworkManager.is_online():
 		return
 	## Client → Host：Host 接收后需要再广播一次，确保加入端能看到自己的子弹。
+	var sender := -1
 	if multiplayer.is_server():
-		var sender := NetworkManager.gameplay_sender()
+		sender = NetworkManager.gameplay_sender()
 		if sender <= 1 or not _alive_players.has(sender):
 			return
 		_rpc_spawn_bullets.rpc(data)
-	_spawn_network_bullets(data)
+	_spawn_network_bullets(data, sender)
 
 @rpc("any_peer", "reliable", "call_remote")
 func _rpc_request_scatter(data: Array) -> void:
 	if not multiplayer.is_server():
 		return
-	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(NetworkManager.gameplay_sender()):
+	var sender := NetworkManager.gameplay_sender()
+	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(sender):
 		return
-	_spawn_network_bullets(data)
+	_spawn_network_bullets(data, sender)
 	_rpc_spawn_scatter.rpc(data)
 
 @rpc("authority", "reliable", "call_remote")
@@ -2393,23 +2413,28 @@ func _rpc_spawn_scatter(data: Array) -> void:
 		return
 	_spawn_network_bullets(data)
 
-func _spawn_network_bullets(data: Array) -> void:
+func _spawn_network_bullets(data: Array, sender := -1) -> void:
 	for entry in data:
 		var bullet := Pool.acquire("bullet", _bullet_scene)
 		if bullet == null:
 			continue
+		var is_player := bool(entry[4])
+		# 实弹的构筑归属使用房主确认的槽位。广播中的槽位供幽灵弹显示。
+		var owner_slot := sender if sender > 0 else (int(entry[10]) if entry.size() > 10 else -1)
 		add_child(bullet)
 		bullet.setup(
 			Vector2(entry[0], entry[1]),  # pos
 			entry[2],                      # angle
 			entry[3] as int,               # damage
-			bool(entry[4]),                # is_player
+			is_player,
 			entry[5],                      # level
 			entry[6],                      # speed
-			int(entry[10]) if entry.size() > 10 else -1
+			owner_slot
 		)
 		if entry.size() > 7:
 			bullet.modulate = Color(entry[7], entry[8], entry[9], 1.0)
+		if is_player and owner_slot > 0:
+			bullet.apply_owner_cards(owner_slot)
 		if not multiplayer.is_server() and bullet.has_method("set_network_ghost"):
 			bullet.set_network_ghost(true)
 

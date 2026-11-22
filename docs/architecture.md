@@ -92,6 +92,7 @@
 │   ├── combat_visual_probe.gd / .tscn   # 战斗画面、拾取时序、炮口和可选录帧
 │   ├── pickup_lan_probe.gd / .tscn      # 双端拾取时序、归属、重试和边缘实拍
 │   ├── lan_resume_probe.gd / .tscn       # 同连接唤醒、实际重连、晚回前台和超时
+│   ├── lobby_start_probe.gd / .tscn      # 大厅同版本开局及混版提示
 │   ├── combat_feedback_probe.gd / .tscn # 固定事件的有声回放和反馈门禁
 │   ├── pixelfx_probe.gd / .tscn、compare_pixelfx.py # 普通命中与击毁的逐帧实拍及弹体像素比对
 │   ├── impact_scope_probe.gd / .tscn # 真实扣血与各武器接触，对照历史图形帧

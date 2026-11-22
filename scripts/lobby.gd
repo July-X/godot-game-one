@@ -5,6 +5,10 @@ extends Control
 signal game_start_requested
 
 const SafeArea := preload("res://scripts/battle_safe_area.gd")
+## 开局或战斗消息不兼容时更新此版本。检查先于任何开局远程调用。
+const LAN_PROTOCOL := "space-bullet-hell-lan:2"
+const VERSION_WAIT_MS := 3000
+const VERSION_ERROR := "联机版本不兼容，请将两台设备更新到同一版本后重试"
 
 enum LobbyMode { NONE, HOST, JOIN }
 var _mode: LobbyMode = LobbyMode.NONE
@@ -32,6 +36,8 @@ var _mode: LobbyMode = LobbyMode.NONE
 
 var _host_buttons: Dictionary = {}
 var _debug_tick: float = 0.0
+var _compatible_peer := 0
+var _version_deadline := 0
 
 
 func _ready() -> void:
@@ -63,6 +69,8 @@ func _layout_in_safe_area(safe: Rect2) -> void:
 
 
 func _process(delta: float) -> void:
+	if _version_deadline > 0 and Time.get_ticks_msec() >= _version_deadline:
+		_show_version_error()
 	_debug_tick += delta
 	if _debug_tick >= 0.5:
 		_debug_tick = 0.0
@@ -84,6 +92,7 @@ func _connect_signals() -> void:
 	NetworkManager.connection_failed.connect(_on_connection_failed)
 	NetworkManager.server_disconnected.connect(_on_server_disconnected)
 	NetworkManager.status_changed.connect(_on_status_changed)
+	(multiplayer as SceneMultiplayer).peer_packet.connect(_on_lobby_packet)
 
 	HarmonyBridge.host_list_updated.connect(_on_host_list_updated)
 	HarmonyBridge.status_changed.connect(_on_harmony_status_changed)
@@ -94,6 +103,8 @@ func _show_mode_select() -> void:
 	_panel_host.visible = false
 	_panel_join.visible = false
 	_mode = LobbyMode.NONE
+	_compatible_peer = 0
+	_version_deadline = 0
 	_stop_discovery_services()
 	_set_legacy_controls_visible(false)
 	if HarmonyBridge.refresh_plugin_binding():
@@ -111,6 +122,7 @@ func _show_host_panel() -> void:
 	_btn_start.visible = false
 	_btn_rift.visible = false
 	_btn_start.disabled = true
+	_btn_rift.disabled = true
 	_set_legacy_controls_visible(false)
 
 	var err := NetworkManager.create_host_with_mode(NetworkManager.TRANSPORT_HARMONY)
@@ -165,7 +177,7 @@ func _on_join_mode_selected() -> void:
 
 
 func _on_start_pressed(rift_route := false) -> void:
-	if not NetworkManager.is_host:
+	if not NetworkManager.is_host or not _compatible_peer in NetworkManager.connected_peers:
 		return
 	_stop_discovery_services()
 	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE, rift_route)
@@ -180,6 +192,9 @@ func _on_back_pressed() -> void:
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_start_game(battle_size: Vector2i, rift_route := false) -> void:
+	if not NetworkManager.is_online() or _compatible_peer == 0:
+		_show_version_error()
+		return
 	_stop_discovery_services()
 	if battle_size != NetworkManager.LAN_BATTLE_SIZE:
 		NetworkManager.disconnect_network()
@@ -275,13 +290,17 @@ func _on_player_connected(peer_id: int) -> void:
 	if NetworkManager.is_host:
 		_btn_start.visible = true
 		_btn_rift.visible = true
-		_btn_start.disabled = false
-		_lbl_host_status.text = "✅ 玩家 %d 已加入！" % peer_id
+		_btn_start.disabled = true
+		_btn_rift.disabled = true
+		_begin_version_check(peer_id)
 
 
 func _on_player_disconnected(_peer_id: int) -> void:
 	if NetworkManager.is_host and NetworkManager.connected_peers.is_empty():
+		_compatible_peer = 0
+		_version_deadline = 0
 		_btn_start.disabled = true
+		_btn_rift.disabled = true
 		_btn_start.visible = false
 		_btn_rift.visible = false
 		_lbl_host_status.text = "玩家已离开，等待重新加入…"
@@ -289,12 +308,49 @@ func _on_player_disconnected(_peer_id: int) -> void:
 
 func _on_connection_succeeded() -> void:
 	_stop_discovery_services()
-	_lbl_join_status.text = "✅ 已连接，等待房主开始…"
-	_status_label.text = "已连接"
+	_begin_version_check(1)
 	_refresh_debug_info()
+
+func _begin_version_check(peer_id: int) -> void:
+	if _compatible_peer == peer_id:
+		return
+	_version_deadline = Time.get_ticks_msec() + VERSION_WAIT_MS
+	_version_label().text = "已连接，正在检查联机版本…"
+	var err := (multiplayer as SceneMultiplayer).send_bytes(LAN_PROTOCOL.to_utf8_buffer(), peer_id)
+	if err != OK:
+		_show_version_error()
+
+func _on_lobby_packet(peer_id: int, packet: PackedByteArray) -> void:
+	if not NetworkManager.is_online():
+		return
+	if peer_id not in NetworkManager.connected_peers and (NetworkManager.is_host or peer_id != 1):
+		return
+	if packet != LAN_PROTOCOL.to_utf8_buffer():
+		_show_version_error()
+		return
+	_compatible_peer = peer_id
+	_version_deadline = 0
+	if NetworkManager.is_host:
+		_btn_start.disabled = false
+		_btn_rift.disabled = false
+		_lbl_host_status.text = "玩家已加入，可以开始游戏"
+	else:
+		_lbl_join_status.text = "联机版本一致，等待房主开始…"
+
+func _version_label() -> Label:
+	return _lbl_host_status if NetworkManager.is_host else _lbl_join_status
+
+func _show_version_error() -> void:
+	_compatible_peer = 0
+	_version_deadline = 0
+	_btn_start.disabled = true
+	_btn_rift.disabled = true
+	_version_label().text = VERSION_ERROR
 
 
 func _on_connection_failed() -> void:
+	_compatible_peer = 0
+	_version_deadline = 0
 	_lbl_join_status.text = "❌ 连接失败，请重试"
 	for key: String in _host_buttons:
 		var btn: Button = _host_buttons[key]
@@ -303,6 +359,8 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
+	_compatible_peer = 0
+	_version_deadline = 0
 	_lbl_join_status.text = "服务器断开，请返回重试"
 	_refresh_debug_info()
 
@@ -313,7 +371,7 @@ func _on_status_changed(message: String) -> void:
 
 
 func _on_harmony_status_changed(message: String) -> void:
-	if message.is_empty():
+	if message.is_empty() or not NetworkManager.connected_peers.is_empty():
 		return
 	_status_label.text = message
 	if _mode == LobbyMode.HOST:
