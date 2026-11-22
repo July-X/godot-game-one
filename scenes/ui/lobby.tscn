@@ -124,6 +124,13 @@ theme_override_font_sizes/font_size = 24
 theme_override_colors/font_color = Color(0.2, 1, 0.4, 1)
 visible = false
 
+[node name="BtnRiftRoute" type="Button" parent="VBox/PanelHost"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 48)
+text = "开始裂隙航道 · 双人试玩"
+theme_override_font_sizes/font_size = 20
+visible = false
+
 [node name="PanelJoin" type="VBoxContainer" parent="VBox"]
 layout_mode = 2
 visible = false

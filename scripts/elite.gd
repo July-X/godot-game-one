@@ -131,8 +131,11 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_handle_movement(delta)
-	_handle_dodge(delta)
-	_apply_close_range_escape(delta)
+	if route_evasion:
+		_tick_route_evasion(delta)
+	else:
+		_handle_dodge(delta)
+		_apply_close_range_escape(delta)
 	_update_phase_timers(delta)
 	_handle_attacks(delta)
 	_update_shield(delta)
@@ -169,6 +172,63 @@ func _handle_movement(delta: float) -> void:
 		var perp: Vector2 = Vector2(-to_target.y, to_target.x).normalized()
 		var strafe_dir: Vector2 = perp * _dodge_direction
 		velocity = velocity.lerp(strafe_dir * speed * 0.6, 0.8 * delta)
+
+const RouteAggro := preload("res://scripts/boss_aggro.gd")
+var route_evasion := false
+var _route_aggro := RouteAggro.new()
+
+var _route_pressure_left := 0.0
+var _route_pressure_hits := 0
+var _route_dodge_cd := 0.0
+var _route_dodge_left := 0.0
+var _route_dodge_vector := Vector2.ZERO
+var _route_dodge_cue := 0.0
+var _route_pressure_slot := 0
+signal route_evaded
+
+func _tick_route_evasion(delta: float) -> void:
+	if NetworkManager.is_online():
+		_route_aggro.advance(delta)
+	_route_pressure_left = maxf(0.0, _route_pressure_left - delta)
+	_route_dodge_cd = maxf(0.0, _route_dodge_cd - delta)
+	if _route_pressure_left <= 0.0:
+		_route_pressure_hits = 0
+	if _shield <= 0 or _phase_b_timer > 0.0:
+		_route_dodge_cue = 0.0
+		_route_dodge_left = 0.0
+		return
+	if _route_dodge_cue > 0.0:
+		_route_dodge_cue = maxf(0.0, _route_dodge_cue - delta)
+		if _route_dodge_cue == 0.0:
+			_route_dodge_left = .24
+			route_evaded.emit()
+	if _route_dodge_left > 0.0:
+		_route_dodge_left = maxf(0.0, _route_dodge_left - delta)
+		velocity = _route_dodge_vector * 210.0
+		return
+	if _route_dodge_cue > 0.0 or _route_dodge_cd > 0.0 or _route_pressure_hits < 3:
+		return
+	var pilot := _target
+	if NetworkManager.is_online() and _route_pressure_slot > 0:
+		var attacker: Node2D = get_parent()._players.get(_route_pressure_slot)
+		if is_instance_valid(attacker) and not GameState.is_player_downed(_route_pressure_slot):
+			pilot = attacker
+	if not is_instance_valid(pilot):
+		return
+	var side := pilot.global_position.direction_to(global_position).orthogonal()
+	var bounds := Rect2(Vector2(64, 70), NetworkManager.battle_size(self) - Vector2(128, 140))
+	var left := global_position + side * 54.0
+	var right := global_position - side * 54.0
+	if side.is_zero_approx() or not (bounds.has_point(left) or bounds.has_point(right)):
+		return
+	_route_dodge_vector = side if bounds.has_point(left) and (not bounds.has_point(right)
+		or left.distance_squared_to(bounds.get_center()) < right.distance_squared_to(bounds.get_center())) else -side
+	_route_pressure_hits = 0
+	_route_dodge_cd = 4.0
+	_route_dodge_cue = .20
+	var flash := create_tween()
+	flash.tween_property(self, "modulate", Color(0.55, 1.0, 1.0), .12)
+	flash.tween_property(self, "modulate", Color.WHITE, .08)
 
 var _dodge_frame_skip: int = 0
 
@@ -246,10 +306,29 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 		if scene and scene.has_method("register_bullet_spawn"):
 			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
 
+func _route_attack_pilot(kind: String) -> Node2D:
+	if not route_evasion or not NetworkManager.is_online():
+		return _target
+	var scores := {}
+	var positions := {}
+	var actors: Dictionary = get_parent()._players
+	for slot: int in GameState.get_alive_player_ids():
+		var actor: Node2D = actors.get(slot)
+		if not is_instance_valid(actor) or GameState.is_player_downed(slot):
+			continue
+		positions[slot] = actor.global_position
+		scores[slot] = 1.0 - clampf(absf(global_position.distance_to(actor.global_position) - 340.0) / 650.0, 0.0, 1.0)
+	var ranked := _route_aggro.rank(kind, scores, positions, _max_health + _max_shield)
+	if ranked.is_empty():
+		return null
+	_route_aggro.select(kind, ranked[0])
+	return actors[ranked[0]]
+
 func _attack_narrow_fan() -> void:
-	if not _target or not is_instance_valid(_target):
+	var pilot := _route_attack_pilot("fan")
+	if not is_instance_valid(pilot):
 		return
-	var angle: float = global_position.angle_to_point(_target.global_position)
+	var angle: float = global_position.angle_to_point(pilot.global_position)
 	var count: int = 5
 	var spread_angle: float = deg_to_rad(22.0)
 	var start_a: float = angle - spread_angle * 0.5
@@ -260,11 +339,12 @@ func _attack_narrow_fan() -> void:
 	SFX.play_enemy_volley()
 
 func _attack_targeted_burst() -> void:
-	if not _target or not is_instance_valid(_target):
+	var pilot := _route_attack_pilot("burst")
+	if not is_instance_valid(pilot):
 		return
 	var burst_count: int = 3
 	for i in range(burst_count):
-		var angle: float = global_position.angle_to_point(_target.global_position)
+		var angle: float = global_position.angle_to_point(pilot.global_position)
 		var spread_offset: float = deg_to_rad(randf_range(-4.0, 4.0))
 		var a: float = angle + spread_offset
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 28, a, 3.0, 620.0, Color(1.0, 0.18, 0.15, 1.0))
@@ -283,13 +363,14 @@ func _attack_ring() -> void:
 		scene_d.emit_hit_feedback(scene_d.SHAKE_ELITE_DEATH, 0.12, false)
 
 func _attack_triple_predictive() -> void:
-	if not _target or not is_instance_valid(_target):
+	var pilot := _route_attack_pilot("predictive")
+	if not is_instance_valid(pilot):
 		return
 	var target_vel := Vector2.ZERO
-	var maybe_velocity: Variant = _target.get("velocity")
+	var maybe_velocity: Variant = pilot.get("velocity")
 	if typeof(maybe_velocity) == TYPE_VECTOR2:
 		target_vel = maybe_velocity
-	var lead_target: Vector2 = _target.global_position + target_vel * 0.35
+	var lead_target: Vector2 = pilot.global_position + target_vel * 0.35
 	var base: float = global_position.angle_to_point(lead_target)
 	for i in range(3):
 		var offset := (i - 1) * 0.08
@@ -346,6 +427,13 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	if _dead:
 		return
 	if _shield > 0:
+		if route_evasion and amount > 0:
+			if _route_pressure_hits == 0:
+				_route_pressure_left = 1.0
+			_route_pressure_hits += 1
+			_route_pressure_slot = killer_peer_id
+		if route_evasion and NetworkManager.is_online():
+			_route_aggro.record_damage(killer_peer_id, minf(_shield, amount))
 		_shield -= amount
 		if _shield > 0:
 			SFX.play_shield_hit()
@@ -367,6 +455,8 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 	var applied_damage: int = amount
 	if _phase_b_timer > 0.0:
 		applied_damage = int(ceil(float(amount) * 1.25))
+	if route_evasion and NetworkManager.is_online():
+		_route_aggro.record_damage(killer_peer_id, minf(_health, applied_damage))
 	_health -= applied_damage
 	modulate = Color(2, 2, 2, 1)
 	var tween := create_tween()

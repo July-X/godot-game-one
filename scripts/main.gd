@@ -539,6 +539,10 @@ func _try_go_downed(peer_id: int) -> bool:
 
 
 func _physics_process(_delta: float) -> void:
+	_tick_rescue_window()
+
+
+func _tick_rescue_window() -> void:
 	var peer_id := GameState.rescue_peer_id
 	if peer_id == 0 or not GameState.game_running or not NetworkManager.is_online() or not multiplayer.is_server():
 		return

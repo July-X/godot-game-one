@@ -1,0 +1,70 @@
+extends "res://tests/boss_coop_probe.gd"
+
+const Route := preload("res://scenes/rift_route_trial.tscn")
+const Trial := preload("res://scripts/rift_route_trial.gd")
+
+func _run() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	var wide := (_role == "host") == (OS.get_cmdline_user_args()[2] == "rift-wide-host")
+	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
+	get_window().content_scale_size = Vector2i(1600, 720) if wide else Vector2i(960, 720)
+	var err := NetworkManager.create_host(_port) if _role == "host" else NetworkManager.join_host("127.0.0.1", _port)
+	if not _require("real_enet", err == OK and await _wait_until(func(): return NetworkManager.is_online() and not NetworkManager.connected_peers.is_empty(), 8)):
+		return
+	var trial := Route.instantiate() as Trial
+	get_tree().root.add_child(trial)
+	get_tree().current_scene = trial
+	_main = trial
+	if not _require("stable_player_slots", await _wait_until(func(): return _cond_both_players() and NetworkManager.recovery.is_reserved(), 6)):
+		return
+	_guest = NetworkManager.recovery.guest_slot
+	var slot := NetworkManager.local_player_id()
+	var score_rows := Leaderboard.get_entries()
+	seed(90220)
+	await _barrier("rift_ready")
+	if _role == "host":
+		trial.trial_tick = Trial.CARD_TICK - 1
+	var opened := await _wait_until(func(): return UpgradeDraft.has_draft(slot), 3)
+	_check("fixed_options_on_both_devices", opened and UpgradeDraft.get_draft(slot).cards == ["pierce", "splash", "power"], "")
+	await _barrier("both_drafts")
+	if _role == "host":
+		UpgradeDraft.choose_card(slot, 0)
+	await _wait_seconds(.35)
+	_check("wave_waits_for_other_choice", trial._draft_wait and trial.trial_tick == Trial.CARD_TICK if _role == "host" else UpgradeDraft.has_draft(slot), "")
+	if _role == "client":
+		UpgradeDraft.choose_card(slot, 1, "tap")
+	var both := await _wait_until(func(): return GameState.get_card_count("pierce", 1) == 1 and GameState.get_card_count("splash", _guest) == 1, 3.0)
+	_check("distinct_cards_and_single_grants", both, "")
+	var cue := await _wait_until(func(): return not trial._fighters.is_empty(), 4.5)
+	_check("host_authored_wave_shared", cue and NetworkManager.battle_size(trial) == Vector2(1280, 720), "")
+	await _barrier("wave_observed")
+	if _role == "client":
+		NetworkManager.recovery.set_background(true)
+		await _wait_seconds(.2)
+		NetworkManager.drop_lan_transport()
+		NetworkManager.recovery.set_background(false)
+	var wire_at_start := _guest
+	var restored := await _wait_until(func():
+		return NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != wire_at_start and not get_tree().paused, 13)
+	_check("reconnect_does_not_reoffer_or_clear_cards", restored and trial.leg == Trial.Leg.BUILD and GameState.get_card_count("splash", _guest) == 1
+		and not UpgradeDraft.has_draft(slot), "")
+	await _barrier("rewire_complete")
+	if _role == "host":
+		trial.trial_tick = Trial.SETTLE_TICK - 1
+		await get_tree().physics_frame
+		await get_tree().physics_frame
+		trial.trial_tick = Trial.BOSS_LEG - 1
+	var on_boss := await _wait_until(func(): return is_instance_valid(trial._boss) and trial.leg == Trial.Leg.BOSS, 4)
+	_check("only_host_advances_boss_leg", on_boss, "")
+	await _barrier("boss_observed")
+	if _role == "host" and on_boss:
+		var boss := trial._boss
+		boss.take_damage(boss.get_max_shield_hp(), 1)
+		boss.take_damage(boss.get_network_max_health(), 1)
+	var complete := await _wait_until(func(): return trial.finished, 3)
+	_check("same_terminal_state_without_leaderboard", complete and trial._result.text.begins_with("通关")
+		and Leaderboard.get_entries() == score_rows, "")
+	await _barrier("rift_complete")
+	await _wait_seconds(.25)
+	get_tree().quit(_summarize())

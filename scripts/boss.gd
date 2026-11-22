@@ -159,7 +159,11 @@ var _ultimate_laser_end: Vector2 = Vector2.ZERO
 var _laser_dot_accumulator: float = 0.0
 var _coop_encounter := false
 var _pulse_used_this_shield := false
-var _pulse_last_slot := 0
+const AggroLedger := preload("res://scripts/boss_aggro.gd")
+signal attack_target_selected(attack: String, slot: int, direction: Vector2)
+var _aggro := AggroLedger.new()
+var _laser_target: Node2D
+var _dodge_used_this_shield := false
 var _pulse_left := 0.0
 var _pulse_hits: Dictionary[int, bool] = {}
 var _pulse := {"stamp": 0, "phase": PulsePhase.OPEN, "slot": 0, "from": Vector2.ZERO, "to": Vector2.ZERO}
@@ -292,6 +296,8 @@ func _physics_process(delta: float) -> void:
 	if not _target or not is_instance_valid(_target):
 		return
 
+	if _coop_encounter:
+		_aggro.advance(delta)
 	_sample_pilot_motion(delta)
 	_update_phase_from_health(true)
 	_tick_shield_cycle(delta)
@@ -496,6 +502,7 @@ func _tick_shield_cycle(delta: float) -> void:
 		_shield_hp = _max_shield_hp
 		_laser_used_this_shield = false
 		_pulse_used_this_shield = false
+		_dodge_used_this_shield = false
 		_next_attack = 0
 		_publish_shield_state()
 	elif _exposure_left <= BOSS_RECHARGE_WARNING + 0.00001 and not is_shield_recharging():
@@ -523,6 +530,11 @@ func _break_shield() -> void:
 func _start_ultimate_laser() -> void:
 	if _pulse.phase != PulsePhase.OPEN:
 		return
+	if _coop_encounter:
+		_laser_target = _pick_attack_pilot("laser")
+		if not is_instance_valid(_laser_target):
+			_do_aimed_shot()
+			return
 	_stop_entry_motion()
 	_laser_used_this_shield = true
 	_ultimate_laser_charging = true
@@ -547,7 +559,14 @@ func _tick_ultimate_laser(delta: float) -> void:
 	if _ultimate_laser_charging:
 		_ultimate_laser_charge_timer -= delta
 		if _laser_locked_direction.is_zero_approx():
-			_face_target(delta)
+			if _coop_encounter and not _attack_pilot_alive(_laser_target):
+				_finish_ultimate_laser()
+				return
+			if _coop_encounter:
+				var aim := global_position.angle_to_point(_predict_pilot(_laser_target)) + PI * .5
+				rotation = lerp_angle(rotation, aim, BOSS_MAX_TURN_RATE * delta)
+			else:
+				_face_target(delta)
 			if _ultimate_laser_charge_timer <= BOSS_LASER_AIM_LOCK:
 				_lock_ultimate_laser()
 				_publish_attack_window()
@@ -565,7 +584,7 @@ func _tick_ultimate_laser(delta: float) -> void:
 			_finish_ultimate_laser()
 
 func _lock_ultimate_laser() -> void:
-	_laser_locked_direction = _ultimate_laser_start.direction_to(_predict_target_position())
+	_laser_locked_direction = _ultimate_laser_start.direction_to(_predict_pilot(_laser_target) if _coop_encounter else _predict_target_position())
 	if _laser_locked_direction.is_zero_approx():
 		_laser_locked_direction = Vector2.DOWN
 	var screen: Vector2 = NetworkManager.battle_size(self)
@@ -583,6 +602,7 @@ func _fire_ultimate_laser() -> void:
 func _finish_ultimate_laser() -> void:
 	_ultimate_laser_charging = false
 	_ultimate_laser_firing = false
+	_laser_target = null
 	_finished_laser_cycles += 1
 	_shoot_timer = 0.55
 	_publish_attack_window()
@@ -686,13 +706,53 @@ func _pick_new_strafe_bias() -> void:
 	_feint_timer = randf_range(BOSS_FEINT_INTERVAL_MIN, BOSS_FEINT_INTERVAL_MAX)
 
 func _predict_target_position() -> Vector2:
-	if not _target or not is_instance_valid(_target):
+	return _predict_pilot(_target)
+
+func _predict_pilot(pilot: Node2D) -> Vector2:
+	if not is_instance_valid(pilot):
 		return global_position
 	var target_velocity := Vector2.ZERO
-	var maybe_velocity: Variant = _target.get("velocity")
+	var maybe_velocity: Variant = pilot.get("velocity")
 	if typeof(maybe_velocity) == TYPE_VECTOR2:
 		target_velocity = maybe_velocity
-	return _target.global_position + target_velocity * BOSS_LEAD_SECONDS
+	if _coop_encounter and pilot.get("peer_id") != 1:
+		var trail: Vector2 = _pilot_trails.get(pilot.get_instance_id(), pilot.global_position)
+		target_velocity = ((pilot.global_position - trail) / BOSS_PILOT_TREND_SECONDS).limit_length(400.0)
+	return pilot.global_position + target_velocity * BOSS_LEAD_SECONDS
+
+func _attack_pilot_alive(pilot: Node2D) -> bool:
+	return is_instance_valid(pilot) and not pilot.is_queued_for_deletion() \
+		and GameState.is_player_alive(pilot.get("peer_id")) and not GameState.is_player_downed(pilot.get("peer_id"))
+
+func _rank_attack_pilots(attack: String) -> Array[int]:
+	var scores := {}
+	var positions := {}
+	var flyable := Rect2(Vector2(24, 24), NetworkManager.battle_size(self) - Vector2(48, 48))
+	for slot: int in GameState.get_alive_player_ids():
+		var pilot: Node2D = get_parent()._players.get(slot)
+		if not _attack_pilot_alive(pilot):
+			continue
+		var at := pilot.global_position
+		var offset := at - global_position
+		if attack in ["laser", "pulse"]:
+			var side := offset.normalized().orthogonal() * COOP_PULSE_ESCAPE
+			if offset.length() < 160.0 or not (flyable.has_point(at + side) or flyable.has_point(at - side)):
+				continue
+		positions[slot] = at
+		scores[slot] = 1.0 - clampf(absf(offset.length() - 340.0) / 650.0, 0.0, 1.0)
+	return _aggro.rank(attack, scores, positions, _max_health + _max_shield_hp)
+
+func _pick_attack_pilot(attack: String) -> Node2D:
+	if not _coop_encounter:
+		return _target
+	var ranked := _rank_attack_pilots(attack)
+	if ranked.is_empty():
+		return null
+	var slot := ranked[0]
+	var pilot: Node2D = get_parent()._players.get(slot)
+	_aggro.select(attack, slot)
+	attack_target_selected.emit(attack, slot, global_position.direction_to(_predict_pilot(pilot)))
+	return pilot
 
 func _ideal_standoff_position() -> Vector2:
 	var predicted := _predict_target_position()
@@ -782,16 +842,16 @@ func _try_coop_pulse() -> bool:
 	if not _coop_pair_alive():
 		return false
 	var battle := get_parent()
-	var ids := GameState.get_alive_player_ids()
-	if ids.size() != 2:
+	var ids := _rank_attack_pilots("pulse")
+	var alive := GameState.get_alive_player_ids()
+	if alive.size() != 2:
 		return false
-	if ids[0] == _pulse_last_slot:
-		ids.reverse()
 	var field := NetworkManager.battle_size(self)
 	var flyable := Rect2(Vector2(24, 24), field - Vector2(48, 48))
 	for i in ids.size():
 		var pilot: Node2D = battle._players.get(ids[i])
-		var partner: Node2D = battle._players.get(ids[1 - i])
+		var other: int = alive[1] if alive[0] == ids[i] else alive[0]
+		var partner: Node2D = battle._players.get(other)
 		if not is_instance_valid(pilot) or not is_instance_valid(partner):
 			continue
 		var at := pilot.global_position
@@ -807,7 +867,8 @@ func _try_coop_pulse() -> bool:
 		if partner.global_position.distance_to(nearest) < COOP_PULSE_RADIUS + 36.0:
 			continue
 		_pulse_used_this_shield = true
-		_pulse_last_slot = ids[i]
+		_aggro.select("pulse", ids[i])
+		attack_target_selected.emit("pulse", ids[i], axis)
 		_pulse_left = COOP_PULSE_CHARGE
 		_pulse_hits.clear()
 		_set_coop_pulse(PulsePhase.LOCK, ids[i], origin, end)
@@ -868,14 +929,20 @@ func _draw_coop_pulse() -> void:
 
 func _do_aimed_shot() -> void:
 	var count := 2 if _phase == BossPhase.SUPPRESSION else 3
-	var angle := global_position.angle_to_point(_predict_target_position())
+	var pilot := _pick_attack_pilot("aimed")
+	if not is_instance_valid(pilot):
+		return
+	var angle := global_position.angle_to_point(_predict_pilot(pilot))
 	for i in count:
 		var a := angle + (float(i) - (count - 1) * 0.5) * 0.06
 		_spawn_enemy_bullet(global_position + Vector2.from_angle(a) * 20, a, _get_boss_attack_damage(), 620.0, Color(1.0, 0.3, 0.3))
 
 func _do_fan_spread() -> void:
 	var count := 5 if _phase == BossPhase.SUPPRESSION else 7
-	var base := global_position.angle_to_point(_predict_target_position())
+	var pilot := _pick_attack_pilot("fan")
+	if not is_instance_valid(pilot):
+		return
+	var base := global_position.angle_to_point(_predict_pilot(pilot))
 	var spread := PI * (0.34 if _phase == BossPhase.SUPPRESSION else 0.48)
 	for i in count:
 		if i == count / 2:
@@ -978,6 +1045,8 @@ func _clear_fire_pressure() -> void:
 func _try_start_fireline_dodge() -> void:
 	if _dodge_cooldown > 0.0 or _fire_pressure_hits < BOSS_FIRE_PRESSURE_HITS:
 		return
+	if _coop_encounter and _dodge_used_this_shield:
+		return
 	_stop_entry_motion()
 	var pilot := _fire_pressure_pilot()
 	var side := pilot.global_position.direction_to(global_position).orthogonal()
@@ -988,6 +1057,9 @@ func _try_start_fireline_dodge() -> void:
 	var left := _clamp_to_arena(global_position + side * BOSS_DODGE_SHIFT)
 	var right := _clamp_to_arena(global_position - side * BOSS_DODGE_SHIFT)
 	var destination := left if _score_dodge_position(left, drift) >= _score_dodge_position(right, drift) else right
+	if _coop_encounter and destination.distance_to(global_position) < 18.0:
+		return
+	_dodge_used_this_shield = true
 	_dodge_shift = destination - global_position
 	_dodge_elapsed = 0.0
 	_enter_state(State.CIRCLE, randf_range(0.45, 0.85))
@@ -1017,6 +1089,8 @@ func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 	if applied <= 0.0:
 		return
 	if has_impact_shield():
+		if _coop_encounter:
+			_aggro.record_damage(killer_peer_id, minf(_shield_hp, applied))
 		_shield_hp = maxf(0.0, _shield_hp - applied)
 		if _shield_hp == 0.0:
 			_break_shield()
@@ -1024,7 +1098,10 @@ func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 			SFX.play_shield_hit()
 			_record_fire_pressure(killer_peer_id)
 		return
-	_health = maxf(0.0, _health - applied * BOSS_EXPOSED_DAMAGE_MULTIPLIER)
+	var hull_damage := applied * BOSS_EXPOSED_DAMAGE_MULTIPLIER
+	if _coop_encounter:
+		_aggro.record_damage(killer_peer_id, minf(_health, hull_damage))
+	_health = maxf(0.0, _health - hull_damage)
 	if _health == 0.0:
 		die()
 		return

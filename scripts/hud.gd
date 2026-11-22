@@ -690,7 +690,7 @@ func _update_powerup_display() -> void:
 
 	var labels := {
 		"spread": {"name": "扩散", "color": Color(0.3, 1.0, 0.4), "bar": Color(0.2, 0.8, 0.3)},
-		"speed": {"name": "速射", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
+		"speed": {"name": "射速", "color": Color(0.4, 0.7, 1.0), "bar": Color(0.3, 0.6, 1.0)},
 		"power": {"name": "威力", "color": Color(1.0, 0.4, 0.3), "bar": Color(0.9, 0.3, 0.2)},
 	}
 	var ordered_types: Array[String] = ["spread", "speed", "power"]
@@ -1175,7 +1175,7 @@ func _pickup_text(powerup_type: String) -> String:
 		"power":
 			return "威力 +1"
 		"speed":
-			return "速射 +1"
+			return "射速 +1"
 		"spread":
 			return "扩散 +1"
 		"bomb":

@@ -1,6 +1,8 @@
 extends Node
 
 const Scene := preload("res://scenes/opening_trial.tscn")
+const Rift := preload("res://scripts/rift_route_trial.gd")
+const RiftScene := preload("res://scenes/rift_route_trial.tscn")
 const Opening := preload("res://scripts/opening_trial.gd")
 const Mobile := preload("res://scenes/ui/mobile_controls.tscn")
 const Bullet := preload("res://scripts/bullet.gd")
@@ -42,6 +44,9 @@ var _capture_to := Opening.FINALE_TICK + 310
 var _last_capture := -1
 var _captured := 0
 var _fail := 0
+var _rift_build := false
+var _draft_at := Opening.DRAFT_TICK
+var _build_at := int(Opening.BUILD_STARTS[0])
 
 func _ready() -> void:
 	process_priority = 100
@@ -67,7 +72,11 @@ func _run() -> void:
 	var card := args[0] if args.size() > 0 else "pierce"
 	var route := args[1] if args.size() > 1 else "column"
 	_push_finale = "--press-finale" in args
-	trial = Scene.instantiate()
+	_rift_build = "--rift-build" in args
+	if _rift_build:
+		_draft_at = Rift.CARD_TICK
+		_build_at = Rift.CARD_TICK + 90
+	trial = RiftScene.instantiate() if _rift_build else Scene.instantiate()
 	stick = Mobile.instantiate()
 	trial.add_child(stick)
 	get_tree().root.add_child(trial)
@@ -84,10 +93,10 @@ func _run() -> void:
 		finish = 408
 		_capture_from = 132
 		_capture_to = 332
-	elif "--first-build" in args:
-		finish = Opening.BUILD_STARTS[0] + 360
-		_capture_from = Opening.BUILD_STARTS[0] + 65
-		_capture_to = Opening.BUILD_STARTS[0] + 288
+	elif "--first-build" in args or _rift_build:
+		finish = _build_at + 360
+		_capture_from = _build_at + 65
+		_capture_to = _build_at + 288
 	elif "--finale-clip" in args:
 		finish = Opening.FINALE_TICK + 380
 	for arg in args:
@@ -125,7 +134,7 @@ func _run() -> void:
 	_check("no_normal_spawns_or_levels", not is_instance_valid(trial._boss) and GameState.level == 1)
 	_check("all_fans_have_visible_warning_and_three_real_bullets", _check_fans())
 	_check("only_pending_volley_interrupted", _check_interruptions())
-	if finish > Opening.DRAFT_TICK:
+	if finish > _draft_at:
 		var timeout := "--timeout" in args
 		_check("actual_upgrade_source", _choice == ("timeout" if timeout else "tap")
 			and _chosen_card == (Opening.OFFER[0] if timeout else card))
@@ -314,12 +323,12 @@ func _steer(route: String) -> void:
 		elif route == "dodge":
 			target.x = trial.field.x * .54
 			target.y -= clampf((now - 100) * 1.4, 0, 145)
-	elif now < Opening.DRAFT_TICK:
+	elif now < _draft_at:
 		if now >= 850:
 			target.x = trial.field.x * (.46 if now < 990 else .5)
 			target.y = trial._player.position.y
-	elif now >= Opening.BUILD_STARTS[0]:
-		var age := now - Opening.BUILD_STARTS[0]
+	elif now >= _build_at:
+		var age := now - _build_at
 		target.x = trial.field.x * .67
 		if age < (44 if route in ["cluster", "dodge"] else 30):
 			target.x = trial.field.x * .5

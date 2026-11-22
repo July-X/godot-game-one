@@ -42,14 +42,15 @@ func _ready() -> void:
 	_asteroid_timer = INF
 	# 本场只在固定时间领一张卡；重开普通局时由 reset_game 恢复升级口径。
 	GameState.kills_for_next_level = 100
-	field = get_viewport_rect().size
-	_player.position = field * Vector2(.5, .78)
-	_player.reset_physics_interpolation()
+	field = NetworkManager.battle_size(self)
+	if is_instance_valid(_player) and not NetworkManager.is_online():
+		_player.position = field * Vector2(.5, .78)
+		_player.reset_physics_interpolation()
 	_cues.draw.connect(_draw_cues)
 	var retry: Button = $TrialUI/Options/Buttons/Retry
 	retry.pressed.connect(_restart, CONNECT_DEFERRED)
 	$TrialUI/Options/Buttons/Back.pressed.connect(_return_to_title, CONNECT_DEFERRED)
-	if not _player._motion.mobile_mode:
+	if is_instance_valid(_player) and not _player._motion.mobile_mode:
 		retry.text = "重试 · R"
 	_hud._level_label.hide()
 	_options.minimum_size_changed.connect(_layout_options)
@@ -154,7 +155,7 @@ func _move_fighters() -> void:
 		var retreat := clampf((age - 305.0) / 64.0, 0.0, 1.0)
 		if retreat >= 1.0:
 			_fighters.erase(role)
-			ship.queue_free()
+			_retire_trial_fighter(ship)
 			continue
 		var travel := smoothstep(0.0, float(ARRIVAL_TICKS), age)
 		ship.position = order.origin.lerp(order.target, travel)
@@ -162,6 +163,9 @@ func _move_fighters() -> void:
 		ship.get_node("HealthBar").value = ship.health
 		if trial_tick == int(order.fire) and ship.health > 0:
 			_fire_fan(ship)
+
+func _retire_trial_fighter(ship: Node2D) -> void:
+	ship.queue_free()
 
 func _fan_direction(at: Vector2, offset: float) -> Vector2:
 	return at.direction_to(Vector2(at.x + field.x * offset, field.y))
