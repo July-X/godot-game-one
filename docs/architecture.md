@@ -83,6 +83,7 @@
 │   ├── shield_shatter_burst.gd # 破盾碎裂特效
 │   ├── cooldown_overlay.gd    # 技能/激光冷却覆盖层（单文件，含两种形态）
 │   ├── boss_ultimate_laser_visual.gd / boss_laser_beam.gdshader # 终局激光阶段、束段和端帽
+│   ├── rift_hunter_attack.gd   # 航道猎手的锁向、缺口和预警快照
 │   ├── hud.gd / title_screen.gd / lobby.gd / mobile_controls.gd
 ├── tests/
 │   ├── lan_probe.gd           # 双进程 headless 联机回归探针
@@ -93,6 +94,7 @@
 │   ├── pickup_lan_probe.gd / .tscn      # 双端拾取时序、归属、重试和边缘实拍
 │   ├── lan_resume_probe.gd / .tscn       # 同连接唤醒、实际重连、晚回前台和超时
 │   ├── lobby_start_probe.gd / .tscn      # 大厅同版本开局及混版提示
+│   ├── rift_hunter_probe.gd / .tscn      # 猎手的实弹、破盾、重连与图形预警
 │   ├── combat_feedback_probe.gd / .tscn # 固定事件的有声回放和反馈门禁
 │   ├── pixelfx_probe.gd / .tscn、compare_pixelfx.py # 普通命中与击毁的逐帧实拍及弹体像素比对
 │   ├── impact_scope_probe.gd / .tscn # 真实扣血与各武器接触，对照历史图形帧

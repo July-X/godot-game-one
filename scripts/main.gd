@@ -1082,6 +1082,8 @@ func _on_elite_spawn_requested() -> void:
 		return
 	call_deferred("_spawn_elite")
 
+const ELITE_ENTRY_SECONDS := 1.5
+
 func _spawn_elite() -> void:
 	_show_elite_warning()
 	GameState.elite_encounter_count += 1
@@ -1100,11 +1102,12 @@ func _spawn_elite() -> void:
 		_elite.entity_id = eid
 		_entities[eid] = _elite
 		_elite.route_dodge_charging.connect(_publish_elite_dodge_cue.bind(eid))
+		_elite.route_attack_changed.connect(_publish_elite_attack_preview.bind(eid))
 		_rpc_spawn_elite.rpc(eid, elite_mult)
 		_rpc_show_elite_warning.rpc()
 	add_child(_elite)
 	var tween := create_tween()
-	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), 1.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), ELITE_ENTRY_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_elite_shield_broken_window_started() -> void:
 	var eid := -1
@@ -1721,6 +1724,9 @@ func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node, recovering :
 		var cue_left: float = node.get_route_dodge_cue_left()
 		if cue_left > 0.0:
 			_rpc_elite_dodge_cue.rpc_id(peer_id, eid, cue_left)
+		var preview: Dictionary = node.route_attack_preview()
+		if not preview.is_empty():
+			_rpc_elite_attack_preview.rpc_id(peer_id, eid, preview, recovering)
 		return
 	if node.is_in_group("powerups") and node.has_method("get_powerup_type"):
 		var powerup_node := node as Node2D
@@ -1817,6 +1823,15 @@ func _publish_elite_dodge_cue(seconds: float, eid: int) -> void:
 func _rpc_elite_dodge_cue(eid: int, seconds: float) -> void:
 	if GameState.game_running and is_instance_valid(_elite) and _elite.entity_id == eid:
 		_elite.play_route_dodge_preview(seconds)
+
+func _publish_elite_attack_preview(state: Dictionary, eid: int) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server() and GameState.game_running:
+		_rpc_elite_attack_preview.rpc(eid, state)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_elite_attack_preview(eid: int, state: Dictionary, recovering := false) -> void:
+	if GameState.game_running and is_instance_valid(_elite) and _elite.entity_id == eid:
+		_elite.apply_route_attack_preview(state, recovering)
 
 ## Host → Client：强制销毁精英护盾光晕（护盾同步包可能丢包或迟到）
 @rpc("authority", "reliable", "call_remote")
@@ -2259,7 +2274,7 @@ func _flush_bullet_spawns() -> void:
 			_rpc_spawn_bullets.rpc(data)
 		else:
 			_rpc_spawn_bullets.rpc_id(1, data)
-	# 一次散射的数组会超过 ENet 的 MTU。冷却已确认后，整轮弹体必须可靠送达。
+	# 技能散射与航道猎手的固定齐射共用可靠队列，加入端能看到实际判定的整轮弹体。
 	if not _pending_scatter_spawns.is_empty():
 		var data := _pending_scatter_spawns.duplicate()
 		_pending_scatter_spawns.clear()

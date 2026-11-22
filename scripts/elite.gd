@@ -124,9 +124,11 @@ func set_difficulty(mult: float) -> void:
 	CHASE_SPEED = 65.0 * mult
 
 func _physics_process(delta: float) -> void:
-	if not GameState.game_running or _dead:
+	if not GameState.game_running or _dead or is_queued_for_deletion():
 		return
 	if _is_network_ghost:
+		if _route_weapon:
+			_route_weapon.tick_preview(delta)
 		_update_health_bar()
 		_update_shield_bar()
 		return
@@ -138,7 +140,12 @@ func _physics_process(delta: float) -> void:
 		_handle_dodge(delta)
 		_apply_close_range_escape(delta)
 	_update_phase_timers(delta)
-	_handle_attacks(delta)
+	if route_evasion:
+		_route_weapon.tick(delta, _phase_b_timer > 0.0, _route_dodge_cue > 0.0 or _route_dodge_left > 0.0)
+		if _route_weapon.attack_pending():
+			velocity = Vector2.ZERO
+	else:
+		_handle_attacks(delta)
 	_update_shield(delta)
 	_update_angry_mode()
 	_update_health_bar()
@@ -175,8 +182,10 @@ func _handle_movement(delta: float) -> void:
 		velocity = velocity.lerp(strafe_dir * speed * 0.6, 0.8 * delta)
 
 const RouteAggro := preload("res://scripts/boss_aggro.gd")
+const RouteWeapon := preload("res://scripts/rift_hunter_attack.gd")
 var route_evasion := false
 var _route_aggro := RouteAggro.new()
+var _route_weapon: RouteWeapon
 
 var _route_pressure_left := 0.0
 var _route_pressure_hits := 0
@@ -189,6 +198,28 @@ var _route_pressure_slot := 0
 const ROUTE_DODGE_CUE_SECONDS := 0.20
 signal route_dodge_charging(seconds: float)
 signal route_evaded
+signal route_attack_changed(snapshot: Dictionary)
+
+func enable_route_combat(entry_seconds: float) -> void:
+	route_evasion = true
+	_route_weapon = _create_route_weapon(entry_seconds)
+	_route_weapon.preview_changed.connect(func(state: Dictionary): route_attack_changed.emit(state))
+
+func _create_route_weapon(entry_seconds: float) -> RouteWeapon:
+	var weapon := RouteWeapon.new()
+	weapon.configure(self, entry_seconds)
+	add_child(weapon)
+	return weapon
+
+func route_attack_preview() -> Dictionary:
+	return _route_weapon.snapshot() if _route_weapon and not _is_network_ghost else {}
+
+func apply_route_attack_preview(state: Dictionary, recovering: bool) -> void:
+	if is_queued_for_deletion():
+		return
+	if not _route_weapon:
+		_route_weapon = _create_route_weapon(0.0)
+	_route_weapon.apply_preview(state, recovering)
 
 func _tick_route_evasion(delta: float) -> void:
 	if NetworkManager.is_online():
@@ -200,6 +231,8 @@ func _tick_route_evasion(delta: float) -> void:
 	if _shield <= 0 or _phase_b_timer > 0.0:
 		_route_dodge_cue = 0.0
 		_route_dodge_left = 0.0
+		return
+	if _route_weapon.attack_pending():
 		return
 	if _route_dodge_cue > 0.0:
 		_route_dodge_cue = maxf(0.0, _route_dodge_cue - delta)
@@ -320,7 +353,8 @@ func _get_fire_rate() -> float:
 	var base: float = 1.5 if not _angry_mode else 0.8
 	return base + randf_range(-0.2, 0.3)
 
-func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float = 600.0, color: Color = Color(1, 1, 1, 1)) -> void:
+func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed := 600.0,
+		color := Color.WHITE, reliable := false) -> void:
 	var bullet := Pool.acquire("bullet", _bullet_scene)
 	get_tree().current_scene.add_child(bullet)
 	bullet.setup(pos, angle, damage, false, 1, speed)
@@ -328,28 +362,37 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 	if NetworkManager.is_online():
 		var scene := get_tree().current_scene
 		if scene and scene.has_method("register_bullet_spawn"):
-			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color)
+			scene.register_bullet_spawn(pos, angle, damage, false, 1, speed, color, -1, reliable)
 
-func _route_attack_pilot(kind: String) -> Node2D:
-	if not route_evasion or not NetworkManager.is_online():
-		return _target
+func route_live_pilots() -> Array[Node2D]:
+	var pilots: Array[Node2D] = []
+	if not NetworkManager.is_online():
+		if is_instance_valid(_target) and not _target.is_queued_for_deletion():
+			pilots.append(_target)
+		return pilots
+	var actors: Dictionary = get_parent()._players
+	for slot in GameState.get_alive_player_ids():
+		var actor: Node2D = actors.get(slot)
+		if is_instance_valid(actor) and not actor.is_queued_for_deletion() and not GameState.is_player_downed(slot):
+			pilots.append(actor)
+	return pilots
+
+func choose_route_line_target(pilots: Array[Node2D]) -> Node2D:
+	if pilots.size() == 1:
+		return pilots[0]
 	var scores := {}
 	var positions := {}
 	var actors: Dictionary = get_parent()._players
-	for slot: int in GameState.get_alive_player_ids():
-		var actor: Node2D = actors.get(slot)
-		if not is_instance_valid(actor) or GameState.is_player_downed(slot):
-			continue
-		positions[slot] = actor.global_position
-		scores[slot] = 1.0 - clampf(absf(global_position.distance_to(actor.global_position) - 340.0) / 650.0, 0.0, 1.0)
-	var ranked := _route_aggro.rank(kind, scores, positions, _max_health + _max_shield)
-	if ranked.is_empty():
-		return null
-	_route_aggro.select(kind, ranked[0])
+	for pilot in pilots:
+		var slot: int = pilot.peer_id
+		positions[slot] = pilot.global_position
+		scores[slot] = 1.0 - clampf(absf(global_position.distance_to(pilot.global_position) - 340.0) / 650.0, 0.0, 1.0)
+	var ranked := _route_aggro.rank("line", scores, positions, _max_health + _max_shield)
+	_route_aggro.select("line", ranked[0])
 	return actors[ranked[0]]
 
 func _attack_narrow_fan() -> void:
-	var pilot := _route_attack_pilot("fan")
+	var pilot := _target
 	if not is_instance_valid(pilot):
 		return
 	var angle: float = global_position.angle_to_point(pilot.global_position)
@@ -363,7 +406,7 @@ func _attack_narrow_fan() -> void:
 	SFX.play_enemy_volley()
 
 func _attack_targeted_burst() -> void:
-	var pilot := _route_attack_pilot("burst")
+	var pilot := _target
 	if not is_instance_valid(pilot):
 		return
 	var burst_count: int = 3
@@ -387,7 +430,7 @@ func _attack_ring() -> void:
 		scene_d.emit_hit_feedback(scene_d.SHAKE_ELITE_DEATH, 0.12, false)
 
 func _attack_triple_predictive() -> void:
-	var pilot := _route_attack_pilot("predictive")
+	var pilot := _target
 	if not is_instance_valid(pilot):
 		return
 	var target_vel := Vector2.ZERO
@@ -425,8 +468,12 @@ func _update_phase_timers(delta: float) -> void:
 	if _shield <= 0 and hp_ratio <= 0.7 and hp_ratio > 0.35:
 		_phase_c_drone_timer -= delta
 		if _phase_c_drone_timer <= 0.0:
+			if route_evasion and _route_weapon.attack_pending():
+				return
 			_phase_c_drone_timer = 6.0
 			_attack_summon_minions()
+			if route_evasion:
+				_route_weapon.delay_after_summon()
 
 func _update_shield(delta: float) -> void:
 	if _dead:
@@ -463,6 +510,12 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 		var tween := create_tween()
 		tween.tween_callback(func(): if _shield_circle: _shield_circle.set_color(Color(0.8, 0.5, 0.1, 0.5)))
 		if _shield <= 0:
+			if route_evasion:
+				_route_weapon.cancel()
+				if _route_dodge_left > 0.0:
+					velocity = Vector2.ZERO
+				_route_dodge_cue = 0.0
+				_route_dodge_left = 0.0
 			_clear_route_dodge_preview()
 			_shield_break_effect()
 			_phase_b_timer = PHASE_B_EXPOSE_DURATION
@@ -559,6 +612,8 @@ func _flash_shield_bar() -> void:
 
 func _die(killer_peer_id: int = -1) -> void:
 	_dead = true
+	if route_evasion:
+		_route_weapon.cancel()
 	elite_died.emit()
 	GameState.add_kill(killer_peer_id)
 	GameState.add_score(1000 * GameState.level, killer_peer_id)

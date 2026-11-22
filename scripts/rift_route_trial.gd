@@ -61,7 +61,7 @@ func _physics_process(_delta: float) -> void:
 		_set_leg(Leg.ELITE)
 	if trial_tick == ELITE_LEG + 155:
 		_spawn_elite()
-		_elite.route_evasion = true
+		_elite.enable_route_combat(ELITE_ENTRY_SECONDS)
 		_elite.route_evaded.connect(func(): _log("elite_side_step", {}))
 	if trial_tick == SETTLE_TICK:
 		_elite = null

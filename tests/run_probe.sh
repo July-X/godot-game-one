@@ -30,8 +30,9 @@ case "$CASE" in
   boss-coop) SCENE=res://tests/boss_coop_probe.tscn ;;
   boss-aggro|boss-aggro-mirror) SCENE=res://tests/boss_aggro_probe.tscn ;;
   rift-wide-host|rift-wide-client) SCENE=res://tests/rift_route_lan_probe.tscn ;;
+  hunter-wide-host|hunter-wide-client) SCENE=res://tests/rift_hunter_probe.tscn ;;
   boss-dodge) SCENE=res://tests/boss_dodge_probe.tscn ;;
-  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-coop|boss-aggro|boss-aggro-mirror|rift-wide-host|rift-wide-client|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
+  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-coop|boss-aggro|boss-aggro-mirror|rift-wide-{host,client}|hunter-wide-{host,client}|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
 esac
 HOST_DISPLAY=(--headless)
 CLIENT_DISPLAY=(--headless)
@@ -42,8 +43,8 @@ if [[ "$CASE" == resume-* ]]; then
   fi
   PROBE_ARGS+=("$(cd "$3" && pwd)")
 elif [[ $# -ge 3 ]]; then
-  if [[ ( "$CASE" != wide-* && "$CASE" != pickup-tablet-* && "$CASE" != rescue && "$CASE" != boss-coop ) || ! -d "$3" ]]; then
-    echo "截图需要 rescue、boss-coop、wide-* 或 pickup-tablet-* 模式，以及一个已有目录" >&2
+  if [[ ( "$CASE" != wide-* && "$CASE" != pickup-tablet-* && "$CASE" != hunter-wide-* && "$CASE" != rescue && "$CASE" != boss-coop ) || ! -d "$3" ]]; then
+    echo "截图需要 rescue、boss-coop、wide-*、hunter-wide-* 或 pickup-tablet-* 模式，以及一个已有目录" >&2
     exit 2
   fi
   PROBE_ARGS+=("$(cd "$3" && pwd)")
@@ -52,9 +53,9 @@ elif [[ $# -ge 3 ]]; then
   if [[ "$CASE" == wide-host ]]; then
     host_size=1600x720
     client_size=1280x720
-  elif [[ "$CASE" == wide-tablet-host || "$CASE" == pickup-tablet-host ]]; then
+  elif [[ "$CASE" == wide-tablet-host || "$CASE" == pickup-tablet-host || "$CASE" == hunter-wide-client ]]; then
     host_size=960x720
-  elif [[ "$CASE" == wide-tablet-client || "$CASE" == pickup-tablet-client ]]; then
+  elif [[ "$CASE" == wide-tablet-client || "$CASE" == pickup-tablet-client || "$CASE" == hunter-wide-host ]]; then
     host_size=1600x720
     client_size=960x720
   fi
