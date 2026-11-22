@@ -666,33 +666,37 @@ func _screen_center_x() -> float:
 	return NetworkManager.battle_size(self).x * 0.5
 
 
-## 单机跟随本地视口中心；联机换窗口时只扩大背景取景。
+## 单机跟随画布。联机让完整战场等比落入当前画布，背景和 HUD 自己排版。
 func _center_camera_on_viewport() -> void:
 	var cam := get_node_or_null("Camera2D") as Camera2D
-	if cam == null:
+	var view := get_viewport().get_visible_rect()
+	if cam == null or not view.has_area():
 		return
 	var field := NetworkManager.battle_size(self)
 	var online := NetworkManager.is_online()
+	var fit := minf(view.size.x / field.x, view.size.y / field.y) if online else 1.0
+	var shake_room := ((view.size / fit - field) * 0.5).max(Vector2.ZERO) if online else Vector2.INF
 	# 只裁战斗物体。独立画布上的星空与 HUD 仍可显示在边缘以外。
 	RenderingServer.canvas_item_set_custom_rect(get_canvas_item(), online, Rect2(Vector2.ZERO, field))
 	RenderingServer.canvas_item_set_clip(get_canvas_item(), online)
 	cam.position = field * 0.5
+	cam.zoom = Vector2.ONE * fit
+	cam.offset = cam.offset.clamp(-shake_room, shake_room)
+	_camera_shake.set_offset_limit(shake_room)
 	cam.force_update_scroll()
 	queue_redraw()
 
+## 显示器坐标含窗口位置和画布缩放。GUI 事件已转为画布坐标，直接交给控件。
+func world_to_screen(world_point: Vector2) -> Vector2:
+	return get_viewport().get_screen_transform() * (get_canvas_transform() * world_point)
+
+func screen_to_world(screen_point: Vector2) -> Vector2:
+	var canvas_point := get_viewport().get_screen_transform().affine_inverse() * screen_point
+	return get_canvas_transform().affine_inverse() * canvas_point
 
 func _draw() -> void:
 	if not NetworkManager.is_online():
 		return
-	var field := NetworkManager.battle_size(self)
-	var view := get_viewport_rect().size
-	var edge := Color(0.42, 0.58, 0.76, 0.36)
-	if view.x > field.x + 1.0:
-		draw_line(Vector2(0.5, 0), Vector2(0.5, field.y), edge, 1)
-		draw_line(Vector2(field.x - 0.5, 0), Vector2(field.x - 0.5, field.y), edge, 1)
-	if view.y > field.y + 1.0:
-		draw_line(Vector2(0, 0.5), Vector2(field.x, 0.5), edge, 1)
-		draw_line(Vector2(0, field.y - 0.5), Vector2(field.x, field.y - 0.5), edge, 1)
 	if GameState.rescue_peer_id > 0 and GameState.game_running:
 		var ink := Palette.DOWNED_CRITICAL if GameState.rescue_seconds <= GameState.RESCUE_WARNING_SECONDS else Palette.DOWNED_SAFE
 		draw_arc(to_local(GameState.rescue_position), GameState.RESCUE_RADIUS, 0, TAU, 64, ink, 2.0, true)

@@ -811,15 +811,40 @@ godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 | 访问口 | 替代原来写死的 |
 |---|---|
 | `NetworkManager.battle_size(world)`、`_screen_center_x()` | 世界边界与入场中心。单机取当前逻辑视口，联机取开局协议尺寸 |
-| `_center_camera_on_viewport()` | `main.tscn` 里 `Camera2D(640, 360)`，监听 `size_changed` |
+| `_center_camera_on_viewport()` | 联机等比取景，单机沿用 1 倍缩放，监听 `size_changed` |
+| `world_to_screen()`、`screen_to_world()` | 世界与显示器坐标的正逆变换，含相机缩放、偏移、震屏与窗口位置 |
 
-`Backdrop` 的底色和三层视差星空覆盖整块本地画布。Boss 进退和两端染色共用 `_rpc_set_boss_bg`。界面在独立的 CanvasLayer 上布局，摇杆贴左下角并监听 `size_changed`。
+`Backdrop` 的底色和两层视差星空覆盖整块本地画布。Boss 进退和两端染色共用 `_rpc_set_boss_bg`。界面在独立的 CanvasLayer 上布局，摇杆和按钮继续按本机安全区处理。
 
 双人局以世界左上角 (0, 0) 为原点。房主通过可靠的开局消息发送协议尺寸 1280×720，加入端确认后进入战斗。玩家中心可到 (24, 24) 至 (1256, 696)，主炮首次反弹距边 10，普通敌弹飞出边界 60 后回收。导演、陨石、精英、Boss 和双方的弹道副本使用同一矩形。房主接收玩家位置时也执行边界检查。
 
-相机看向 (640, 360)。在 1600×720 的画布上，世界 x=0 和 x=1280 分别映射到画布 x=160 和 x=1440；在 1280×720 上分别为 0 和 1280。战斗绘制裁到世界矩形，宽屏侧边可显示背景与界面。鼠标惯性和摇杆使用方向，指针瞄准通过相机变换取世界坐标。两端共用世界坐标同步，无需传输窗口尺寸或屏幕偏移。
+相机看向世界中心 (640, 360)，缩放取画布宽高分别与战场相比所得的较小值。1600×720 画布左右各余 160，1280×960 画布上下各余 120，1280×720 画布恰好铺满。战斗绘制仍裁到世界矩形，额外区域延展背景并可承载本机界面。震屏位移夹在各轴余量内，贴边轴没有平移震动。屏幕坐标先逆变换到画布，再映射到当前世界。鼠标惯性和摇杆传方向，技能与选卡接收画布触点，世界锚定效果和飞机走同一相机。联机只同步世界坐标。
 
 客户端载入后立即请求玩家快照，补发按经过的时间计时。两端同时生成素材时，渲染帧数无法代表网络已等待的时间。断线回退单机时即恢复本地战场和相机，再按原流程重载。
+
+#### 跨画幅联机验收
+
+在 `a54f20d` 用 960×720（4:3）房主与 1600×720（20:9）加入端复现。画面空间来自 Godot 的等比扩展，内侧限位来自共享战场，连续亮线来自 `Main._draw()`。用同一入场构图沿接缝取 64 个样点，旧版平板有 64 个显著亮点，手机有 61 个。移除边线后分别为 1 和 0，和零散星点一致；战斗物体裁剪仍通过图形验收。16:9 仍铺满战场，平移震屏在这一画幅没有取景余量。
+
+以下命令用 Godot 4.6.2 运行。传入已有截图目录时，两端均开启图形窗口。画面包含贴边，手机和平板组合还会拍摄掉落、救援和激光同屏。省略目录可复跑无窗口版。
+
+```bash
+mkdir -p /tmp/sbh-mixed-displays
+export PROBE_KEEP_LOGS=1
+bash tests/run_probe.sh 7790 wide-tablet-host /tmp/sbh-mixed-displays
+bash tests/run_probe.sh 7791 wide-tablet-client /tmp/sbh-mixed-displays
+bash tests/run_probe.sh 7792 wide-host /tmp/sbh-mixed-displays
+bash tests/run_probe.sh 7793 wide-client
+bash tests/run_probe.sh 7794 rescue
+bash tests/run_probe.sh 7795 boss
+bash tests/run_probe.sh 7796
+godot --headless --path . res://tests/mobile_check.tscn
+godot --headless --fixed-fps 60 --path . res://tests/battle_presentation_probe.tscn -- verify "" touch inset
+```
+
+专项走真实大厅和 ENet。4:3 与 20:9 的两端通过模拟触摸飞到四边四角，记录队友的归一坐标、子弹折点、离场回收和 Boss 入场。随后向安全区内投递 Godot 触摸事件，同时测试移动、闪避与选卡，并检查世界锚点和实际救援圈像素。调整窗口及断开联机另验证等比取景和回到单机关卡。桌面窗口使用合成的安全区，手机和平板真机的取景和触摸仍待确认。
+
+macOS 双进程图形版中，手机和平板互换房主后各通过 69 项断言。16:9 与 20:9 同局图形版通过 42 项，另一房主方向的无窗口版通过 34 项。常规联机 40 项、救援 79 项和 Boss 124 项通过，移动探针 13 项、战斗画面与触控探针 43 项通过。并行首轮的救援到期与 Boss 拾取断言有失败，串行复跑通过，原日志一并保留。
 
 ### 18.3 触摸入口
 

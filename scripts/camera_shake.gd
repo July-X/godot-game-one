@@ -15,6 +15,7 @@ extends Node
 var _trauma: float = 0.0
 var _shake_offset: Vector2 = Vector2.ZERO
 var _camera: Camera2D = null
+var _offset_limit := Vector2.INF
 
 const MAX_OFFSET: float = 12.0
 const DECAY_PER_SECOND: float = 1.6
@@ -35,7 +36,7 @@ func _process(delta: float) -> void:
 	_trauma = maxf(_trauma - DECAY_PER_SECOND * delta, 0.0)
 	var amount: float = _trauma * _trauma * MAX_OFFSET
 	_shake_offset = Vector2(randf_range(-amount, amount), randf_range(-amount, amount))
-	_camera.offset = _shake_offset
+	_camera.offset = _shake_offset.clamp(-_offset_limit, _offset_limit)
 	if _trauma <= REST_THRESHOLD:
 		_trauma = 0.0
 		_camera.offset = Vector2.ZERO
@@ -46,6 +47,9 @@ func _process(delta: float) -> void:
 func add_trauma(intensity: float) -> void:
 	_trauma = clampf(_trauma + intensity, 0.0, 1.0)
 
+## 联机只在取景余量内移动相机，仍按原时序采样震动。
+func set_offset_limit(limit: Vector2) -> void:
+	_offset_limit = limit
 
 func reset() -> void:
 	_trauma = 0.0

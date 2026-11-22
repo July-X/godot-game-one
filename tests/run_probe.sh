@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 双进程 headless 联机回归门禁。
 #
-#   tests/run_probe.sh [端口] [draft|draft-touch-wide-host|draft-touch-wide-client|score-safe-wide-host|score-safe-wide-client|rescue|feedback|boss|boss-kill|boss-dodge|wide-host|wide-client] [已有截图目录]
+#   tests/run_probe.sh [端口] [探针] [已有截图目录]
 #
 # 做三件人工流程做不到的事：
 #   1. 自动收口两个进程的退出码（探针断言失败 → 非零退出）
@@ -18,7 +18,7 @@ PORT="${1:-7788}"
 CASE="${2:-}"
 case "$CASE" in
   "") SCENE=res://tests/lan_probe.tscn ;;
-  wide-host|wide-client) SCENE=res://tests/mixed_viewport_probe.tscn ;;
+  wide-host|wide-client|wide-tablet-host|wide-tablet-client) SCENE=res://tests/mixed_viewport_probe.tscn ;;
   feedback) SCENE=res://tests/feedback_lan_probe.tscn ;;
   draft) SCENE=res://tests/draft_lan_probe.tscn ;;
   draft-touch-wide-host|draft-touch-wide-client) SCENE=res://tests/draft_touch_probe.tscn ;;
@@ -26,14 +26,14 @@ case "$CASE" in
   rescue) SCENE=res://tests/rescue_lan_probe.tscn ;;
   boss|boss-kill) SCENE=res://tests/boss_lifecycle_probe.tscn ;;
   boss-dodge) SCENE=res://tests/boss_dodge_probe.tscn ;;
-  *) echo "用法: $0 [端口] [draft|draft-touch-wide-host|draft-touch-wide-client|score-safe-wide-host|score-safe-wide-client|rescue|feedback|boss|boss-kill|boss-dodge|wide-host|wide-client]" >&2; exit 2 ;;
+  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-dodge|wide-{host,client}|wide-tablet-{host,client}]" >&2; exit 2 ;;
 esac
 HOST_DISPLAY=(--headless)
 CLIENT_DISPLAY=(--headless)
 PROBE_ARGS=("$CASE")
 if [[ $# -ge 3 ]]; then
   if [[ ( "$CASE" != wide-* && "$CASE" != rescue ) || ! -d "$3" ]]; then
-    echo "截图需要 rescue、wide-host 或 wide-client，以及一个已有目录" >&2
+    echo "截图需要 rescue 或 wide-* 模式，以及一个已有目录" >&2
     exit 2
   fi
   PROBE_ARGS+=("$(cd "$3" && pwd)")
@@ -42,9 +42,14 @@ if [[ $# -ge 3 ]]; then
   if [[ "$CASE" == wide-host ]]; then
     host_size=1600x720
     client_size=1280x720
+  elif [[ "$CASE" == wide-tablet-host ]]; then
+    host_size=960x720
+  elif [[ "$CASE" == wide-tablet-client ]]; then
+    host_size=1600x720
+    client_size=960x720
   fi
-  HOST_DISPLAY=(--windowed --resolution "$host_size" --audio-driver Dummy)
-  CLIENT_DISPLAY=(--windowed --resolution "$client_size" --audio-driver Dummy)
+  HOST_DISPLAY=(--windowed --resolution "$host_size" --position 5,35 --audio-driver Dummy)
+  CLIENT_DISPLAY=(--windowed --resolution "$client_size" --position 240,110 --audio-driver Dummy)
 fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"
