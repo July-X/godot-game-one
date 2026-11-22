@@ -22,6 +22,9 @@ func _ready() -> void:
 	_btn_first_card.pressed.connect(_show_menu.bind(_trial_choices))
 	$Menu/BtnOffenseWindow.pressed.connect(_start_game.bind("res://scenes/offense_window_trial.tscn"), CONNECT_DEFERRED)
 	$Menu/BtnOpeningTrial.pressed.connect(_show_menu.bind(_opening_choices))
+	var rift := _menu.get_node_or_null("BtnRiftRoute") as Button
+	if rift:
+		rift.pressed.connect(_start_game.bind("res://scenes/rift_route_trial.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/Back.pressed.connect(_show_menu.bind(_menu))

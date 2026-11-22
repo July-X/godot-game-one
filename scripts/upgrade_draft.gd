@@ -53,7 +53,7 @@ const CARDS: Array[Dictionary] = [
 	},
 	{
 		"id": "firerate", "icon": "firerate", "name": "过载扳机", "kind": "stat",
-		"desc": "速射 +2",
+		"desc": "射速 +2",
 		"max_stacks": 8,
 	},
 	{

@@ -60,6 +60,11 @@ custom_minimum_size = Vector2(0, 48)
 text = "开场试飞 · 90 秒"
 theme_override_font_sizes/font_size = 20
 
+[node name="BtnRiftRoute" type="Button" parent="Menu"]
+custom_minimum_size = Vector2(0, 48)
+text = "裂隙航道 · 试玩"
+theme_override_font_sizes/font_size = 20
+
 [node name="TrialChoices" type="VBoxContainer" parent="."]
 visible = false
 theme_override_constants/separation = 8
