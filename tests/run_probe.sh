@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 双进程 headless 联机回归门禁。
 #
-#   tests/run_probe.sh [端口] [draft|draft-touch-wide-host|draft-touch-wide-client|rescue|feedback|boss|boss-dodge|wide-host|wide-client] [已有截图目录]
+#   tests/run_probe.sh [端口] [draft|draft-touch-wide-host|draft-touch-wide-client|score-safe-wide-host|score-safe-wide-client|rescue|feedback|boss|boss-dodge|wide-host|wide-client] [已有截图目录]
 #
 # 做三件人工流程做不到的事：
 #   1. 自动收口两个进程的退出码（探针断言失败 → 非零退出）
@@ -22,10 +22,11 @@ case "$CASE" in
   feedback) SCENE=res://tests/feedback_lan_probe.tscn ;;
   draft) SCENE=res://tests/draft_lan_probe.tscn ;;
   draft-touch-wide-host|draft-touch-wide-client) SCENE=res://tests/draft_touch_probe.tscn ;;
+  score-safe-wide-host|score-safe-wide-client) SCENE=res://tests/score_safe_area_probe.tscn ;;
   rescue) SCENE=res://tests/rescue_lan_probe.tscn ;;
   boss) SCENE=res://tests/boss_lifecycle_probe.tscn ;;
   boss-dodge) SCENE=res://tests/boss_dodge_probe.tscn ;;
-  *) echo "用法: $0 [端口] [draft|draft-touch-wide-host|draft-touch-wide-client|rescue|feedback|boss|boss-dodge|wide-host|wide-client]" >&2; exit 2 ;;
+  *) echo "用法: $0 [端口] [draft|draft-touch-wide-host|draft-touch-wide-client|score-safe-wide-host|score-safe-wide-client|rescue|feedback|boss|boss-dodge|wide-host|wide-client]" >&2; exit 2 ;;
 esac
 HOST_DISPLAY=(--headless)
 CLIENT_DISPLAY=(--headless)
@@ -62,8 +63,8 @@ cd "$ROOT" || exit 2
 HOST_ARGS=("${PROBE_ARGS[@]}")
 CLIENT_ARGS=("${PROBE_ARGS[@]}")
 case "$CASE" in
-  draft-touch-wide-host) HOST_ARGS+=(wide) ;;
-  draft-touch-wide-client) CLIENT_ARGS+=(wide) ;;
+  draft-touch-wide-host|score-safe-wide-host) HOST_ARGS+=(wide) ;;
+  draft-touch-wide-client|score-safe-wide-client) CLIENT_ARGS+=(wide) ;;
 esac
 
 "$GODOT" "${HOST_DISPLAY[@]}" --path . "$SCENE" -- host "$PORT" "${HOST_ARGS[@]}" \

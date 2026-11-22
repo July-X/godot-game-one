@@ -20,6 +20,7 @@ const SafeArea = preload("res://scripts/battle_safe_area.gd")
 @onready var _downed_label: Label = $DownedLabel
 @onready var _controls_label: Label = $ControlsLabel
 @onready var _fps_label: Label = $FpsLabel
+@onready var _score_rows: Array[Label] = [_score_label, _level_label, _phase_label, _player_scores_label, _fps_label]
 @onready var _game_over_panel: Panel = $GameOverPanel
 @onready var _final_score_label: Label = $GameOverPanel/VBox/FinalScoreLabel
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
@@ -59,6 +60,7 @@ var _draft_prompt := ""
 const BOSS_BAR_SIZE := Vector2(520, 39)
 const EDGE_MARGIN := 18.0
 const SIDE_WIDTH := 198.0
+const SCORE_CORNER_INSET := Vector2(40.0, 32.0)
 const POWERUP_BAR_WIDTH: int = 110
 const POWERUP_BAR_HEIGHT: int = 12
 const BOSS_BONUS_LASER_CD_MAX: float = 5.0
@@ -80,6 +82,9 @@ func _ready() -> void:
 	_fps_label.visible = OS.get_cmdline_user_args().has("--fps")
 	for child in get_children():
 		_set_control_ignore_input(child)
+	for label in _score_rows:
+		label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		label.minimum_size_changed.connect(_on_score_size_changed)
 	_draft_panel.minimum_size_changed.connect(_position_draft_panel)
 	_restart_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	_restart_button.pressed.connect(Callable(get_parent(), "_restart"), CONNECT_DEFERRED)
@@ -359,14 +364,7 @@ func _layout_in_safe_area(safe: Rect2) -> void:
 	_evolution_label.position = Vector2(local_x, top + 81)
 	_evolution_label.size = Vector2(SIDE_WIDTH, 34)
 	_powerup_display.position = Vector2(local_x, top + 119)
-	var stats_y := top + 63 if NetworkManager.is_online() else top
-	var stats := [_score_label, _level_label, _phase_label, _player_scores_label, _fps_label]
-	for i in stats.size():
-		var label: Label = stats[i]
-		label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-		label.position = Vector2(other_x, stats_y + 18 * i)
-		label.size = Vector2(SIDE_WIDTH, 18)
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if local_left else HORIZONTAL_ALIGNMENT_LEFT
+	_layout_score_rows()
 	_controls_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_controls_label.position = Vector2(left, safe.end.y - 32)
 	_controls_label.size = Vector2(310, 17)
@@ -376,6 +374,27 @@ func _layout_in_safe_area(safe: Rect2) -> void:
 	if not _draft_cards.is_empty():
 		_layout_draft_cards()
 	_layout_top_rows()
+
+func _on_score_size_changed() -> void:
+	if _is_touch_platform() and _safe_rect.has_area():
+		_layout_score_rows()
+
+func _layout_score_rows() -> void:
+	var on_right := _local_peer_id() == 1
+	var touch := _is_touch_platform()
+	var y := _safe_rect.position.y + (75.0 if NetworkManager.is_online() else 12.0)
+	var edge := _safe_rect.end.x - EDGE_MARGIN if on_right else _safe_rect.position.x + EDGE_MARGIN
+	if touch:
+		# 有切口时与矩形安全区取交集，圆角余量不会重复叠加。
+		var canvas := get_viewport().get_visible_rect()
+		y = maxf(y, canvas.position.y + SCORE_CORNER_INSET.y)
+		edge = minf(edge, canvas.end.x - SCORE_CORNER_INSET.x) if on_right else maxf(edge, canvas.position.x + SCORE_CORNER_INSET.x)
+	for i in _score_rows.size():
+		var label := _score_rows[i]
+		var width := maxf(SIDE_WIDTH, label.get_combined_minimum_size().x) if touch else SIDE_WIDTH
+		label.size = Vector2(width, 18.0)
+		label.position = Vector2(edge - width if on_right else edge, y + 18.0 * i)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if on_right else HORIZONTAL_ALIGNMENT_LEFT
 
 func _layout_top_rows() -> void:
 	var center := _safe_rect.get_center().x

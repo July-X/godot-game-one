@@ -74,6 +74,22 @@ godot --path . --windowed --resolution 1600x720 --fixed-fps 60 --disable-vsync -
 
 也可换成 1280×720。分别使用 `inset-left`、`inset-right`、`inset-rounded`，日志 `[SKILL_RECT]` 会输出实际热区与边距。
 
+#### 积分区的圆角留白
+
+移动端积分区距画布横边至少 40 单位、距上边至少 32 单位。系统安全区给出更严格的边界时沿用系统位置和原边距。P1 积分在右侧，P2 积分在左侧，字号沿用原值。长分数以实际文字最小宽度向内扩展，桌面保留原锚点。
+
+在 `5b991de` 上叠半径 92 单位的圆角遮罩，19 位总分最外侧只剩 5 单位边距，比分末位被裁。修复后边距为 40，首行距顶 32。用 16:9 和 20:9 核对无切口、左右横屏切口和上切口。两个画幅的实拍各通过 19 项，两个画幅交换房主的双进程各通过 40 项，桌面通过 5 项。双人比分分别用 19 位数字，比分保持完整且与母舰血盾条无交叠。遮罩由探针绘制，手机实测待复核。
+
+```bash
+godot --headless --path . res://tests/score_safe_area_probe.tscn -- solo 0 desktop
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19931 score-safe-wide-client
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19932 score-safe-wide-host
+godot --audio-driver Dummy --windowed --resolution 1280x720 --path . \
+  res://tests/score_safe_area_probe.tscn -- solo 0 capture /已有目录
+```
+
+20:9 图形复跑使用 `--resolution 1600x720`，在 `capture` 前加 `wide`。
+
 ### 首版复跑
 
 用 Godot 4.6.2 在同机截取两版。这组历史命令使用当时版本的探针。复现基线时，将母舰首版的 `tests/battle_presentation_probe.gd` 复制到 `c26defe` 临时副本。候选版用 `verify` 校验顶部血条、选卡、输入和真实扣血。两版分别把输出写入已存在的目录。
