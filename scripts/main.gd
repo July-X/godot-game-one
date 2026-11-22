@@ -123,6 +123,7 @@ var _hitstop_last_usec: int = 0
 const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
+var _pending_scatter_spawns: Array = []
 var _pending_laser_spawns: Array = []
 var _alive_players: Dictionary = {}
 var _fallback_in_progress: bool = false
@@ -459,6 +460,7 @@ func _clear_network_runtime_state() -> void:
 	UpgradeDraft.clear_drafts()
 	_clear_rescue()
 	_pending_bullet_spawns.clear()
+	_pending_scatter_spawns.clear()
 	_pending_laser_spawns.clear()
 	_entity_target_positions.clear()
 	_player_target_positions.clear()
@@ -2032,21 +2034,29 @@ func _apply_remote_player_state(p_peer_id: int, pos: Vector2, rot: float) -> voi
 ## 子弹同步 ──────────────────────────────────────────────────
 
 ## 注册一颗子弹生成（由 enemy/boss/player 调用）
-func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float, color: Color = Color(1,1,1,1), owner_peer_id: int = -1) -> void:
+func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float, color: Color = Color(1,1,1,1), owner_peer_id: int = -1, scatter := false) -> void:
 	if not NetworkManager.is_online():
 		return
-	_pending_bullet_spawns.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b, owner_peer_id])
+	var pending := _pending_scatter_spawns if scatter else _pending_bullet_spawns
+	pending.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b, owner_peer_id])
 
 ## 每帧 flush 待发送子弹
 func _flush_bullet_spawns() -> void:
-	if _pending_bullet_spawns.is_empty():
-		return
-	var data := _pending_bullet_spawns.duplicate()
-	_pending_bullet_spawns.clear()
-	if multiplayer.is_server():
-		_rpc_spawn_bullets.rpc(data)
-	else:
-		_rpc_spawn_bullets.rpc_id(1, data)
+	if not _pending_bullet_spawns.is_empty():
+		var data := _pending_bullet_spawns.duplicate()
+		_pending_bullet_spawns.clear()
+		if multiplayer.is_server():
+			_rpc_spawn_bullets.rpc(data)
+		else:
+			_rpc_spawn_bullets.rpc_id(1, data)
+	# 一次散射的数组会超过 ENet 的 MTU。冷却已确认后，整轮弹体必须可靠送达。
+	if not _pending_scatter_spawns.is_empty():
+		var data := _pending_scatter_spawns.duplicate()
+		_pending_scatter_spawns.clear()
+		if multiplayer.is_server():
+			_rpc_spawn_scatter.rpc(data)
+		else:
+			_rpc_request_scatter.rpc_id(1, data)
 
 ## 注册激光生成（Host 广播；Client 上报 Host）
 func register_laser_spawn(pos: Vector2, angle: float, damage: float, owner_peer_id: int = -1) -> void:
@@ -2152,7 +2162,7 @@ func _flush_laser_spawns() -> void:
 	if multiplayer.is_server():
 		_rpc_spawn_lasers.rpc(data)
 	else:
-		_rpc_spawn_lasers.rpc_id(1, data)
+		_rpc_request_laser_spawns.rpc_id(1, data)
 
 ## Host → Client（或 Client → Host）：刷出子弹视觉副本
 @rpc("any_peer", "unreliable_ordered", "call_remote")
@@ -2166,6 +2176,24 @@ func _rpc_spawn_bullets(data: Array) -> void:
 			if not _alive_players.has(sender_id):
 				return
 			_rpc_spawn_bullets.rpc(data)
+	_spawn_network_bullets(data)
+
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_request_scatter(data: Array) -> void:
+	if not multiplayer.is_server():
+		return
+	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(multiplayer.get_remote_sender_id()):
+		return
+	_spawn_network_bullets(data)
+	_rpc_spawn_scatter.rpc(data)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_spawn_scatter(data: Array) -> void:
+	if not NetworkManager.is_online() or not GameState.game_running:
+		return
+	_spawn_network_bullets(data)
+
+func _spawn_network_bullets(data: Array) -> void:
 	for entry in data:
 		var bullet := Pool.acquire("bullet", _bullet_scene)
 		if bullet == null:
@@ -2199,26 +2227,27 @@ func _rpc_set_boss_bg(active: bool) -> void:
 	else:
 		BGM.play_bgm()
 
-## - Client -> Host：上报激光发射请求（Host 生成权威激光并回广播）
-## - Host -> Client：广播激光视觉（客户端仅视觉不结算伤害）
-@rpc("any_peer", "unreliable_ordered", "call_remote")
+## 技能冷却走可靠确认，已确认的激光弹体用同样的传输保证。
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_request_laser_spawns(data: Array) -> void:
+	if not multiplayer.is_server():
+		return
+	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(multiplayer.get_remote_sender_id()):
+		return
+	_spawn_network_lasers(data, false)
+	_rpc_spawn_lasers.rpc(data)
+
+@rpc("authority", "reliable", "call_remote")
 func _rpc_spawn_lasers(data: Array) -> void:
-	if not NetworkManager.is_online():
+	if not NetworkManager.is_online() or not GameState.game_running:
 		return
-	if multiplayer.is_server():
-		if not _alive_players.has(multiplayer.get_remote_sender_id()):
-			return
-		for entry in data:
-			var bolt = _laser_scene.instantiate()
-			add_child(bolt)
-			var owner_peer := int(entry[4]) if entry.size() > 4 else -1
-			bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3], owner_peer)
-		_rpc_spawn_lasers.rpc(data)
-		return
+	_spawn_network_lasers(data, true)
+
+func _spawn_network_lasers(data: Array, ghost: bool) -> void:
 	for entry in data:
 		var bolt = _laser_scene.instantiate()
 		add_child(bolt)
 		var owner_peer := int(entry[4]) if entry.size() > 4 else -1
 		bolt.setup(Vector2(entry[0], entry[1]), entry[2], entry[3], owner_peer)
-		if bolt.has_method("set_network_ghost"):
+		if ghost:
 			bolt.set_network_ghost(true)

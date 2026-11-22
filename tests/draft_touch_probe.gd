@@ -119,6 +119,15 @@ func _run() -> void:
 	_check("choosing_card_does_not_steal_left_touch", _stick._move_touch_id == 0, "")
 	_touch(0, blank, false)
 	_check("release_clears_joystick", _stick._move_touch_id == -1 and _pilot._motion.touch_move == Vector2.ZERO, "")
+	if NetworkManager.is_online():
+		var remote_pid := int(NetworkManager.connected_peers[0]) if _role == "host" else 1
+		var remote_count := 16 if _role == "host" else 32
+		var remote_laser := 3 if _role == "host" else 6
+		var received := await _wait_until(func():
+			return _shot_count("scatter", remote_pid) >= remote_count and _shot_count("laser", remote_pid) >= remote_laser, 2)
+		_check("both_peers_receive_each_other_full_skills", received
+			and _shot_count("scatter", remote_pid) == remote_count and _shot_count("laser", remote_pid) == remote_laser,
+			"remote_scatter=%d remote_laser=%d" % [_shot_count("scatter", remote_pid), _shot_count("laser", remote_pid)])
 	await _check_timeout(edge)
 	get_tree().quit(_summarize())
 

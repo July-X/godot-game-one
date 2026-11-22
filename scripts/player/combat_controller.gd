@@ -51,7 +51,7 @@ func cancel_pending_casts() -> void:
 
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
 
-func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, level: int, speed: float) -> void:
+func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, level: int, speed: float, scatter := false) -> void:
 	var owner_peer: int = _player.peer_id if is_player else -1
 	if NetworkManager.is_online():
 		## 联机统一走服务器权威：
@@ -60,7 +60,7 @@ func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, lev
 		var _m = get_tree().current_scene
 		if _m and _m.has_method("register_bullet_spawn"):
 			_m.register_bullet_spawn(pos, angle, damage, is_player, level, speed,
-			Palette.PLAYER_BULLET if is_player else Color(1, 1, 1, 1), owner_peer)
+			Palette.PLAYER_BULLET if is_player else Color(1, 1, 1, 1), owner_peer, scatter)
 		if not multiplayer.is_server():
 			return
 	var bullet := Pool.acquire("bullet", _bullet_scene)
@@ -137,7 +137,7 @@ func fire_ring_shotgun() -> void:
 	for i in range(count):
 		var a: float = base_angle + i * TAU / count
 		var offset: Vector2 = perp * 8.0 + Vector2(cos(a), sin(a)) * 4.0
-		_spawn_bullet(_player.global_position + engine_offset + offset, a, damage, true, 5, 500.0)
+		_spawn_bullet(_player.global_position + engine_offset + offset, a, damage, true, 5, 500.0, true)
 
 
 func fire_laser() -> void:

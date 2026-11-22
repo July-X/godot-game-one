@@ -276,10 +276,7 @@ func _rpc_confirm_skill_used(peer_id: int) -> void:
 	if _local_peer_id() != peer_id:
 		return
 	_pending_skill_ack.erase(_peer_key(peer_id))
-	var s := _state(peer_id)
-	s.skill_cooldown = SKILL_COOLDOWN_MAX
-	_player_states[_peer_key(peer_id)] = s
-	_sync_local_view()
+	_apply_confirmed_cooldown(peer_id, "skill_cooldown", SKILL_COOLDOWN_MAX)
 	skill_used.emit(peer_id)
 
 @rpc("any_peer", "reliable")
@@ -298,11 +295,17 @@ func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
 	if _local_peer_id() != peer_id:
 		return
 	_pending_laser_ack.erase(_peer_key(peer_id))
-	var s := _state(peer_id)
-	s.laser_cooldown = cooldown
-	_player_states[_peer_key(peer_id)] = s
-	_sync_local_view()
+	_apply_confirmed_cooldown(peer_id, "laser_cooldown", cooldown)
 	laser_used.emit(peer_id)
+
+func _apply_confirmed_cooldown(peer_id: int, field: String, cooldown: float) -> void:
+	var s := _state(peer_id)
+	s[field] = cooldown
+	var key := _peer_key(peer_id)
+	# 确认比上一次状态快照新，避免下一物理帧从旧缓存读回就绪态。
+	if _server_player_states.has(key):
+		_server_player_states[key][field] = cooldown
+	_sync_local_view()
 
 func _from_dict(data: Dictionary) -> void:
 	var previous_rescue_peer := rescue_peer_id
