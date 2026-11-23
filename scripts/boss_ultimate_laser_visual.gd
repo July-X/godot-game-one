@@ -126,7 +126,6 @@ func _draw_beam() -> void:
 
 func _draw_cooling() -> void:
 	var heat := 1.0 - clampf(_age / _duration, 0.0, 1.0)
-	for i in 11:
-		var radius := 31.0 + (i % 4) * 5.0 + 14.0 * (1.0 - heat)
-		var center := (Vector2.from_angle(i * 2.4) * radius).snapped(PIXEL)
-		draw_rect(Rect2(center, PIXEL * (2.0 if i % 3 == 0 else 1.0)), Color(EMBER, 0.62 * heat))
+	# Finish where the fading front exited; do not relight the muzzle.
+	var tip := to_local(_beam_end)
+	draw_rect(Rect2(tip - PIXEL * 2.0, PIXEL * 4.0), Color(EMBER, 0.18 * heat * heat))

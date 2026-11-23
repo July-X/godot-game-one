@@ -6,6 +6,7 @@ const BULLET := preload("res://scenes/entities/bullet.tscn")
 const START := Vector2(123, 134)
 const END := Vector2(471, 254)
 const AGE := 0.89
+const MID_TAPER_LEFT := 0.70
 const DURATION := Boss.BOSS_ULTIMATE_LASER_TRAVEL + Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS
 const OUTER := Boss.BOSS_ULTIMATE_LASER_WIDTH * 0.5
 const INNER := OUTER * Boss.ULTIMATE_LASER_INNER_RATIO
@@ -62,22 +63,24 @@ func _run() -> void:
 	await _check_foreground(tip)
 	_set_age(DURATION - 2.1)
 	var full := await _frame()
-	_set_age(DURATION - 1.0)
+	_set_age(DURATION - 1.40)
+	var first_taper := await _frame()
+	_set_age(DURATION - MID_TAPER_LEFT)
 	var taper := await _frame()
 	_set_age(DURATION - 0.04)
 	var residual := await _frame()
-	_check_capsule("late_hold", residual, END)
-	await _check_shutdown(full, taper, residual)
+	_check_capsule("late_hold", residual, END, true)
+	await _check_shutdown(full, first_taper, taper, residual)
 	_set_age(DURATION)
 	var expired := await _frame()
-	_capture("04-expired", expired)
+	_capture("05-expired", expired)
 	_check("expired_age_has_no_danger", not expired.get_used_rect().has_area())
 	_check("finish_once", _laser.finish_beam() and not _laser.finish_beam())
 	var ember := await _frame()
-	_capture("05-embers", ember)
+	_capture("06-tip-afterglow", ember)
 	var ember_rect := ember.get_used_rect()
-	_check("cooling_only_near_origin", ember_rect.has_area() and Rect2i(Vector2i(START) - Vector2i(65, 65),
-		Vector2i(131, 131)).encloses(ember_rect))
+	_check("cooling_only_at_tip", ember_rect.has_area() and Rect2i(Vector2i(END) - Vector2i(6, 6),
+		Vector2i(13, 13)).encloses(ember_rect))
 	await get_tree().create_timer(0.30).timeout
 	_check("cooling_releases_visual", not is_instance_valid(_laser) and not (await _frame()).get_used_rect().has_area())
 	print("[LASER-VISUAL] SUMMARY pass=%d failed=%d" % [_passed, _failed])
@@ -91,40 +94,44 @@ func _frame() -> Image:
 	await RenderingServer.frame_post_draw
 	return _view.get_texture().get_image()
 
-func _check_shutdown(full: Image, taper: Image, residual: Image) -> void:
-	var muzzle_sample := START.lerp(END, 0.14)
-	var tip_full := _heat_at(full, END)
-	var tip_taper := _heat_at(taper, END)
-	var muzzle_full := _heat_at(full, muzzle_sample)
-	var muzzle_taper := _heat_at(taper, muzzle_sample)
-	var muzzle_residual := _heat_at(residual, muzzle_sample)
-	print("[LASER-VISUAL] tip %.3f -> %.3f; near source %.3f -> %.3f -> %.3f" %
-		[tip_full, tip_taper, muzzle_full, muzzle_taper, muzzle_residual])
-	_check("hot_tip_fades_before_cutoff", tip_taper < tip_full * 0.75)
-	_check("cooling_front_travels_from_tip", tip_taper / tip_full < muzzle_taper / muzzle_full - 0.12)
-	_check("near_source_fades_by_final_frame", muzzle_residual < muzzle_taper * 0.80)
-	_check_capsule("mid_taper", taper, END)
+func _check_shutdown(full: Image, first_taper: Image, taper: Image, residual: Image) -> void:
+	var source := START.lerp(END, 0.14)
+	var mid := START.lerp(END, 0.50)
+	var tip := END
+	var source_early := _opacity_at(first_taper, source) / _opacity_at(full, source)
+	var mid_early := _opacity_at(first_taper, mid) / _opacity_at(full, mid)
+	var mid_late := _opacity_at(taper, mid) / _opacity_at(full, mid)
+	var tip_early := _opacity_at(first_taper, tip) / _opacity_at(full, tip)
+	var tip_late := _opacity_at(taper, tip) / _opacity_at(full, tip)
+	var tip_final := _opacity_at(residual, tip) / _opacity_at(full, tip)
+	print("[LASER-VISUAL] source %.3f; middle %.3f -> %.3f; tip %.3f -> %.3f -> %.3f" %
+		[source_early, mid_early, mid_late, tip_early, tip_late, tip_final])
+	_check("source_fades_before_middle_and_tip", source_early < 0.25 and mid_early > 0.90 and tip_early > 0.90)
+	_check("middle_fades_before_tip", mid_late < 0.25 and tip_late > 0.90)
+	_check("tip_fades_last_before_cutoff", tip_final < 0.22)
+	_check_capsule("mid_taper", taper, END, true)
 	_check_damage(END)
 	# The guest restores a mid-taper frame using the existing age, not a new
 	# wind-down event. Compare actual emitted pixels, not just local age.
 	_laser.authority_boss = null
 	_laser.set_process(false)
 	_laser.setup_beam(START, END, Boss.BOSS_ULTIMATE_LASER_TRAVEL, Boss.BOSS_ULTIMATE_LASER_WIDTH,
-		Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS, DURATION - 1.0)
+		Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS, DURATION - MID_TAPER_LEFT)
 	_laser.queue_redraw()
 	_check("remote_age_reconstructs_same_taper", (await _frame()).get_data() == taper.get_data())
 	_laser.set_process(true)
 	_laser.authority_boss = _boss
 	_capture("01-full", full)
-	_capture("02-taper", taper)
-	_capture("03-residual", residual)
+	_capture("02-early-taper", first_taper)
+	_capture("03-mid-taper", taper)
+	_capture("04-residual", residual)
 
-func _heat_at(frame: Image, point: Vector2) -> float:
+func _opacity_at(frame: Image, point: Vector2) -> float:
 	var total := 0.0
 	for dy in range(-3, 4):
 		for dx in range(-3, 4):
 			var c := frame.get_pixelv(Vector2i(point) + Vector2i(dx, dy))
-			total += c.r * 0.3 + c.g * 0.7
+			total += c.a
 	return total / 49.0
 
 func _capture(label: String, frame: Image) -> void:
@@ -132,7 +139,7 @@ func _capture(label: String, frame: Image) -> void:
 	if args.size() == 2 and args[0] == "capture":
 		_check(label + "_saved", frame.save_png(args[1].path_join(label + ".png")) == OK)
 
-func _check_capsule(label: String, frame: Image, tip: Vector2) -> void:
+func _check_capsule(label: String, frame: Image, tip: Vector2, fading := false) -> void:
 	var axis := START.direction_to(END)
 	var across := axis.orthogonal()
 	for landmark in [[START, -axis, "source_cap"], [tip, axis, "tip_cap"],
@@ -143,7 +150,16 @@ func _check_capsule(label: String, frame: Image, tip: Vector2) -> void:
 			var distance := _boss._distance_to_beam_center(Vector2(pixel) + Vector2(0.5, 0.5))
 			var opacity := frame.get_pixelv(pixel).a
 			var band := 0 if distance < 0.0 else (2 if distance <= INNER else 1)
-			matches = matches and int(opacity > 0.05) + int(opacity >= 0.80) == band
+			if fading:
+				# The narrow rails remain visible while the inside of each band fades.
+				if offset == INNER - 2:
+					matches = matches and opacity > 0.50
+				elif offset == OUTER - 2:
+					matches = matches and opacity > 0.35
+				else:
+					matches = matches and (opacity > 0.05 if band > 0 else opacity <= 0.05)
+			else:
+				matches = matches and int(opacity > 0.05) + int(opacity >= 0.80) == band
 		_check(label + "_" + landmark[2], matches)
 	var rect := frame.get_used_rect()
 	var outside := 0
