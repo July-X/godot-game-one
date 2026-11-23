@@ -63,6 +63,8 @@ func _run() -> void:
 	await _check_foreground(tip)
 	_set_age(DURATION - 2.1)
 	var full := await _frame()
+	_set_age(DURATION - 2.28)
+	_check_plasma(full, await _frame())
 	_set_age(DURATION - 1.40)
 	var first_taper := await _frame()
 	_set_age(DURATION - MID_TAPER_LEFT)
@@ -139,28 +141,37 @@ func _capture(label: String, frame: Image) -> void:
 	if args.size() == 2 and args[0] == "capture":
 		_check(label + "_saved", frame.save_png(args[1].path_join(label + ".png")) == OK)
 
+func _check_plasma(full: Image, earlier: Image) -> void:
+	var across := START.direction_to(END).orthogonal()
+	var min_fringe := 1.0
+	var max_fringe := 0.0
+	var changed := 0
+	var readable := true
+	for i in range(1, 19):
+		var center := START.lerp(END, float(i) / 20.0)
+		for side in [-1.0, 1.0]:
+			var fringe := Vector2i(center + across * (INNER + 12.0) * side)
+			var rgb := full.get_pixelv(fringe)
+			min_fringe = minf(min_fringe, rgb.a)
+			max_fringe = maxf(max_fringe, rgb.a)
+			changed += int(absf(earlier.get_pixelv(fringe).a - rgb.a) > 0.055)
+			var hot := full.get_pixelv(Vector2i(center))
+			readable = readable and hot.a > rgb.a + 0.20 and hot.g > rgb.g
+	print("[LASER-VISUAL] fringe alpha %.3f..%.3f, changing pixels %d/36" % [min_fringe, max_fringe, changed])
+	_check("plasma_varies_along_beam", max_fringe - min_fringe > 0.12)
+	_check("plasma_flows_at_a_fixed_position", changed >= 9)
+	_check("continuous_gold_core_outshines_fringe", readable)
+
 func _check_capsule(label: String, frame: Image, tip: Vector2, fading := false) -> void:
 	var axis := START.direction_to(END)
 	var across := axis.orthogonal()
 	for landmark in [[START, -axis, "source_cap"], [tip, axis, "tip_cap"],
 			[START.lerp(tip, 0.5), across, "right_side"], [START.lerp(tip, 0.5), -across, "left_side"]]:
-		var matches := true
-		for offset in [INNER - 2, INNER + 2, OUTER - 2, OUTER + 2]:
-			var pixel := Vector2i(landmark[0] + landmark[1] * offset)
-			var distance := _boss._distance_to_beam_center(Vector2(pixel) + Vector2(0.5, 0.5))
-			var opacity := frame.get_pixelv(pixel).a
-			var band := 0 if distance < 0.0 else (2 if distance <= INNER else 1)
-			if fading:
-				# The narrow rails remain visible while the inside of each band fades.
-				if offset == INNER - 2:
-					matches = matches and opacity > 0.50
-				elif offset == OUTER - 2:
-					matches = matches and opacity > 0.35
-				else:
-					matches = matches and (opacity > 0.05 if band > 0 else opacity <= 0.05)
-			else:
-				matches = matches and int(opacity > 0.05) + int(opacity >= 0.80) == band
-		_check(label + "_" + landmark[2], matches)
+		var inner := frame.get_pixelv(Vector2i(landmark[0] + landmark[1] * (INNER - 6.0))).a
+		var outer := frame.get_pixelv(Vector2i(landmark[0] + landmark[1] * (OUTER - 1.6))).a
+		var beyond := frame.get_pixelv(Vector2i(landmark[0] + landmark[1] * (OUTER + 2.0))).a
+		_check(label + "_" + landmark[2], inner > (0.14 if fading else 0.80)
+			and outer >= 0.065 and outer <= 0.24 and inner > outer + 0.03 and beyond <= 0.01)
 	var rect := frame.get_used_rect()
 	var outside := 0
 	for y in range(rect.position.y, rect.end.y):
