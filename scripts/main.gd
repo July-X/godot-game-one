@@ -1084,6 +1084,9 @@ func _on_elite_spawn_requested() -> void:
 
 const ELITE_ENTRY_SECONDS := 1.5
 
+func _elite_entry_seconds() -> float:
+	return ELITE_ENTRY_SECONDS
+
 func _spawn_elite() -> void:
 	_show_elite_warning()
 	GameState.elite_encounter_count += 1
@@ -1107,7 +1110,7 @@ func _spawn_elite() -> void:
 		_rpc_show_elite_warning.rpc()
 	add_child(_elite)
 	var tween := create_tween()
-	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), ELITE_ENTRY_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), _elite_entry_seconds()).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_elite_shield_broken_window_started() -> void:
 	var eid := -1
