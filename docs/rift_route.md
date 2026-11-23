@@ -24,6 +24,18 @@ PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21204 rift-timeout-client
 
 复跑旧版时，把当前的 `tests/run_rift_build_probe.py` 和 `tests/opening_trial_probe.gd` 复制到 `3556637` 的临时副本，导入后在该副本执行 Python 命令并附加 `--baseline`。逐机出生、逐弹发射、实际命中和失血记录在输出目录。脚本沿固定手势操作，是否能主动换线留给不提示打法的真人试玩。
 
+## 猎手击破奖励
+
+房主在猎手实际击毁时记录当局奖励。母舰按原排期在 3:30 入场。击毁猎手时，第一次破盾的暴露期为 5.5 秒，之后每次为 4.5 秒；绕行和重试回到 4.5 秒。奖励在开盾时交给当前母舰，第一次破盾时消耗。联机沿用房主盾状态、回盾预警和恢复快照。
+
+单人用真实主炮完成猎手最后一击，母舰在第 12600 帧入场。绕行、首次奖励、第二次破盾、重试的暴露期分别为 270、330、270、270 帧。双端实测分别观察到约 330 帧（房主击毁猎手）和 270 帧（绕行），已把等待运输的帧差计入容差。PR #3 的猎手开场仍待独立集成，奖励以现有击毁信号验收。
+
+```bash
+godot --headless --fixed-fps 60 --path . res://tests/rift_route_probe.tscn -- --rift-log
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21215 rift-wide-host
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21216 rift-wide-client
+```
+
 ## 复跑
 
 ### 裂隙猎手的预警与反打

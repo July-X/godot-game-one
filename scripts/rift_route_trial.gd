@@ -5,6 +5,7 @@ const CARD_TICK := 35 * 60
 const ELITE_LEG := 90 * 60
 const SETTLE_TICK := 197 * 60
 const BOSS_LEG := 210 * 60
+const HUNTER_EXPOSURE_BONUS := 1.0
 const PRACTICE_WAVES := {78: .28, 1110: .72}
 const BUILD_WAVES := [CARD_TICK + 90, CARD_TICK + 760, CARD_TICK + 1770, ELITE_LEG + 54, 138 * 60, 168 * 60]
 const LEG_NAMES := ["拦截齐射", "让卡牌改变航线", "裂隙猎手", "裂隙母舰"]
@@ -12,6 +13,7 @@ var leg := Leg.INTERCEPT
 var _draft_wait := false
 var _pending_slots: Dictionary[int, bool] = {}
 var _route_outcome := ""
+var _hunter_defeated := false
 var _remote_cues: Dictionary[int, int] = {}
 
 func _ready() -> void:
@@ -128,6 +130,14 @@ func _on_choice(pid: int, card: String, _index: int) -> void:
 func _start_route_boss() -> void:
 	_show_boss_warning()
 	_spawn_boss(5)
+	if _hunter_defeated and is_instance_valid(_boss):
+		_boss.extend_first_exposure(HUNTER_EXPOSURE_BONUS)
+		_hunter_defeated = false
+
+func _on_elite_died() -> void:
+	if _authoritative() and leg == Leg.ELITE and is_instance_valid(_elite) and _elite.route_evasion:
+		_hunter_defeated = true
+	super._on_elite_died()
 
 func _on_boss_died() -> void:
 	super._on_boss_died()

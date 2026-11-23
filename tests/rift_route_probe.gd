@@ -37,6 +37,8 @@ func _run() -> void:
 	_check("authored_card_opens_once", UpgradeDraft.has_draft(1) and UpgradeDraft.get_draft(1).cards == ["pierce", "splash", "power"])
 	_check("holds_schedule_not_global_tree", _world.trial_tick == Trial.CARD_TICK and not get_tree().paused)
 	_check("choose_once", UpgradeDraft.choose_card(1, 0) and not UpgradeDraft.choose_card(1, 1))
+	_world.trial_tick = Trial.ELITE_LEG - 1
+	await _frames(2)
 	_world.trial_tick = Trial.ELITE_LEG + 154
 	await _frames(3)
 	_check("existing_elite_spawns", is_instance_valid(_world._elite) and GameState.elite_encounter_count == 1)
@@ -48,6 +50,7 @@ func _run() -> void:
 	_check("existing_boss_spawns_once", is_instance_valid(_world._boss) and GameState.boss_encounter_count == 1)
 	if is_instance_valid(_world._boss):
 		var first_boss := _world._boss
+		await _verify_exposure("bypass", 270)
 		first_boss.take_damage(first_boss.get_max_shield_hp(), 1)
 		first_boss.take_damage(first_boss.get_network_max_health(), 1)
 	await _frames(4)
@@ -59,6 +62,13 @@ func _run() -> void:
 	_world = get_tree().current_scene
 	_check("retry_resets_trial_state", _world is Trial and _world.trial_tick < 10 and GameState.boss_encounter_count == 0
 		and GameState.get_card_stacks(1).is_empty() and not UpgradeDraft.has_draft(1))
+	await _test_hunter_reward()
+	_world._restart.call_deferred()
+	await get_tree().scene_changed
+	_world = get_tree().current_scene
+	_world.trial_tick = Trial.BOSS_LEG - 1
+	await _frames(2)
+	await _verify_exposure("retry", 270)
 	_world._player.force_kill()
 	await _frames(4)
 	_check("death_settles_trial_not_normal_hud", _world.finished and _world._result.text.begins_with("被击落")
@@ -71,3 +81,46 @@ func _run() -> void:
 		and Leaderboard.get_entries() == baseline and GameState.get_card_stacks(1).is_empty()
 		and GameState.boss_encounter_count == 0 and GameState.kills_for_next_level < 100)
 	get_tree().quit(int(_failed != 0))
+
+func _test_hunter_reward() -> void:
+	_world.trial_tick = Trial.ELITE_LEG - 1
+	await _frames(2)
+	_world.trial_tick = Trial.ELITE_LEG + 154
+	await _frames(2)
+	var hunter := _world._elite
+	if not is_instance_valid(hunter):
+		_check("hunter_spawned_for_reward", false)
+		return
+	_world._player.set_physics_process(false)
+	hunter.set_physics_process(false)
+	hunter.global_position = Vector2(640, 360)
+	hunter.take_damage(int(hunter.get_network_shield()), 1)
+	# Stage the hull at one hit and let the real projectile finish the encounter.
+	hunter.take_damage(floori((hunter.get_network_health() - 1.0) / 1.25), 1)
+	_world._hitstop_left = 0.0
+	Engine.time_scale = 1.0
+	_world._player._combat._spawn_bullet(Vector2(640, 421), -PI * .5, 4, true, 1, 700.0)
+	await _frames(15)
+	_check("main_cannon_defeats_hunter", not is_instance_valid(hunter))
+	_world.trial_tick = Trial.SETTLE_TICK - 1
+	await _frames(2)
+	_world.trial_tick = Trial.BOSS_LEG - 1
+	await _frames(2)
+	_check("defeat_does_not_move_boss_schedule", is_instance_valid(_world._boss) and _world.trial_tick == Trial.BOSS_LEG + 1)
+	await _verify_exposure("rewarded_first", 330)
+	await _verify_exposure("rewarded_second", 270)
+
+func _verify_exposure(label: String, expected: int) -> void:
+	var boss := _world._boss
+	if not is_instance_valid(boss):
+		_check(label + "_exposure", false)
+		return
+	boss._shoot_timer = 60.0
+	_world._player.set_physics_process(false)
+	boss.take_damage(boss.get_max_shield_hp(), 1)
+	var elapsed := 0
+	while not boss.has_impact_shield() and elapsed <= expected + 3:
+		await get_tree().physics_frame
+		elapsed += 1
+	print("[RIFT_QA] ", label, " exposure_frames=", elapsed)
+	_check(label + "_exposure", boss.has_impact_shield() and absi(elapsed - expected) <= 1)

@@ -148,6 +148,7 @@ var _max_shield_hp := 0.0
 ## 每轮按开盾、破盾、回盾预告推进，独立于激光序号。
 var _shield_stamp := -1
 var _exposure_left := 0.0
+var _first_exposure_bonus := 0.0
 var _laser_used_this_shield := false
 var _laser_locked_direction := Vector2.ZERO
 var _ultimate_laser_charging: bool = false
@@ -515,8 +516,13 @@ func _publish_shield_state() -> void:
 	if battle and battle.has_method("publish_boss_shield"):
 		battle.publish_boss_shield(self)
 
+func extend_first_exposure(seconds: float) -> void:
+	if _shield_stamp == ShieldPhase.RAISED:
+		_first_exposure_bonus = seconds
+
 func _break_shield() -> void:
-	_exposure_left = BOSS_EXPOSURE_SECONDS
+	_exposure_left = BOSS_EXPOSURE_SECONDS + _first_exposure_bonus
+	_first_exposure_bonus = 0.0
 	_shield_stamp += 1
 	_dodge_shift = Vector2.ZERO
 	_clear_fire_pressure()

@@ -94,6 +94,8 @@ func _run() -> void:
 	await _verify_card_impacts(trial, host_card)
 	await _verify_elite(trial)
 	if _role == "host":
+		if wide_host and is_instance_valid(trial._elite):
+			trial._elite.take_damage(ceili(trial._elite.get_network_health()), 1)
 		trial.trial_tick = Trial.SETTLE_TICK - 1
 		await get_tree().physics_frame
 		await get_tree().physics_frame
@@ -101,6 +103,9 @@ func _run() -> void:
 	var on_boss := await _wait_until(func(): return is_instance_valid(trial._boss) and trial.leg == Trial.Leg.BOSS, 4)
 	_check("only_host_advances_boss_leg", on_boss, "")
 	await _barrier("boss_observed")
+	if on_boss:
+		await _verify_exposure(trial._boss, 5.5 if wide_host else 4.5)
+		await _barrier("boss_first_exposure_observed")
 	if _role == "host" and on_boss:
 		var boss := trial._boss
 		boss.take_damage(boss.get_max_shield_hp(), 1)
@@ -112,6 +117,16 @@ func _run() -> void:
 	await _wait_seconds(.25)
 	get_tree().quit(_summarize())
 
+func _verify_exposure(boss: Node, expected: float) -> void:
+	if _role == "host":
+		boss._shoot_timer = 60.0
+		boss.take_damage(boss.get_max_shield_hp(), 1)
+	var exposed := await _wait_until(func(): return not boss.has_impact_shield(), 2)
+	var start := Engine.get_physics_frames()
+	var recharged := await _wait_until(func(): return boss.has_impact_shield(), 6.5)
+	var frames := Engine.get_physics_frames() - start
+	_check("first_exposure_matches_hunter_outcome_on_both_ends",
+		exposed and recharged and absf(frames - expected * 60.0) <= 5.0, "frames=%d expected=%.1fs" % [frames, expected])
 
 func _verify_draft_controls(trial: Trial, stick: Node, origin: Vector2, slot: int) -> void:
 	var start: Vector2 = trial._player.global_position
@@ -173,6 +188,9 @@ func _verify_card_impacts(trial: Trial, host_card: int) -> void:
 func _verify_elite(trial: Trial) -> void:
 	if _role == "host":
 		trial._clear_non_boss_entities()
+		trial.trial_tick = Trial.ELITE_LEG - 1
+		await get_tree().physics_frame
+		await get_tree().physics_frame
 		trial.trial_tick = Trial.ELITE_LEG + 154
 	if not await _wait_until(func(): return is_instance_valid(trial._elite), 3):
 		_check("route_elite_present", false, "")
