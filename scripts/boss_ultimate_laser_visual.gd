@@ -6,6 +6,7 @@ const EMBER := Color("#f16c36")
 const AMBER := Color("#ffb86b")
 const PIXEL := Vector2.ONE * 2.0
 const COOL_SECONDS := 0.22
+const WIND_DOWN_SECONDS := 2.0
 enum VisualMode { CHARGE, BEAM, COOLING }
 
 var authority_boss: Boss
@@ -117,6 +118,10 @@ func _draw_beam() -> void:
 	var radius := _beam_width * 0.5
 	beam.set_shader_parameter("path_length", path_length)
 	beam.set_shader_parameter("age", _age)
+	# The same authoritative or recovered beam age drives the exit; no extra event or timer.
+	var wind_down := minf(WIND_DOWN_SECONDS, _duration - _travel_time)
+	var elapsed := _age - (_duration - wind_down)
+	beam.set_shader_parameter("wind_down", clampf(elapsed / wind_down, 0.0, 1.0) if wind_down > 0.0 else 0.0)
 	draw_rect(Rect2(-radius, -radius, path_length + 2.0 * radius, _beam_width), Color.WHITE)
 
 func _draw_cooling() -> void:

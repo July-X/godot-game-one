@@ -156,6 +156,11 @@ func add_shake(intensity: float) -> void:
 	_camera_shake.add_trauma(intensity)
 
 
+func add_boss_laser_hit_bump() -> void:
+	if is_instance_valid(_camera_shake):
+		_camera_shake.add_soft_hit_bump()
+
+
 ## 统一反馈入口：震屏 + 命中定格 + 音效
 ## design 见 docs/Design_Decisions.md「命中反馈链」。
 ## hitstop 只在单机生效：联机会改变物理步进节奏导致两端 desync，
@@ -2049,6 +2054,8 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 		elif impact[2] == Pool.Impact.BOSS_HULL:
 			kind = Pool.Impact.BOSS_HULL
 		Pool.spawn_hit(Vector2(impact[0], impact[1]), kind)
+		if (kind == Pool.Impact.BOSS_SHIELD or kind == Pool.Impact.BOSS_HULL) and _has_active_boss() and _boss.uses_steady_hit_feedback():
+			add_boss_laser_hit_bump()
 		if not Pool.is_shield_contact(kind):
 			SFX.play_hit_confirm(SHAKE_HIT)
 	var i := 0

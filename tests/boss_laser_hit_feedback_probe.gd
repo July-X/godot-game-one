@@ -41,6 +41,9 @@ func _run() -> void:
 	var camera := _main.get_viewport().get_camera_2d()
 	var peak := 0.0
 	var peak_offset := 0.0
+	var rest_frames := 0
+	var bump_count := 0
+	var last_moving := false
 	var scaled_frames := 0
 	var max_flash := 1.0
 	var contact_fx_seen := false
@@ -55,12 +58,17 @@ func _run() -> void:
 				_strike()
 		peak = maxf(peak, _main._camera_shake._trauma)
 		peak_offset = maxf(peak_offset, camera.offset.length())
+		var moving := camera.offset.length() > 0.05
+		bump_count += int(moving and not last_moving)
+		rest_frames += int(not moving)
+		last_moving = moving
 		scaled_frames += int(not _boss._sprite.scale.is_equal_approx(Vector2.ONE * Boss.BOSS_VISUAL_SCALE))
 		max_flash = maxf(max_flash, _boss._sprite.modulate.r)
 		contact_fx_seen = contact_fx_seen or Pool._active.values().has("hit_effect")
-	print("[BOSS-HIT] fire peak_trauma=%.3f peak_offset=%.3f scaled_frames=%d max_flash=%.2f damage=%.3f" % [
-		peak, peak_offset, scaled_frames, max_flash, 1000.0 - _boss._health])
-	_check("firing_no_hit_shake", is_zero_approx(peak) and is_zero_approx(peak_offset))
+	print("[BOSS-HIT] fire peak_trauma=%.3f peak_offset=%.3f scaled_frames=%d rest_frames=%d bumps=%d max_flash=%.2f damage=%.3f" % [
+		peak, peak_offset, scaled_frames, rest_frames, bump_count, max_flash, 1000.0 - _boss._health])
+	_check("firing_light_camera_bump_without_trauma", is_zero_approx(peak) and peak_offset >= 0.8 and peak_offset <= 1.201)
+	_check("hit_bumps_do_not_stack_or_fill_the_window", rest_frames >= 20 and bump_count >= 3 and bump_count <= 5)
 	_check("firing_no_recoil", scaled_frames == 0)
 	_check("firing_subtle_local_flash", max_flash > 1.0 and max_flash <= 1.20)
 	_check("damage_unchanged", absf(end_hp - _boss._health) < 0.01)
@@ -69,6 +77,7 @@ func _run() -> void:
 	_boss._finish_ultimate_laser()
 	for i in range(12):
 		await get_tree().process_frame
+	_check("camera_returns_to_rest", camera.offset.is_zero_approx())
 	_check("flash_returns_to_normal", _boss._sprite.modulate.is_equal_approx(Color.WHITE))
 	_main._camera_shake.reset()
 	_strike()
@@ -79,7 +88,29 @@ func _run() -> void:
 	_boss._shield_hp = 1.0
 	_main._camera_shake.reset()
 	_strike()
-	_check("charging_shield_damage_without_hit_shake", is_equal_approx(_boss._shield_hp, 0.75) and is_zero_approx(_main._camera_shake._trauma))
+	_check("charging_shield_damage_without_stacked_shake", is_equal_approx(_boss._shield_hp, 0.75) and is_zero_approx(_main._camera_shake._trauma))
+	_main._camera_shake.set_offset_limit(Vector2(0.0, 0.4))
+	var margin_peak := 0.0
+	var horizontal_peak := 0.0
+	for i in range(8):
+		await get_tree().process_frame
+		margin_peak = maxf(margin_peak, absf(camera.offset.y))
+		horizontal_peak = maxf(horizontal_peak, absf(camera.offset.x))
+	_check("camera_stays_within_arena_margin", is_equal_approx(margin_peak, 0.4) and is_zero_approx(horizontal_peak))
+	_main._camera_shake.reset()
+	_main._camera_shake.add_trauma(_main.SHAKE_PLAYER_HURT)
+	_main.add_boss_laser_hit_bump()
+	_check("soft_hit_does_not_override_player_hurt", _main._camera_shake._soft_hit_left == 0.0 and _main._camera_shake._trauma > 0.0)
+	_main._camera_shake.reset()
+	_boss._is_network_ghost = true
+	_boss.apply_network_attack_window(Boss.AttackWindow.HOLD - Boss.AttackWindow.OPEN)
+	var impact := PackedFloat32Array([640.0, 175.0, Pool.Impact.BOSS_HULL])
+	_main._rpc_sync_entity_positions(PackedFloat32Array(), impact)
+	_check("replicated_laser_impact_uses_same_bump", _main._camera_shake._soft_hit_left > 0.0 and _main._camera_shake._trauma == 0.0)
+	_main._camera_shake.reset()
+	_boss.apply_network_attack_window(Boss.WINDOWS_PER_CYCLE)
+	_main._rpc_sync_entity_positions(PackedFloat32Array(), impact)
+	_check("replicated_open_window_does_not_add_bump", _main._camera_shake._soft_hit_left == 0.0)
 	print("[BOSS-HIT] SUMMARY failed=%d" % _failed)
 	get_tree().quit(1 if _failed else 0)
 

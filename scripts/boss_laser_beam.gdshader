@@ -5,6 +5,7 @@ uniform float outer_radius;
 uniform float core_radius;
 uniform float path_length;
 uniform float age;
+uniform float wind_down = 0.0;
 uniform bool beam_open = true;
 varying vec2 beam_point;
 
@@ -59,6 +60,23 @@ void fragment() {
 		}
 		float ignition = (1.0 - smoothstep(0.0, 0.18, age)) * (1.0 - smoothstep(2.0, 18.0, length(pixel)));
 		color.rgb = mix(color.rgb, vec3(1.0, 0.86, 0.57), ignition);
+	}
+	// Let the moving hot detail retreat from the tip. The dark rails remain at
+	// the exact two damage boundaries until the authoritative beam expires.
+	if (wind_down > 0.0) {
+		float along = clamp(beam_point.x / path_length, 0.0, 1.0);
+		float fade = smoothstep(0.0, 1.0, wind_down);
+		float front = (1.0 - along) * 0.74;
+		float cooling = smoothstep(front, front + 0.26, wind_down);
+		float loss = max(fade * 0.98, cooling * 0.95);
+		vec3 rail = vec3(0.28, 0.10, 0.065);
+		if (dist >= outer_radius - 3.0) {
+			rail = vec3(0.64, 0.27, 0.13);
+		}
+		if (dist <= core_radius) {
+			rail = dist >= core_radius - 2.2 ? vec3(0.79, 0.34, 0.18) : vec3(0.52, 0.21, 0.115);
+		}
+		color.rgb = mix(color.rgb, rail, loss);
 	}
 	COLOR = color;
 }

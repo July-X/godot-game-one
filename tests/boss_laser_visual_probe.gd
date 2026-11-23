@@ -60,12 +60,22 @@ func _run() -> void:
 	_check_capsule("advancing", advancing, tip)
 	_check_damage(tip)
 	await _check_foreground(tip)
+	_set_age(DURATION - 2.1)
+	var full := await _frame()
+	_set_age(DURATION - 1.0)
+	var taper := await _frame()
 	_set_age(DURATION - 0.04)
-	_check_capsule("late_hold", await _frame(), END)
+	var residual := await _frame()
+	_check_capsule("late_hold", residual, END)
+	await _check_shutdown(full, taper, residual)
 	_set_age(DURATION)
-	_check("expired_age_has_no_danger", not (await _frame()).get_used_rect().has_area())
+	var expired := await _frame()
+	_capture("04-expired", expired)
+	_check("expired_age_has_no_danger", not expired.get_used_rect().has_area())
 	_check("finish_once", _laser.finish_beam() and not _laser.finish_beam())
-	var ember_rect := (await _frame()).get_used_rect()
+	var ember := await _frame()
+	_capture("05-embers", ember)
+	var ember_rect := ember.get_used_rect()
 	_check("cooling_only_near_origin", ember_rect.has_area() and Rect2i(Vector2i(START) - Vector2i(65, 65),
 		Vector2i(131, 131)).encloses(ember_rect))
 	await get_tree().create_timer(0.30).timeout
@@ -80,6 +90,47 @@ func _frame() -> Image:
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	return _view.get_texture().get_image()
+
+func _check_shutdown(full: Image, taper: Image, residual: Image) -> void:
+	var muzzle_sample := START.lerp(END, 0.14)
+	var tip_full := _heat_at(full, END)
+	var tip_taper := _heat_at(taper, END)
+	var muzzle_full := _heat_at(full, muzzle_sample)
+	var muzzle_taper := _heat_at(taper, muzzle_sample)
+	var muzzle_residual := _heat_at(residual, muzzle_sample)
+	print("[LASER-VISUAL] tip %.3f -> %.3f; near source %.3f -> %.3f -> %.3f" %
+		[tip_full, tip_taper, muzzle_full, muzzle_taper, muzzle_residual])
+	_check("hot_tip_fades_before_cutoff", tip_taper < tip_full * 0.75)
+	_check("cooling_front_travels_from_tip", tip_taper / tip_full < muzzle_taper / muzzle_full - 0.12)
+	_check("near_source_fades_by_final_frame", muzzle_residual < muzzle_taper * 0.80)
+	_check_capsule("mid_taper", taper, END)
+	_check_damage(END)
+	# The guest restores a mid-taper frame using the existing age, not a new
+	# wind-down event. Compare actual emitted pixels, not just local age.
+	_laser.authority_boss = null
+	_laser.set_process(false)
+	_laser.setup_beam(START, END, Boss.BOSS_ULTIMATE_LASER_TRAVEL, Boss.BOSS_ULTIMATE_LASER_WIDTH,
+		Boss.BOSS_ULTIMATE_LASER_HOLD_SECONDS, DURATION - 1.0)
+	_laser.queue_redraw()
+	_check("remote_age_reconstructs_same_taper", (await _frame()).get_data() == taper.get_data())
+	_laser.set_process(true)
+	_laser.authority_boss = _boss
+	_capture("01-full", full)
+	_capture("02-taper", taper)
+	_capture("03-residual", residual)
+
+func _heat_at(frame: Image, point: Vector2) -> float:
+	var total := 0.0
+	for dy in range(-3, 4):
+		for dx in range(-3, 4):
+			var c := frame.get_pixelv(Vector2i(point) + Vector2i(dx, dy))
+			total += c.r * 0.3 + c.g * 0.7
+	return total / 49.0
+
+func _capture(label: String, frame: Image) -> void:
+	var args := OS.get_cmdline_user_args()
+	if args.size() == 2 and args[0] == "capture":
+		_check(label + "_saved", frame.save_png(args[1].path_join(label + ".png")) == OK)
 
 func _check_capsule(label: String, frame: Image, tip: Vector2) -> void:
 	var axis := START.direction_to(END)

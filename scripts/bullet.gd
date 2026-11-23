@@ -296,8 +296,10 @@ func _spawn_hit(impact: Pool.Impact, steady_camera: bool = false) -> void:
 		var audible := _is_player_bullet and not Pool.is_shield_contact(impact)
 		if not steady_camera:
 			scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, audible)
-		elif audible:
-			SFX.play_hit_confirm(scene.SHAKE_HIT)
+		else:
+			scene.add_boss_laser_hit_bump()
+			if audible:
+				SFX.play_hit_confirm(scene.SHAKE_HIT)
 	Pool.spawn_hit(global_position, impact)
 	if _is_player_bullet and NetworkManager.is_online() and multiplayer.is_server():
 		if scene and scene.has_method("register_projectile_impact"):

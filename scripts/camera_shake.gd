@@ -16,11 +16,16 @@ var _trauma: float = 0.0
 var _shake_offset: Vector2 = Vector2.ZERO
 var _camera: Camera2D = null
 var _offset_limit := Vector2.INF
+var _soft_hit_left := 0.0
+var _soft_hit_cooldown := 0.0
 
 const MAX_OFFSET: float = 12.0
 const DECAY_PER_SECOND: float = 1.6
 ## 小于这个值就不摇了，避免连续小事件把画面搞得一直在抖
 const REST_THRESHOLD: float = 0.02
+const SOFT_HIT_OFFSET := 1.2
+const SOFT_HIT_SECONDS := 0.12
+const SOFT_HIT_INTERVAL := 0.22
 
 
 func _process(delta: float) -> void:
@@ -28,18 +33,29 @@ func _process(delta: float) -> void:
 		_camera = get_viewport().get_camera_2d()
 		if _camera == null:
 			return
-	if _trauma <= 0.0:
-		if _shake_offset != Vector2.ZERO:
-			_shake_offset = Vector2.ZERO
-			_camera.offset = Vector2.ZERO
+	_soft_hit_left = maxf(0.0, _soft_hit_left - delta)
+	_soft_hit_cooldown = maxf(0.0, _soft_hit_cooldown - delta)
+	var offset := Vector2.ZERO
+	if _trauma > 0.0:
+		_trauma = maxf(_trauma - DECAY_PER_SECOND * delta, 0.0)
+		var amount := _trauma * _trauma * MAX_OFFSET
+		offset = Vector2(randf_range(-amount, amount), randf_range(-amount, amount))
+		if _trauma <= REST_THRESHOLD:
+			_trauma = 0.0
+			offset = Vector2.ZERO
+	elif _soft_hit_left > 0.0:
+		# 单方向轻推再回中；不累加 trauma，不覆盖同步的强震屏。
+		offset.y = SOFT_HIT_OFFSET * sin(PI * _soft_hit_left / SOFT_HIT_SECONDS)
+	if offset != Vector2.ZERO or _shake_offset != Vector2.ZERO:
+		_shake_offset = offset
+		_camera.offset = offset.clamp(-_offset_limit, _offset_limit)
+
+## 密集命中不会延长动画，留出静止帧；已有显著震屏时不启动。
+func add_soft_hit_bump() -> void:
+	if _soft_hit_cooldown > 0.0 or _trauma > 0.0:
 		return
-	_trauma = maxf(_trauma - DECAY_PER_SECOND * delta, 0.0)
-	var amount: float = _trauma * _trauma * MAX_OFFSET
-	_shake_offset = Vector2(randf_range(-amount, amount), randf_range(-amount, amount))
-	_camera.offset = _shake_offset.clamp(-_offset_limit, _offset_limit)
-	if _trauma <= REST_THRESHOLD:
-		_trauma = 0.0
-		_camera.offset = Vector2.ZERO
+	_soft_hit_left = SOFT_HIT_SECONDS
+	_soft_hit_cooldown = SOFT_HIT_INTERVAL
 
 
 ## 累加震动强度，自动夹在 0~1。
@@ -53,5 +69,8 @@ func set_offset_limit(limit: Vector2) -> void:
 
 func reset() -> void:
 	_trauma = 0.0
+	_soft_hit_left = 0.0
+	_soft_hit_cooldown = 0.0
+	_shake_offset = Vector2.ZERO
 	if _camera != null and is_instance_valid(_camera):
 		_camera.offset = Vector2.ZERO
