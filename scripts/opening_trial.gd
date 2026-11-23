@@ -128,14 +128,10 @@ func _add_fighter(role: String, kind: int, station: Vector2, fire := 0, health :
 	# 聚团间距按画布单位收拢，两种画幅都使用实际 78 单位的溅射规则。
 	var origin := field * Vector2(station.x, -.07) + Vector2(side * 2.3, 0.0)
 	var target := field * station + Vector2(side, 0.0)
-	var ship := _spawn_enemy_at(kind, origin)
+	var ship := _spawn_enemy_at(kind, origin, health, false)
 	ship.name = "%d-%s" % [trial_tick, role]
 	ship.set_physics_process(false)
 	ship.rotation = PI
-	ship.drop_chance = 0.0
-	if health > 0:
-		ship.health = health
-		ship.get_node("HealthBar").max_value = health
 	_fighters[role] = {
 		"ship": ship, "spawn": trial_tick, "origin": origin, "target": target,
 		"fire": trial_tick + fire if fire > 0 else -1,
@@ -202,16 +198,19 @@ func _draw_cues() -> void:
 		var ink := Color("#ffbd75") if progress < .66 else Color("#ff875c")
 		_cues.draw_arc(center, lerpf(38, 30, progress), -PI * .5, -PI * .5 + TAU * lerpf(.25, 1, progress),
 			30, ink, 2.5, true)
-		if progress > .66:
-			for offset: float in FAN_EXIT_OFFSETS:
-				var direction := _fan_direction(ship.global_position, offset)
-				_cues.draw_line(center + direction * 32, center + direction * 60, Color(1.0, .51, .33, .48), 1.5, true)
+		_draw_fan_heading(center, ship.global_position, progress)
 	for burst in _breaks:
 		var life := 1.0 - float(int(burst.until) - trial_tick) / BREAK_TICKS
 		for i in 4:
 			var angle := i * PI * .5 + life * .22
 			_cues.draw_arc(burst.at, lerpf(30, 47, life), angle + .12, angle + lerpf(1.19, .57, life),
 				8, Color(1.0, .82, .58, .9 * (1.0 - life)), 2.3, true)
+
+func _draw_fan_heading(center: Vector2, at: Vector2, progress: float) -> void:
+	if progress > .66:
+		for offset: float in FAN_EXIT_OFFSETS:
+			var direction := _fan_direction(at, offset)
+			_cues.draw_line(center + direction * 32, center + direction * 60, Color(1.0, .51, .33, .48), 1.5, true)
 
 func _update_countdown() -> void:
 	_hud.set_wave_phase("开场试飞 · %d 秒" % ((END_TICK - trial_tick) / 60), Color.LIGHT_CYAN)

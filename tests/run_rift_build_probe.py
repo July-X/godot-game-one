@@ -1,9 +1,17 @@
-"""Fixed touch-input replays of the first real build wave in Rift Route."""
+"""Replay two Rift Route waves through the real joystick and projectile paths."""
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+
+PROFILES = [
+    ("pierce", "column"), ("pierce", "wing"),
+    ("splash", "cluster"), ("splash", "column"),
+    ("power", "wing"), ("power", "column"), ("power", "dodge"),
+]
+WAVES = (2190, 2860)
+EMITTERS = ("column-rear", "cluster-rear", "wing")
 
 
 def run(out, card, route, wide):
@@ -21,32 +29,51 @@ def run(out, card, route, wide):
     return json.loads(next(x.split(" ", 1)[1] for x in data.splitlines() if x.startswith("[OPENING_DATA] ")))
 
 
-def first_contacts(row, suffix):
-    return row["hits"].get(f"2190-{suffix}", [])
+def check_candidate(rows):
+    by_route = {(r["card"], r["route"]): r for r in rows}
+    for tick in WAVES:
+        wing = f"{tick}-wing"
+        column = f"{tick}-column-rear"
+        cluster = f"{tick}-cluster-rear"
+        pierce = by_route["pierce", "column"]
+        preceding_shots = {
+            hit[1] for rank in ("front", "middle")
+            for hit in pierce["hits"][f"{tick}-column-{rank}"]
+        }
+        assert any(h[1] in preceding_shots and h[3] == "pierce" for h in pierce["hits"][column])
+        assert any(h[3] == "splash" for h in by_route["splash", "cluster"]["hits"][cluster])
+        strong = by_route["power", "wing"]["hits"][wing]
+        regular = by_route["pierce", "wing"]["hits"][wing]
+        assert len(strong) == 1 and strong[0][-1] <= 0
+        assert regular[0][-1] > 0 and len(regular) >= 2
+        for card, route in PROFILES:
+            row = by_route[card, route]
+            if route == "dodge":
+                assert sum(len(row["fans"].get(f"{tick}-{name}", [])) for name in EMITTERS) >= 6
+                continue
+            aimed = f"{tick}-" + (route if route == "wing" else f"{route}-rear")
+            assert aimed in row["deaths"] and aimed not in row["fans"], (card, route, aimed)
+            assert any(f"{tick}-{name}" in row["fans"] for name in EMITTERS)
+    assert all(not any(loss[1] == "hull" for loss in row["losses"]) for row in rows)
 
 
-def main(out):
+def main(out, baseline):
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     for wide in (False, True):
-        pierce = run(out, "pierce", "column", wide)
-        splash = run(out, "splash", "cluster", wide)
-        wing = run(out, "power", "wing", wide)
-        wing_control = run(out, "pierce", "wing", wide)
-        avoid = run(out, "power", "dodge", wide)
-        assert len({json.dumps(d["births"]) for d in [pierce, splash, wing, wing_control, avoid]}) == 1
-        f = {r[1] for r in first_contacts(pierce, "column-front")}
-        assert any(h[1] in f and h[3] == "pierce" for h in first_contacts(pierce, "column-rear"))
-        assert any(h[3] == "splash" for h in first_contacts(splash, "cluster-front"))
-        assert first_contacts(wing, "wing")[0][-1] <= 0 < first_contacts(wing_control, "wing")[0][-1]
-        assert first_contacts(wing, "wing")[0][0] < wing_control["fans"]["2190-wing"][0][0]
-        assert not [r for r in avoid["losses"] if r[1] == "hull"]
-        rows.extend([pierce, splash, wing, wing_control, avoid])
+        pair = [run(out, card, route, wide) for card, route in PROFILES]
+        assert len({json.dumps(d["births"]) for d in pair}) == 1
+        if not baseline:
+            check_candidate(pair)
+        for row in pair:
+            fans = [[len(row["fans"].get(f"{tick}-{name}", [])) for name in EMITTERS] for tick in WAVES]
+            print(row["view"], row["card"], row["route"], fans)
+        rows.extend(pair)
     (out / "replays.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("[RIFT BUILD] PASS: 10 fixed-touch replays, two aspect ratios")
+    print("[RIFT BUILD] PASS: 14 fixed-touch replays, two waves per replay")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python3 tests/run_rift_build_probe.py <log-directory>")
-    main(Path(sys.argv[1]).resolve())
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--baseline"):
+        raise SystemExit("usage: python3 tests/run_rift_build_probe.py <log-directory> [--baseline]")
+    main(Path(sys.argv[1]).resolve(), "--baseline" in sys.argv[2:])

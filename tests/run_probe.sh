@@ -29,10 +29,10 @@ case "$CASE" in
   boss|boss-kill) SCENE=res://tests/boss_lifecycle_probe.tscn ;;
   boss-coop) SCENE=res://tests/boss_coop_probe.tscn ;;
   boss-aggro|boss-aggro-mirror) SCENE=res://tests/boss_aggro_probe.tscn ;;
-  rift-wide-host|rift-wide-client) SCENE=res://tests/rift_route_lan_probe.tscn ;;
+  rift-wide-host|rift-wide-client|rift-timeout-host|rift-timeout-client) SCENE=res://tests/rift_route_lan_probe.tscn ;;
   hunter-wide-host|hunter-wide-client) SCENE=res://tests/rift_hunter_probe.tscn ;;
   boss-dodge) SCENE=res://tests/boss_dodge_probe.tscn ;;
-  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-coop|boss-aggro|boss-aggro-mirror|rift-wide-{host,client}|hunter-wide-{host,client}|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
+  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-coop|boss-aggro|boss-aggro-mirror|rift-wide-{host,client}|rift-timeout-{host,client}|hunter-wide-{host,client}|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
 esac
 HOST_DISPLAY=(--headless)
 CLIENT_DISPLAY=(--headless)

@@ -94,7 +94,7 @@ func _run() -> void:
 		_capture_from = 132
 		_capture_to = 332
 	elif "--first-build" in args or _rift_build:
-		finish = _build_at + 360
+		finish = Rift.BUILD_WAVES[1] + 420 if _rift_build else _build_at + 360
 		_capture_from = _build_at + 65
 		_capture_to = _build_at + 288
 	elif "--finale-clip" in args:
@@ -303,6 +303,9 @@ func _touch(at: Vector2, pressed: bool, index := 0) -> void:
 func _steer(route: String) -> void:
 	var now := trial.trial_tick
 	var target := trial.field * Vector2(.5, .78)
+	if _rift_build and now >= _draft_at:
+		_drag_towards(_rift_lane_target(route), false)
+		return
 	var final_age := now - Opening.FINALE_TICK
 	if _push_finale and final_age >= -108 and final_age <= 302:
 		var axis := 1.0 - Opening.CLUSTER_X + Opening.FINALE_SHIFT
@@ -345,8 +348,29 @@ func _steer(route: String) -> void:
 			target.y -= clampf((age - 260) * 1.6, 0, 145)
 	else:
 		target.y = trial._player.position.y
+	_drag_towards(target, route == "dodge" and final_age >= 0)
+
+func _rift_lane_target(route: String) -> Vector2:
+	var now := trial.trial_tick
+	var mirrored := now >= int(Rift.BUILD_WAVES[1]) - 85
+	var age: int = now - int(Rift.BUILD_WAVES[1] if mirrored else _build_at)
+	var target := trial.field * Vector2(.5, .79)
+	if route == "dodge" or age < -75 or age > 255:
+		return target
+	var target_x: float = {"column": .26, "cluster": .65, "wing": .86}[route]
+	if mirrored:
+		target_x = 1.0 - target_x
+	var side := -1.0 if mirrored else 1.0
+	target.x = trial.field.x * target_x - (22.0 * side if route == "wing" else 0.0)
+	var turn: int = {"column": 110, "cluster": 126, "wing": 120}[route]
+	if age >= turn:
+		target.x = trial._player.position.x
+		target.y -= clampf((age - turn) * 1.7, 0.0, 142.0)
+	return target
+
+func _drag_towards(target: Vector2, avoid_bullets: bool) -> void:
 	var desired: Vector2 = ((target - trial._player.position) * 7).limit_length(trial._player.move_speed)
-	if route == "dodge" and final_age >= 0:
+	if avoid_bullets:
 		desired = _avoid_visible_bullets(desired)
 	var drag := InputEventScreenDrag.new()
 	drag.position = origin + desired / trial._player.move_speed * stick.joystick_radius

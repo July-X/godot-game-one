@@ -3,10 +3,16 @@ extends "res://tests/boss_coop_probe.gd"
 const Route := preload("res://scenes/rift_route_trial.tscn")
 const Trial := preload("res://scripts/rift_route_trial.gd")
 const Elite := preload("res://scripts/elite.gd")
+const Mobile := preload("res://scenes/ui/mobile_controls.tscn")
+var _last_choice_frame := 0
+var _last_choice_tick := 0
+var _last_choice_source := ""
 
 func _run() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var wide_host := OS.get_cmdline_user_args()[2] == "rift-wide-host"
+	var mode := OS.get_cmdline_user_args()[2]
+	var wide_host := mode.ends_with("-host")
+	var use_timeout := mode.begins_with("rift-timeout-")
 	var wide := (_role == "host") == wide_host
 	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
@@ -15,36 +21,64 @@ func _run() -> void:
 	if not _require("real_enet", err == OK and await _wait_until(func(): return NetworkManager.is_online() and not NetworkManager.connected_peers.is_empty(), 8)):
 		return
 	var trial := Route.instantiate() as Trial
+	var stick := Mobile.instantiate()
+	trial.add_child(stick)
 	get_tree().root.add_child(trial)
 	get_tree().current_scene = trial
 	_main = trial
 	if not _require("stable_player_slots", await _wait_until(func(): return _cond_both_players() and NetworkManager.recovery.is_reserved(), 6)):
 		return
 	_guest = NetworkManager.recovery.guest_slot
-	trial._player.set_physics_process(false)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Input.emulate_mouse_from_touch = true
 	var slot := NetworkManager.local_player_id()
 	var host_card := 0 if wide_host else 1
+	if use_timeout:
+		host_card = 1 - host_card
 	var guest_card := 1 - host_card
+	var slow := (_role == "host") != wide_host
+	var mine := host_card if _role == "host" else guest_card
 	var score_rows := Leaderboard.get_entries()
 	seed(90220)
+	if _role == "host":
+		UpgradeDraft.card_chosen.connect(func(pid: int, _card: String, _index: int):
+			if not trial._draft_wait:
+				_last_choice_frame = Engine.get_physics_frames()
+				_last_choice_tick = trial.trial_tick
+				_last_choice_source = UpgradeDraft.get_draft(pid).source)
+	var touch_origin := Vector2(132, 558)
+	_touch(touch_origin, 0, true)
+	_drag(touch_origin + Vector2(0, 72))
 	await _barrier("rift_ready")
 	if _role == "host":
 		trial.trial_tick = Trial.CARD_TICK - 1
 	var opened := await _wait_until(func(): return UpgradeDraft.has_draft(slot), 3)
 	_check("fixed_options_on_both_devices", opened and UpgradeDraft.get_draft(slot).cards == ["pierce", "splash", "power"], "")
+	await _verify_draft_controls(trial, stick, touch_origin, slot)
 	await _barrier("both_drafts")
-	if _role == "host":
-		UpgradeDraft.choose_card(slot, host_card)
+	if not slow:
+		_tap(trial._hud._draft_card_buttons[mine].get_global_rect().get_center())
 	await _wait_seconds(.35)
-	_check("wave_waits_for_other_choice", trial._draft_wait and trial.trial_tick == Trial.CARD_TICK if _role == "host" else UpgradeDraft.has_draft(slot), "")
-	if _role == "client":
-		UpgradeDraft.choose_card(slot, guest_card, "tap")
+	_check("wave_waits_for_other_choice", trial._draft_wait and trial.trial_tick == Trial.CARD_TICK
+		if _role == "host" else UpgradeDraft.has_draft(slot) == slow, "")
+	await _barrier("draft_hold_checked")
+	if slow and not use_timeout:
+		_tap(trial._hud._draft_card_buttons[mine].get_global_rect().get_center())
 	var both := await _wait_until(func():
 		return (GameState.get_card_count(Trial.OFFER[host_card], 1) == 1
-			and GameState.get_card_count(Trial.OFFER[guest_card], _guest) == 1), 3.0)
+			and GameState.get_card_count(Trial.OFFER[guest_card], _guest) == 1), 11.5 if use_timeout else 3.0)
 	_check("distinct_cards_and_single_grants", both, "")
 	var cue := await _wait_until(func(): return not trial._fighters.is_empty(), 4.5)
 	_check("host_authored_wave_shared", cue and NetworkManager.battle_size(trial) == Vector2(1280, 720), "")
+	if _role == "host":
+		var frames := Engine.get_physics_frames() - _last_choice_frame
+		_check("wave_schedule_starts_after_last_confirmation_or_timeout", cue and _last_choice_tick == Trial.CARD_TICK
+			and trial.trial_tick == Trial.BUILD_WAVES[0] and absi(frames - 90) <= 1
+			and _last_choice_source == ("timeout" if use_timeout else "tap"),
+			"source=%s last_tick=%d wave_tick=%d elapsed=%d" % [_last_choice_source, _last_choice_tick, trial.trial_tick, frames])
+	var wing_present := await _wait_until(func():
+		return get_tree().get_nodes_in_group("ordinary_enemies").any(func(ship: Node): return ship.health == Trial.ARMOR_HP), 1.5)
+	_check("armored_flank_starts_with_shared_health", wing_present, "")
 	await _barrier("wave_observed")
 	if _role == "client":
 		NetworkManager.recovery.set_background(true)
@@ -77,6 +111,40 @@ func _run() -> void:
 	await _barrier("rift_complete")
 	await _wait_seconds(.25)
 	get_tree().quit(_summarize())
+
+
+func _verify_draft_controls(trial: Trial, stick: Node, origin: Vector2, slot: int) -> void:
+	var start: Vector2 = trial._player.global_position
+	_drag(origin + Vector2(87, 0))
+	var laser: Vector2 = trial._hud._skill_slots[0].button.get_global_rect().get_center()
+	_tap(laser)
+	var used := await _wait_until(func():
+		return (GameState.get_laser_cooldown(slot) > 0.0 and trial._player.global_position.x > start.x + 5.0), 1.4)
+	_check("draft_keeps_left_drag_and_second_finger_cast", used and stick._move_touch_id == 0 and UpgradeDraft.has_draft(slot),
+		"owner=%d drag=%s laser=%.2f moved=%.1f" % [stick._move_touch_id, trial._player._motion.touch_move,
+			GameState.get_laser_cooldown(slot), trial._player.global_position.x - start.x])
+	_touch(origin + Vector2(87, 0), 0, false)
+	_check("draft_release_clears_move", stick._move_touch_id == -1, "")
+	trial._player.set_physics_process(false)
+
+
+func _tap(at: Vector2) -> void:
+	_touch(at, 1, true)
+	_touch(at, 1, false)
+
+
+func _touch(at: Vector2, index: int, pressed: bool) -> void:
+	var event := InputEventScreenTouch.new()
+	event.position = at
+	event.index = index
+	event.pressed = pressed
+	get_viewport().push_input(event, true)
+
+
+func _drag(at: Vector2) -> void:
+	var event := InputEventScreenDrag.new()
+	event.position = at
+	get_viewport().push_input(event, true)
 
 
 func _verify_card_impacts(trial: Trial, host_card: int) -> void:

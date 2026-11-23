@@ -898,7 +898,7 @@ static func compute_post_elite_multiplier(elite_count: int) -> float:
 ## 章节主题（wave_director.gd CHAPTER_THEMES）改的是**怎么躲**而不是"躲不躲得过"：
 ## 弹速变快的同时敌人变脆、开火变密，玩家的最优应对从"站桩输出"变成
 ## "贴脸抢输出窗口"。手感因此一章一换，而难度总量没变。
-func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> CharacterBody2D:
+func _spawn_enemy_at(enemy_type: int, pos: Vector2, authored_health := 0, can_drop := true) -> CharacterBody2D:
 	var enemy = _enemy_scene.instantiate()
 	enemy.position = pos
 	enemy.enemy_type = enemy_type
@@ -908,12 +908,12 @@ func _spawn_enemy_at(enemy_type: int, pos: Vector2) -> CharacterBody2D:
 	var theme_health: float = float(theme.get("enemy_health", 1.0))
 	var theme_fire: float = float(theme.get("fire_rate", 1.0))
 	var theme_bullet: float = float(theme.get("bullet_speed", 1.0))
-	enemy.health = maxi(1, int(float(int(1 + GameState.level / 2 + enemy_type) * mult) * theme_health))
+	enemy.health = authored_health if authored_health > 0 else maxi(1, int(float(int(1 + GameState.level / 2 + enemy_type) * mult) * theme_health))
 	enemy.bullet_speed_mult = theme_bullet
 	enemy.move_speed = compute_enemy_speed(GameState.level, enemy_type,
 		GameState.elite_encounter_count, _enemy_speed_cap())
 	enemy.shoot_cooldown = max((2.0 - GameState.level * 0.12) / (mult * theme_fire), 0.4)
-	enemy.drop_chance = 0.20 + enemy_type * 0.12
+	enemy.drop_chance = 0.20 + enemy_type * 0.12 if can_drop else 0.0
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	enemy.enemy_died.connect(_on_enemy_died)

@@ -55,7 +55,10 @@ func _physics_process(_delta: float) -> void:
 		_log("wave", {"id": trial_tick, "type": "intercept"})
 	if trial_tick in BUILD_WAVES:
 		var slot := BUILD_WAVES.find(trial_tick)
-		_add_build(0.0 if slot == 0 else .025, slot % 2 == 1)
+		if slot < 2:
+			_add_intercept_wave(slot == 1)
+		else:
+			_add_build(.025, slot % 2 == 1)
 		_log("wave", {"id": slot, "type": "build", "mirrored": slot % 2 == 1})
 	if trial_tick == ELITE_LEG:
 		_set_leg(Leg.ELITE)
@@ -82,6 +85,26 @@ func _physics_process(_delta: float) -> void:
 		_cues.queue_redraw()
 	if trial_tick % 60 == 0 and (trial_tick < SETTLE_TICK or trial_tick >= BOSS_LEG):
 		_update_countdown()
+
+func _add_intercept_wave(mirrored: bool) -> void:
+	var column := .74 if mirrored else .26
+	var cluster := .35 if mirrored else .65
+	var wing := .14 if mirrored else .86
+	var side := -1.0 if mirrored else 1.0
+	_add_fighter("column-front", 0, Vector2(column, .54), 0, 0, -15.0 * side)
+	_add_fighter("column-middle", 0, Vector2(column, .405), 0, 0, 19.0 * side)
+	_add_fighter("column-rear", 1, Vector2(column, .27), 225 if mirrored else 201)
+	_add_fighter("cluster-front", 0, Vector2(cluster, .42))
+	_add_fighter("cluster-neighbor", 0, Vector2(cluster, .39), 0, 0, -47.0 * side)
+	_add_fighter("cluster-rear", 1, Vector2(cluster, .39), 194 if mirrored else 220, 0, 47.0 * side)
+	_add_fighter("wing", 1, Vector2(wing, .38), 208 if mirrored else 193, ARMOR_HP)
+
+func _draw_fan_heading(center: Vector2, at: Vector2, progress: float) -> void:
+	var ink := Color(1.0, .60, .40, lerpf(.3, .82, progress))
+	for offset: float in FAN_EXIT_OFFSETS:
+		var direction := _fan_direction(at, offset)
+		_cues.draw_dashed_line(center + direction * 34, center + direction * lerpf(82, 140, progress),
+			ink, 1.5, 9.0, false)
 
 func _open_route_drafts() -> void:
 	var slots: Array[int] = [1]
