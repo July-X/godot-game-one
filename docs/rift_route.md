@@ -36,6 +36,23 @@ PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21215 rift-wide-host
 PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21216 rift-wide-client
 ```
 
+## 母舰诱敌
+
+裂隙航道的母舰在护盾期选定一名机师。先用机体边缘的短标记告知目标，前 0.30 秒根据目标位置决定锁向，随后画出实际定向脉冲的有伤害轮廓。锁向后仍有 0.60 秒横移时间，已锁定的轨迹和端点保持固定。队友可利用侧面交火。如果锁定时同航线会挤掉队友的安全空间，母舰撤销这一发。单人按同一节奏走位反打。
+
+双人仍用房主记录的实结伤害与站位选稳定槽位。跟踪、锁定和发射复用现有按阶段更新与恢复快照，机体标记在本地绘制。普通局沿用原脉冲。大厅协议升级，避免不识别跟踪阶段的旧版混局。终极激光的外焰判定保留独立验收。
+
+Godot 4.6.2 用实际主炮命中提供施压样本，再用真实位移和主炮验证反打。单人和双人的目标均可横移无伤。双人侧翼样本再削去 16–24 点护盾，锁定方向随早期横移偏转 3.61°–6.41°。20:9 与 4:3 交换房主，P1 或 P2 都能连续成为目标，另一机打出更高实际压力后目标切换。更换传输连接后恢复同一个机体标记，破盾可以清掉这次未发射的脉冲。
+
+```bash
+godot --headless --path . res://tests/rift_inducement_probe.tscn -- solo 0 solo
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21243 rift-induce-host "$(mktemp -d)"
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21244 rift-induce-client "$(mktemp -d)"
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21224 boss-coop
+```
+
+外焰单独用 `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21228 rift-outer-burn` 检查。两机距束轴各 59 单位时安全；同时各距 39 单位时，`3556637` 与本版都复现 P1 50→49、P2 50→50。旧逻辑共用外圈伤害累计器。这条断言预期在修复前失败，未随航道诱敌改动。手机和平板互换房主、真人能否自己理解锁向和主动配合仍待验。
+
 ## 复跑
 
 ### 裂隙猎手的预警与反打

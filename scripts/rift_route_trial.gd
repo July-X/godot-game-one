@@ -130,9 +130,11 @@ func _on_choice(pid: int, card: String, _index: int) -> void:
 func _start_route_boss() -> void:
 	_show_boss_warning()
 	_spawn_boss(5)
-	if _hunter_defeated and is_instance_valid(_boss):
-		_boss.extend_first_exposure(HUNTER_EXPOSURE_BONUS)
-		_hunter_defeated = false
+	if is_instance_valid(_boss):
+		_boss.enable_route_inducement()
+		if _hunter_defeated:
+			_boss.extend_first_exposure(HUNTER_EXPOSURE_BONUS)
+			_hunter_defeated = false
 
 func _on_elite_died() -> void:
 	if _authoritative() and leg == Leg.ELITE and is_instance_valid(_elite) and _elite.route_evasion:

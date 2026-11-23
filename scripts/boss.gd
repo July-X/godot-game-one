@@ -11,7 +11,7 @@ const WINDOWS_PER_CYCLE := AttackWindow.HOLD - AttackWindow.OPEN + 1
 enum ShieldPhase { RAISED, EXPOSED, RECHARGING }
 const SHIELD_PHASE_COUNT := 3
 enum BossPhase { SUPPRESSION, RIFT, OVERLOAD }
-enum PulsePhase { OPEN, LOCK, FIRE }
+enum PulsePhase { OPEN, LOCK, FIRE, TRACK }
 
 var _state: int = State.IDLE
 var _state_timer: float = 0.0
@@ -159,6 +159,7 @@ var _ultimate_laser_start: Vector2 = Vector2.ZERO
 var _ultimate_laser_end: Vector2 = Vector2.ZERO
 var _laser_dot_accumulator: float = 0.0
 var _coop_encounter := false
+var _route_inducement := false
 var _pulse_used_this_shield := false
 const AggroLedger := preload("res://scripts/boss_aggro.gd")
 signal attack_target_selected(attack: String, slot: int, direction: Vector2)
@@ -207,6 +208,7 @@ const ULTIMATE_LASER_INNER_RATIO: float = 0.3  ## 内圈比例（秒杀区）
 const COOP_HULL_SECONDS := 21.0
 const COOP_MIN_HULL := 1000.0
 const COOP_PULSE_CHARGE := 0.90
+const ROUTE_PULSE_AIM_SECONDS := 0.30
 const COOP_PULSE_DURATION := 0.18
 const COOP_PULSE_RADIUS := 34.0
 const COOP_PULSE_ESCAPE := 76.0
@@ -289,6 +291,8 @@ func _stop_entry_motion() -> void:
 func _physics_process(delta: float) -> void:
 	if _dead or not GameState.game_running:
 		return
+	if _pulse.get("marked", false):
+		queue_redraw()
 	if _is_network_ghost:
 		global_rotation = lerp_angle(global_rotation, _network_target_rotation, 0.45)
 		return
@@ -520,6 +524,9 @@ func extend_first_exposure(seconds: float) -> void:
 	if _shield_stamp == ShieldPhase.RAISED:
 		_first_exposure_bonus = seconds
 
+func enable_route_inducement() -> void:
+	_route_inducement = true
+
 func _break_shield() -> void:
 	_exposure_left = BOSS_EXPOSURE_SECONDS + _first_exposure_bonus
 	_first_exposure_bonus = 0.0
@@ -528,7 +535,7 @@ func _break_shield() -> void:
 	_clear_fire_pressure()
 	if _ultimate_laser_charging:
 		_finish_ultimate_laser()
-	if _pulse.phase == PulsePhase.LOCK:
+	if _pulse.phase == PulsePhase.TRACK or _pulse.phase == PulsePhase.LOCK:
 		_finish_coop_pulse()
 	play_shield_release(global_position)
 	_publish_shield_state()
@@ -804,7 +811,7 @@ func _tick_attack_schedule(delta: float) -> void:
 		return
 	if _next_attack == 0:
 		_next_attack = 1
-		if has_impact_shield() and _coop_encounter and not _pulse_used_this_shield and _try_coop_pulse():
+		if has_impact_shield() and (_coop_encounter or _route_inducement) and not _pulse_used_this_shield and _try_coop_pulse():
 			return
 		_do_aimed_shot()
 	elif _next_attack == 1:
@@ -828,7 +835,7 @@ func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
 	if next.is_empty() or int(next.stamp) <= int(_pulse.stamp):
 		return
 	_pulse = next
-	if _pulse.phase != PulsePhase.OPEN:
+	if _pulse.phase == PulsePhase.LOCK or _pulse.phase == PulsePhase.FIRE:
 		face_laser_direction(Vector2(_pulse.to - _pulse.from).normalized())
 	if live_edge and _pulse.phase == PulsePhase.FIRE:
 		SFX.play_enemy_volley()
@@ -838,6 +845,8 @@ func coop_pulse_label() -> String:
 	if _pulse.phase == PulsePhase.OPEN:
 		return ""
 	var pilot := "P1" if int(_pulse.slot) == 1 else "P2"
+	if _pulse.phase == PulsePhase.TRACK:
+		return "瞄准 " + pilot
 	return "锁定 " + pilot if _pulse.phase == PulsePhase.LOCK else "脉冲 · " + pilot
 
 func coop_pulse_contains(point: Vector2) -> bool:
@@ -845,50 +854,82 @@ func coop_pulse_contains(point: Vector2) -> bool:
 		<= COOP_PULSE_RADIUS * COOP_PULSE_RADIUS
 
 func _try_coop_pulse() -> bool:
-	if not _coop_pair_alive():
-		return false
-	var battle := get_parent()
-	var ids := _rank_attack_pilots("pulse")
-	var alive := GameState.get_alive_player_ids()
-	if alive.size() != 2:
-		return false
-	var field := NetworkManager.battle_size(self)
-	var flyable := Rect2(Vector2(24, 24), field - Vector2(48, 48))
-	for i in ids.size():
-		var pilot: Node2D = battle._players.get(ids[i])
-		var other: int = alive[1] if alive[0] == ids[i] else alive[0]
-		var partner: Node2D = battle._players.get(other)
-		if not is_instance_valid(pilot) or not is_instance_valid(partner):
-			continue
-		var at := pilot.global_position
-		if global_position.distance_to(at) < 160.0:
-			continue
-		var axis := global_position.direction_to(at)
-		var side := axis.orthogonal() * COOP_PULSE_ESCAPE
-		if not flyable.has_point(at + side) and not flyable.has_point(at - side):
-			continue
-		var origin := global_position + axis * 48.0
-		var end := at + axis * 112.0
-		var nearest := Geometry2D.get_closest_point_to_segment(partner.global_position, origin, end)
-		if partner.global_position.distance_to(nearest) < COOP_PULSE_RADIUS + 36.0:
+	var ids: Array[int] = [1]
+	if _coop_encounter:
+		if not _coop_pair_alive() or GameState.get_alive_player_ids().size() != 2:
+			return false
+		ids = _rank_attack_pilots("pulse")
+	for slot: int in ids:
+		var path := _pulse_path(slot)
+		if path.is_empty():
 			continue
 		_pulse_used_this_shield = true
-		_aggro.select("pulse", ids[i])
-		attack_target_selected.emit("pulse", ids[i], axis)
-		_pulse_left = COOP_PULSE_CHARGE
+		_aggro.select("pulse", slot)
 		_pulse_hits.clear()
-		_set_coop_pulse(PulsePhase.LOCK, ids[i], origin, end)
+		if _route_inducement:
+			_pulse_left = ROUTE_PULSE_AIM_SECONDS
+			_set_coop_pulse(PulsePhase.TRACK, slot)
+		else:
+			_lock_pulse(slot, path, COOP_PULSE_CHARGE)
 		return true
 	return false
 
+func _pulse_pilot(slot: int) -> Node2D:
+	return get_parent()._players.get(slot) if NetworkManager.is_online() else _target
+
+func _pulse_path(slot: int) -> Dictionary:
+	var pilot := _pulse_pilot(slot)
+	if not _attack_pilot_alive(pilot):
+		return {}
+	var at := pilot.global_position
+	if global_position.distance_to(at) < 160.0:
+		return {}
+	var axis := global_position.direction_to(at)
+	var side := axis.orthogonal() * COOP_PULSE_ESCAPE
+	var field := NetworkManager.battle_size(self)
+	var flyable := Rect2(Vector2(24, 24), field - Vector2(48, 48))
+	if not flyable.has_point(at + side) and not flyable.has_point(at - side):
+		return {}
+	var origin := global_position + axis * 48.0
+	var end := at + axis * 112.0
+	if _coop_encounter:
+		var alive := GameState.get_alive_player_ids()
+		if alive.size() != 2:
+			return {}
+		var partner := _pulse_pilot(alive[1] if alive[0] == slot else alive[0])
+		if not _attack_pilot_alive(partner):
+			return {}
+		var nearest := Geometry2D.get_closest_point_to_segment(partner.global_position, origin, end)
+		if partner.global_position.distance_to(nearest) < COOP_PULSE_RADIUS + 36.0:
+			return {}
+	return {"from": origin, "to": end, "axis": axis}
+
+func _lock_pulse(slot: int, path: Dictionary, time_left: float) -> void:
+	attack_target_selected.emit("pulse", slot, path.axis)
+	_pulse_left = time_left
+	_set_coop_pulse(PulsePhase.LOCK, slot, path.from, path.to)
+
 func _set_coop_pulse(phase: PulsePhase, slot := 0, origin := Vector2.ZERO, end := Vector2.ZERO) -> void:
-	apply_network_coop_pulse({"stamp": int(_pulse.stamp) + 1, "phase": phase, "slot": slot, "from": origin, "to": end}, true)
+	var marked := _route_inducement and (phase == PulsePhase.TRACK or phase == PulsePhase.LOCK)
+	apply_network_coop_pulse({"stamp": int(_pulse.stamp) + 1, "phase": phase, "slot": slot,
+		"from": origin, "to": end, "marked": marked}, true)
 	get_parent().publish_boss_pulse(self)
 
 func _tick_coop_pulse(delta: float) -> void:
 	_pulse_left -= delta
+	if _pulse.phase == PulsePhase.TRACK:
+		if not _attack_pilot_alive(_pulse_pilot(_pulse.slot)) or (_coop_encounter and not _coop_pair_alive()):
+			_finish_coop_pulse()
+		elif _pulse_left <= 0.0:
+			# 此时才锁向。队友若已进入同一条无法安全让开的路线，就撤下预警。
+			var path := _pulse_path(_pulse.slot)
+			if path.is_empty():
+				_finish_coop_pulse()
+			else:
+				_lock_pulse(_pulse.slot, path, COOP_PULSE_CHARGE - ROUTE_PULSE_AIM_SECONDS)
+		return
 	if _pulse.phase == PulsePhase.LOCK:
-		if not _coop_pair_alive():
+		if _coop_encounter and not _coop_pair_alive():
 			_finish_coop_pulse()
 		elif _pulse_left <= 0.0:
 			_pulse_left = COOP_PULSE_DURATION
@@ -913,11 +954,24 @@ func _finish_coop_pulse() -> void:
 func _draw_coop_pulse() -> void:
 	if _pulse.phase == PulsePhase.OPEN:
 		return
+	var tone := Color("#ffb86b")
+	if _pulse.get("marked", false):
+		var pilot := _pulse_pilot(_pulse.slot)
+		if is_instance_valid(pilot):
+			for side in [-1.0, 1.0]:
+				var at := pilot.global_position
+				var outer := at + Vector2(32.0 * side, 0.0)
+				draw_polyline(PackedVector2Array([
+					to_local(outer + Vector2(-8.0 * side, -12.0)),
+					to_local(outer),
+					to_local(outer + Vector2(-8.0 * side, 12.0)),
+				]), tone, 2.0, true)
+	if _pulse.phase == PulsePhase.TRACK:
+		return
 	var start := to_local(_pulse.from)
 	var end := to_local(_pulse.to)
 	var direction := start.direction_to(end)
 	var side := direction.orthogonal() * COOP_PULSE_RADIUS
-	var tone := Color("#ffb86b")
 	var width := 2.0
 	if _pulse.phase == PulsePhase.LOCK:
 		for edge in [side, -side]:
