@@ -187,7 +187,7 @@ func _check_damage(tip: Vector2) -> void:
 	for row in [[INNER - 0.5, 0], [INNER + 0.5, 40], [OUTER - 0.5, 40], [OUTER + 0.5, 50]]:
 		pilot.hp = 50
 		pilot.global_position = tip + START.direction_to(END) * row[0]
-		_boss._laser_dot_accumulator = 0
+		_boss._laser_dot_by_slot.clear()
 		_boss._apply_continuous_laser_damage(1.0)
 		_check("tip_at_%.1f_receives_%d_damage" % [row[0], 50 - row[1]], pilot.hp == row[1])
 	pilot.free()

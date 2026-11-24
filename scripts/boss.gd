@@ -162,7 +162,7 @@ var _ultimate_laser_charge_timer: float = 0.0
 var _ultimate_laser_fire_timer: float = 0.0
 var _ultimate_laser_start: Vector2 = Vector2.ZERO
 var _ultimate_laser_end: Vector2 = Vector2.ZERO
-var _laser_dot_accumulator: float = 0.0
+var _laser_dot_by_slot: Dictionary[int, float] = {}
 var _coop_encounter := false
 var _route_inducement := false
 var _pulse_used_this_shield := false
@@ -563,7 +563,7 @@ func _start_ultimate_laser() -> void:
 	_ultimate_laser_start = global_position
 	_ultimate_laser_end = global_position
 	_laser_locked_direction = Vector2.ZERO
-	_laser_dot_accumulator = 0.0
+	_laser_dot_by_slot.clear()
 	_dodge_shift = Vector2.ZERO
 	_clear_fire_pressure()
 	_velocity_blend = Vector2.ZERO
@@ -621,6 +621,7 @@ func _fire_ultimate_laser() -> void:
 func _finish_ultimate_laser() -> void:
 	_ultimate_laser_charging = false
 	_ultimate_laser_firing = false
+	_laser_dot_by_slot.clear()
 	_laser_target = null
 	_finished_laser_cycles += 1
 	_shoot_timer = 0.55
@@ -641,10 +642,16 @@ func _publish_attack_window() -> void:
 		battle.publish_boss_attack_window(self)
 
 func _apply_continuous_laser_damage(delta: float) -> void:
-	if NetworkManager.is_online() and not multiplayer.is_server():
+	var online := NetworkManager.is_online()
+	if _is_network_ghost or (online and not multiplayer.is_server()):
 		return
 	for player in get_tree().get_nodes_in_group("player"):
 		if not (player is Node2D) or not is_instance_valid(player):
+			continue
+		# peer_id on the pilot is its battle slot, even when its connection changes.
+		var slot: int = player.peer_id if online else 1
+		if online and not _attack_pilot_alive(player):
+			_laser_dot_by_slot.erase(slot)
 			continue
 		var pos := (player as Node2D).global_position
 		var dist := _distance_to_beam_center(pos)
@@ -657,12 +664,13 @@ func _apply_continuous_laser_damage(delta: float) -> void:
 				player.force_kill()
 			elif player.has_method("take_damage"):
 				player.take_damage(99999.0)
-		else:
+		elif player.has_method("take_damage"):
 			## 外圈 - 每秒固定伤害（累积模式，确保稳定触发）
-			_laser_dot_accumulator += BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC * delta
-			if _laser_dot_accumulator >= 1.0 and player.has_method("take_damage"):
-				player.take_damage(int(_laser_dot_accumulator))
-				_laser_dot_accumulator -= int(_laser_dot_accumulator)
+			var accumulated: float = _laser_dot_by_slot.get(slot, 0.0) + BOSS_ULTIMATE_LASER_DOT_HP_PER_SEC * delta
+			var damage := int(accumulated)
+			_laser_dot_by_slot[slot] = accumulated - damage
+			if damage > 0:
+				player.take_damage(damage)
 
 func _distance_to_beam_center(point: Vector2) -> float:
 	var beam_end := _ultimate_laser_end
@@ -1225,6 +1233,7 @@ func die() -> void:
 	queue_redraw()
 	_ultimate_laser_charging = false
 	_ultimate_laser_firing = false
+	_laser_dot_by_slot.clear()
 	var death_pos := global_position
 	_queue_core_fragments(death_pos)
 	GameState.add_score(200 * _level, -1)

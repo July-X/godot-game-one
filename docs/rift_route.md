@@ -51,7 +51,19 @@ PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21244 rift-induce-client "$(mktemp -d)
 PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21224 boss-coop
 ```
 
-外焰单独用 `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21228 rift-outer-burn` 检查。两机距束轴各 59 单位时安全；同时各距 39 单位时，`3556637` 与本版都复现 P1 50→49、P2 50→50。旧逻辑共用外圈伤害累计器。这条断言预期在修复前失败，未随航道诱敌改动。手机和平板互换房主、真人能否自己理解锁向和主动配合仍待验。
+手机和平板互换房主、真人能否自己理解锁向和主动配合仍待验。
+
+### 终极激光外焰
+
+外焰由房主按稳定机师槽位累加，每束独立结算。暂时脱离外焰可保留本束自己的小数余额，倒地或离场的机师停止累加，新光束清零。单人、内圈、外沿和光束画面沿用原规则。
+
+```bash
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21228 rift-outer-burn
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21229 rift-outer-burn-mirror
+godot --headless --path . res://tests/rift_inducement_probe.tscn -- solo 0 rift-outer-burn-solo
+```
+
+`9395d701` 基线旧探针复现 P1 50→49、P2 50→50。新探针以固定 60 Hz 步进房主的实际激光结算，两机经真实联机上报位置。核对 59 单位安全、39 单位同时各扣 1 点，并换边、交换画幅和先入焰机师。第二束先入焰 5 帧无扣血，累计 8 帧才扣 1 点；晚进入的机师按自己的入焰帧数扣血。单人同脚本保留逐阶段血量作对照。
 
 ## 复跑
 

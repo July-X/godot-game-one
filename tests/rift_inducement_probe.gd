@@ -9,8 +9,8 @@ func _run() -> void:
 	await get_tree().process_frame
 	var args := OS.get_cmdline_user_args()
 	var mode := args[2] if args.size() > 2 else "solo"
-	var solo := mode == "solo"
-	var wide_host := mode.ends_with("-host")
+	var solo := _role == "solo"
+	var wide_host := mode.ends_with("-host") or mode == "rift-outer-burn"
 	_evidence = args[3] if args.size() > 3 else ""
 	var viewport_size := Vector2i(1600, 720) if (_role == "host") == wide_host else Vector2i(960, 720)
 	if not solo:
@@ -48,8 +48,8 @@ func _run() -> void:
 	match mode:
 		"solo":
 			await _induce("solo", 1, true)
-		"rift-outer-burn":
-			await _check_outer_burn()
+		"rift-outer-burn", "rift-outer-burn-mirror", "rift-outer-burn-solo":
+			await _check_outer_burn(solo, mode.ends_with("-mirror"))
 		_:
 			# Both candidates must win on actual projectile damage, including twice in a row.
 			var first := _guest if wide_host else 1
@@ -184,42 +184,62 @@ func _cancel_before_fire() -> void:
 	var cancelled := await _wait_until(func(): return _phase() == OPEN and is_instance_valid(restored) and not restored.has_impact_shield(), .5)
 	_check("shield_break_removes_target_marker_without_firing", tracked and cancelled and not restored.coop_pulse_snapshot().marked, "")
 
-func _check_outer_burn() -> void:
+func _check_outer_burn(solo: bool, mirror: bool) -> void:
 	var boss: BossModel = _main._boss
 	var pilot: Node2D = _main._player
-	var side := 1.0 if _role == "host" else -1.0
-	pilot.global_position = Vector2(640 + side * 59, 455)
-	pilot._invincible_timer = 0.0
-	if _role == "host":
-		GameState.set_shield_layers(1, 0)
-		GameState.set_shield_layers(_guest, 0)
-	await _barrier("burn_outside")
-	if _role == "host":
-		if not await _wait_until(func(): return _main._players[_guest].global_position.distance_to(Vector2(581, 455)) < .5, 2.0):
-			_check("host_received_outside_position", false, str(_main._players[_guest].global_position))
-		boss.global_position = AT
-		boss._start_ultimate_laser()
-		# Fixed vertical beam gives both pilots the same distance from its axis.
-		boss._laser_locked_direction = Vector2.DOWN
-		boss._ultimate_laser_end = AT + Vector2(0, 1200)
-		boss._fire_ultimate_laser()
-		boss._ultimate_laser_fire_timer = BossModel.BOSS_ULTIMATE_LASER_HOLD_SECONDS - 0.1
+	if _role != "client":
+		boss.set_physics_process(false)
+		GameState.set_shield_layers(pilot.peer_id, 0)
+		pilot._invincible_timer = 0.0
+		for player in _main._players.values():
+			GameState.set_shield_layers(player.peer_id, 0)
+			player._invincible_timer = 0.0
+		_start_burn_sample(boss)
+	var first := solo or (_role == "host") != mirror
+	var host_side := -1.0 if mirror else 1.0
+	var own_side := -host_side if _role == "client" else host_side
 	var id := int(pilot.peer_id)
 	var initial := GameState.get_current_health(id)
-	var live := await _wait_until(func(): return boss.get_attack_window() >= BossModel.AttackWindow.SWEEP, 1.0)
-	await _wait_seconds(.6)
-	_check("farther_than_outer_edge_is_safe", live and GameState.get_current_health(id) == initial, "hp=%d at=%s" % [initial, pilot.global_position])
-	if _role == "host":
-		boss.set_physics_process(false)
-	await _barrier("burn_move_inside")
-	pilot.global_position = Vector2(640 + side * 39, 455)
-	await _barrier("burn_inside")
-	if _role == "host":
-		var peer: Node2D = _main._players[_guest]
-		if not await _wait_until(func(): return peer.global_position.distance_to(Vector2(601, 455)) < .05, 2.0):
-			_check("host_received_inside_position", false, str(peer.global_position))
-		boss.set_physics_process(true)
-	await _barrier("burn_measuring")
-	await _wait_seconds(1.5)
-	var hp := GameState.get_current_health(id)
-	_check("this_pilot_takes_outer_burn_with_both_inside", hp < initial and hp > 0, "slot=%d hp=%d→%d at=%s" % [id, initial, hp, pilot.global_position])
+	await _burn_sample("outside_59", 30, own_side * 59, -host_side * 59, initial, solo)
+	await _burn_sample("both_at_39", 8, own_side * 39, -host_side * 39, initial - 1, solo)
+	if _role != "client":
+		# Leave a fraction in the old beam and remove player hit immunity to observe even an early tick.
+		boss._finish_ultimate_laser()
+		_start_burn_sample(boss)
+		pilot._invincible_timer = 0.0
+		for player in _main._players.values():
+			player._invincible_timer = 0.0
+	await _burn_sample("new_beam_no_remainder", 5, own_side * (39 if first else 59),
+		-host_side * (39 if mirror else 59), initial - 1, solo)
+	await _burn_sample("stagger_first_only", 3, own_side * 39, -host_side * 39,
+		initial - (2 if first else 1), solo)
+	await _burn_sample("stagger_second_catches_up", 5, own_side * 39, -host_side * 39, initial - 2, solo)
+
+func _start_burn_sample(boss: BossModel) -> void:
+	boss.global_position = AT
+	boss._start_ultimate_laser()
+	boss._laser_locked_direction = Vector2.DOWN
+	boss._ultimate_laser_end = AT + Vector2(0, 1200)
+	boss._fire_ultimate_laser()
+	boss._ultimate_laser_fire_timer = BossModel.BOSS_ULTIMATE_LASER_HOLD_SECONDS - 0.1
+
+func _burn_sample(label: String, frames: int, own_offset: float, guest_offset: float, expected: int, solo: bool) -> void:
+	var pilot: Node2D = _main._player
+	pilot.global_position = Vector2(640 + own_offset, 455)
+	if not solo:
+		await _barrier(label + "_placed")
+	if _role != "client":
+		if not solo:
+			var at := Vector2(640 + guest_offset, 455)
+			var peer: Node2D = _main._players[_guest]
+			_check(label + "_host_received_guest_position", await _wait_until(func():
+				return peer.global_position.distance_to(at) < .05, 2.0), str(peer.global_position))
+		# Step the real laser tick at exactly 60 Hz, independent of transport or wall-clock delay.
+		for frame in frames:
+			_main._boss._tick_ultimate_laser(1.0 / 60.0)
+	if not solo:
+		await _barrier(label + "_sampled")
+		await _wait_seconds(.23)
+	var hp := GameState.get_current_health(pilot.peer_id)
+	_check(label, hp == expected, "slot=%d frames=%d hp=%d expected=%d at=%s" %
+		[pilot.peer_id, frames, hp, expected, pilot.global_position])
