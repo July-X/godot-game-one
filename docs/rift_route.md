@@ -53,6 +53,23 @@ PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21224 boss-coop
 
 手机和平板互换房主、真人能否自己理解锁向和主动配合仍待验。
 
+### 侧翼反击窗
+
+航道母舰真正打出定向脉冲时，脉冲偏向另一侧的盾沿亮起一段薄荷绿弧和菱形。亮处维持 1.2 秒，机师可横移到该侧，以主炮或散射实弹命中亮边，按原伤害的 1.5 倍扣盾。被标记者和单人同样能利用这个位置。打中其余部位或以技能溅射、连锁结算时按原规则扣盾，破盾当发仍无伤害溢出。
+
+跟踪、锁向和脉冲危险区沿用诱敌规则。提前取消或锁向时没有安全空间均不开窗。破盾、击毁和离场收窗，下一轮重新等到脉冲发射。动态余时和侧翼随现有脉冲更新与母舰快照传输，以房主事件号判断先后。同一次事件的补发只校短余时。联机需要协议 5。
+
+```bash
+godot --headless --path . res://tests/rift_inducement_probe.tscn -- solo 0 rift-flank-solo
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 22503 rift-flank-host
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 22502 rift-flank-client
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 22504 boss-coop
+```
+
+固定种子 90220，以脚本控机和近距离生成的实弹隔离落点。一发面值 4 的实弹打中普通区域仍扣 4，打中亮边扣 6，同脚本在 `a5e8536` 都扣 4。两组双人各 55 项，互换目标、主炮归属和 20:9／4:3；站在锁线上的目标实扣 10，读标横移的目标无伤。重连恢复约 1.05–1.08 秒余时，过期重连和旧包重放保持关闭。护盾剩 5 时，亮边一发破盾，本体血量维持不变。普通局的脉冲仍无弱点，协议 4 和 5 互换房主均明确阻断开局。
+
+复跑基线时，在 `a5e8536` 的临时副本中替换为同一份 `tests/rift_inducement_probe.gd`，使用同一场景，角色参数之后追加 `baseline`。双端直接按 `-- host 端口 rift-flank-host baseline` 和 `-- client 端口 rift-flank-host baseline` 运行。
+
 ### 终极激光外焰
 
 外焰由房主按稳定机师槽位累加，每束独立结算。暂时脱离外焰可保留本束自己的小数余额，倒地或离场的机师停止累加，新光束清零。单人、内圈、外沿和光束画面沿用原规则。

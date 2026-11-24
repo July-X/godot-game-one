@@ -161,6 +161,7 @@ func _hold_inside() -> void:
 	await _capture("p2-fire")
 	var active: Dictionary = _main._boss.coop_pulse_snapshot()
 	_check("p2_fire_keeps_locked_geometry", fired and active.from == cue.from and active.to == cue.to and active.slot == _guest, str(active))
+	_check("ordinary_pulse_has_no_flank_window", fired and not active.has("flank"), str(active))
 	await _wait_until(func(): return _phase() == OPEN, 0.6)
 	var hurt := await _wait_until(func(): return GameState.get_current_health(_guest) < before, 0.6)
 	_check("stationary_p2_takes_one_pulse_p1_safe", hurt and GameState.get_current_health(_guest) == before - int(BossModel.COOP_PULSE_DAMAGE)

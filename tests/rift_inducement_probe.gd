@@ -3,6 +3,8 @@ extends "res://tests/boss_coop_probe.gd"
 const Trial := preload("res://scripts/rift_route_trial.gd")
 const Route := preload("res://scenes/rift_route_trial.tscn")
 const TRACK := BossModel.PulsePhase.TRACK
+const Bullet := preload("res://scripts/bullet.gd")
+var _flank_impact := Vector2.INF
 
 func _run() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -11,7 +13,8 @@ func _run() -> void:
 	var mode := args[2] if args.size() > 2 else "solo"
 	var solo := _role == "solo"
 	var wide_host := mode.ends_with("-host") or mode == "rift-outer-burn"
-	_evidence = args[3] if args.size() > 3 else ""
+	var baseline := args.has("baseline")
+	_evidence = args[3] if args.size() > 3 and args[3] != "baseline" else ""
 	var viewport_size := Vector2i(1600, 720) if (_role == "host") == wide_host else Vector2i(960, 720)
 	if not solo:
 		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
@@ -50,6 +53,8 @@ func _run() -> void:
 			await _induce("solo", 1, true)
 		"rift-outer-burn", "rift-outer-burn-mirror", "rift-outer-burn-solo":
 			await _check_outer_burn(solo, mode.ends_with("-mirror"))
+		"rift-flank-solo", "rift-flank-host", "rift-flank-client":
+			await _flank_matrix(solo, 1 if solo or not wide_host else _guest, baseline)
 		_:
 			# Both candidates must win on actual projectile damage, including twice in a row.
 			var first := _guest if wide_host else 1
@@ -163,26 +168,223 @@ func _cancel_before_fire() -> void:
 		boss._tick_attack_schedule(0.0)
 	var tracked := await _wait_until(func(): return _phase() == TRACK, .6)
 	var cue := boss.coop_pulse_snapshot()
+	var resumed := await _reconnect_guest("cancel_marked")
+	var restored: BossModel = _main._boss
+	_check("new_enet_connection_restores_same_target_marker", resumed and is_instance_valid(restored)
+		and restored.coop_pulse_snapshot() == cue, str(cue))
+	await _barrier("cancel_resumed")
+	if _role == "host":
+		boss.take_damage(boss.get_shield_hp(), 1)
+	var cancelled := await _wait_until(func(): return _phase() == OPEN and is_instance_valid(restored) and not restored.has_impact_shield(), .5)
+	var after := restored.coop_pulse_snapshot()
+	_check("shield_break_removes_target_marker_without_firing", tracked and cancelled and not after.marked, "")
+	_check("cancelled_pulse_never_opens_flank", after.get("flank", {}) == cue.get("flank", {}), str(after))
+
+func _reconnect_guest(label: String) -> bool:
 	var old_wire: int = NetworkManager.recovery.guest_wire
-	await _barrier("cancel_marked")
+	await _barrier(label)
 	if _role == "client":
+		var boss: BossModel = _main._boss
 		NetworkManager.recovery.set_background(true)
 		await _wait_seconds(.06)
 		_main._entities.erase(boss.entity_id)
 		boss.queue_free()
 		NetworkManager.drop_lan_transport()
 		NetworkManager.recovery.set_background(false)
-	var resumed := await _wait_until(func():
+	return await _wait_until(func():
 		return (NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != old_wire
 			and not get_tree().paused and NetworkManager.recovery.deadline == 0), 13)
-	var restored: BossModel = _main._boss
-	_check("new_enet_connection_restores_same_target_marker", resumed and is_instance_valid(restored)
-		and restored.coop_pulse_snapshot() == cue, "old=%d new=%d" % [old_wire, NetworkManager.recovery.guest_wire])
-	await _barrier("cancel_resumed")
+
+func _flank_matrix(solo: bool, target: int, baseline: bool) -> void:
+	_main.child_entered_tree.connect(_watch_flank_projectile)
+	var stand := await _flank_case("stand", solo, target, false, baseline)
+	if stand.is_empty():
+		return
+	if not baseline:
+		var boss: BossModel = _main._boss
+		var hull := boss.get_network_health()
+		if _role != "client":
+			boss._shield_hp = 5.0
+			_fire_flank_round(Vector2(stand.flank.side) * 24.0 + Vector2(0, 22), 4)
+		var broken := await _wait_until(func(): return not boss.has_impact_shield(), .56)
+		if _role == "client":
+			boss.apply_network_coop_pulse(stand)
+		_check("weak_round_breaks_shield_and_closes_without_hull_spill", broken and not _flank_active()
+			and is_equal_approx(hull, boss.get_network_health()), "shield=%.1f hull=%.1f" %
+			[boss.get_shield_hp(), boss.get_network_health()])
+		if not solo:
+			await _barrier("flank_break_checked")
+	await _flank_recharge(solo)
+	var second_target := target if solo else (1 if target != 1 else _guest)
+	var live := await _flank_case("flank", solo, second_target, true, baseline)
+	if live.is_empty() or baseline:
+		return
+	if not solo:
+		await _check_flank_recovery(live)
+	else:
+		_check("solo_flank_expires", await _wait_until(func(): return not _flank_active(), 1.4), "")
+	await _flank_recharge(solo)
+	if not solo and not await _check_blocked_lane(target):
+		return
+	if await _start_flank_pulse("death", solo, target):
+		var fired := await _wait_until(func(): return _phase() == FIRE and _flank_active(), 1.6)
+		if not solo:
+			await _barrier("flank_before_death")
+		var victim: BossModel = _main._boss
+		var eid := victim.entity_id
+		var stale := _main._boss_snapshot(victim) as Dictionary
+		if _role != "client":
+			# Exercise cleanup while the shield window still exists.
+			victim.die()
+		var gone := await _wait_until(func(): return not is_instance_valid(_main._boss), 2.0)
+		if _role == "client":
+			_main._rpc_spawn_boss(eid, 5, 1, stale)
+			_main._rpc_sync_boss_pulse(eid, stale.pulse)
+		_check("death_retires_open_flank_and_rejects_stale_state", fired and gone and not _flank_active(), "")
+
+func _check_blocked_lane(target: int) -> bool:
+	if not await _start_flank_pulse("blocked", false, target):
+		return false
+	var boss: BossModel = _main._boss
+	var closed: Dictionary = boss.coop_pulse_snapshot().flank
+	await _barrier("block_lane_after_track")
 	if _role == "host":
-		boss.take_damage(boss.get_shield_hp(), 1)
-	var cancelled := await _wait_until(func(): return _phase() == OPEN and is_instance_valid(restored) and not restored.has_impact_shield(), .5)
-	_check("shield_break_removes_target_marker_without_firing", tracked and cancelled and not restored.coop_pulse_snapshot().marked, "")
+		var marked: Node2D = _main._players[target]
+		var partner: Node2D = _main._players[1 if target != 1 else _guest]
+		var previous := partner.global_position
+		partner.global_position = AT.lerp(marked.global_position, .8)
+		boss._tick_coop_pulse(BossModel.ROUTE_PULSE_AIM_SECONDS + .01)
+		partner.global_position = previous
+		boss._pulse_used_this_shield = false
+	var cancelled := await _wait_until(func(): return _phase() == OPEN, .6)
+	_check("unsafe_lane_cancels_without_opening_flank", cancelled and boss.coop_pulse_snapshot().flank == closed, "")
+	await _barrier("blocked_lane_checked")
+	return true
+
+func _watch_flank_projectile(node: Node) -> void:
+	if _role != "client" and node is Bullet:
+		var observe := _record_flank_impact.bind(node)
+		if not node.body_entered.is_connected(observe):
+			node.body_entered.connect(observe)
+
+func _record_flank_impact(body: Node2D, shot: Area2D) -> void:
+	if body == _main._boss and shot._is_player_bullet:
+		_flank_impact = shot.global_position
+
+func _start_flank_pulse(label: String, solo: bool, target: int) -> bool:
+	var boss: BossModel = _main._boss
+	var pilot: Node2D = _main._player
+	if solo:
+		pilot._motion.stop_for_downed()
+		pilot.global_position = P1_AT
+		pilot._invincible_timer = 0.0
+		GameState.set_shield_layers(1, 0)
+	else:
+		await _arrange(label)
+	if _role != "client":
+		boss._stop_entry_motion()
+		boss.global_position = AT
+		# Isolate the attack with the same two starting lines and target on each build.
+		boss._aggro = BossModel.AggroLedger.new()
+		boss._aggro.record_damage(target, boss.get_network_max_health() * .25)
+		boss._next_attack = 0
+		boss._shoot_timer = 0.0
+		boss._tick_attack_schedule(0.0)
+	return _require(label + "_track_has_no_flank", await _wait_until(func(): return _phase() == TRACK, .9)
+		and boss.coop_pulse_snapshot().slot == target and not _flank_active())
+
+func _flank_case(label: String, solo: bool, target: int, move: bool, baseline: bool) -> Dictionary:
+	if not await _start_flank_pulse(label, solo, target):
+		return {}
+	var boss: BossModel = _main._boss
+	var me := int(_main._player.peer_id)
+	var hp := GameState.get_current_health(target)
+	var shooter := target if solo or not move else (1 if target != 1 else _guest)
+	var wing_hp := GameState.get_current_health(shooter)
+	var shield := boss.get_shield_hp()
+	var hull := boss.get_network_health()
+	var away := Vector2.LEFT if target == 1 else Vector2.RIGHT
+	if move and me == target:
+		_steer = away
+	var locked := await _wait_until(func(): return _phase() == LOCK, .80)
+	var lock := boss.coop_pulse_snapshot()
+	_check(label + "_lock_has_no_flank", locked and not _flank_active(), str(lock))
+	await _capture(label + "-locked")
+	if move and me == target:
+		# Once the line is fixed, cross it during the warning toward the exposed side.
+		_steer = -away
+	var fired := await _wait_until(func(): return _phase() == FIRE, 1.10)
+	var pulse := boss.coop_pulse_snapshot()
+	var flank: Dictionary = pulse.get("flank", {})
+	_check(label + "_actual_fire_keeps_locked_geometry", fired and lock.from == pulse.from
+		and lock.to == pulse.to and lock.slot == pulse.slot, str(pulse))
+	if not _require(label + "_flank_opens_only_on_fire", fired and (baseline or (_flank_active()
+		and float(flank.left) > 1.0 and float(flank.left) <= 1.20001))):
+		return {}
+	_steer = Vector2.ZERO
+	var side := Vector2.LEFT if pulse.to.x >= pulse.from.x else Vector2.RIGHT
+	var aim := side * 24.0 + Vector2(0, 22) if move else Vector2(0, 25)
+	if not baseline:
+		_check(label + "_weak_edge_opposite_locked_lane", flank.side == side, str(flank))
+	if me == shooter:
+		_fire_flank_round(aim, 4)
+	await _capture(label + "-fire")
+	var expected := 6.0 if move and not baseline else 4.0
+	var hit := await _wait_until(func(): return boss.get_shield_hp() <= shield - expected + 0.005, .6)
+	var health_settled := await _wait_until(func(): return GameState.get_current_health(target) == hp - (0 if move else 10), .45)
+	_check(label + "_one_real_shot_and_pilot_hp", hit and health_settled
+		and is_equal_approx(shield - boss.get_shield_hp(), expected) and is_equal_approx(hull, boss.get_network_health())
+		and (not move or GameState.get_current_health(shooter) == wing_hp),
+		"target=%d shooter=%d aim=%s contact=%s shield=%.1f→%.1f hull=%.1f hp=%d→%d" %
+		[target, shooter, aim, _flank_impact, shield, boss.get_shield_hp(), hull, hp, GameState.get_current_health(target)])
+	if not solo:
+		await _barrier(label + "_shot_checked")
+	return pulse
+
+func _fire_flank_round(offset: Vector2, damage: int) -> void:
+	var pilot: Node2D = _main._player
+	var aim: Vector2 = _main._boss.global_position + offset
+	var axis := pilot.global_position.direction_to(aim)
+	_flank_impact = Vector2.INF
+	pilot._combat._spawn_bullet(aim - axis * 58.0, axis.angle(), damage, true, 1, 760.0)
+
+func _flank_recharge(solo: bool) -> void:
+	if not solo:
+		await _recharge()
+		return
+	var boss: BossModel = _main._boss
+	boss._shoot_timer = 90.0
+	if boss.has_impact_shield():
+		boss.take_damage(boss.get_shield_hp())
+	_check("solo_next_shield_round", await _wait_until(boss.has_impact_shield, 5.4), "")
+
+func _flank_active() -> bool:
+	return is_instance_valid(_main._boss) and float(_main._boss.coop_pulse_snapshot().get("flank", {}).get("left", 0.0)) > 0.0
+
+func _check_flank_recovery(old_pulse: Dictionary) -> void:
+	var pre: Dictionary = _main._boss.coop_pulse_snapshot().flank
+	var old_snapshot: Dictionary = _main._boss_snapshot(_main._boss)
+	old_snapshot.pulse = old_pulse
+	var shield: float = _main._boss.get_shield_hp()
+	var resumed := await _reconnect_guest("flank_live_reconnect")
+	var boss: BossModel = _main._boss
+	var state: Dictionary = boss.coop_pulse_snapshot().get("flank", {})
+	_check("reconnect_restores_current_edge_and_remaining_time", resumed and _flank_active()
+		and state.stamp == pre.stamp and state.side == pre.side and float(state.left) <= float(pre.left)
+		and float(state.left) < 1.1 and is_equal_approx(shield, boss.get_shield_hp()),
+		"before=%s resumed=%s shield=%.1f" % [pre, state, boss.get_shield_hp()])
+	if _role == "client":
+		for repeat in 2:
+			_main._rpc_spawn_boss(boss.entity_id, 5, boss.get_sprite_variant_id(), old_snapshot)
+		var after: Dictionary = boss.coop_pulse_snapshot().flank
+		_check("duplicate_window_does_not_extend_or_redamage_shield", float(after.left) <= float(state.left)
+			and after.stamp == state.stamp and is_equal_approx(shield, boss.get_shield_hp()), str(after))
+	_check("flank_expires_before_next_pulse", await _wait_until(func(): return not _flank_active(), 1.5), "")
+	var closed := await _reconnect_guest("flank_closed_reconnect")
+	if _role == "client":
+		_main._boss.apply_network_coop_pulse(old_pulse)
+	_check("expired_flank_stays_closed_after_reconnect_and_replay", closed and not _flank_active(),
+		str(_main._boss.coop_pulse_snapshot()))
 
 func _check_outer_burn(solo: bool, mirror: bool) -> void:
 	var boss: BossModel = _main._boss

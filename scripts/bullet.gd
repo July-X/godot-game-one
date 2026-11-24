@@ -228,7 +228,7 @@ func _on_body_entered(body: Node2D) -> void:
 				_spawn_hit(impact, steady)
 				_recycle()
 			else:
-				body.take_damage(_damage, owner_peer_id)
+				_apply_direct_damage(body)
 				_spawn_hit(impact, steady)
 				if _resolve_hit(body):
 					_recycle()
@@ -270,10 +270,17 @@ func _on_area_entered(area: Area2D) -> void:
 				_spawn_hit(impact, steady)
 				_recycle()
 			else:
-				enemy.take_damage(_damage, owner_peer_id)
+				_apply_direct_damage(enemy)
 				_spawn_hit(impact, steady)
 				if _resolve_hit(enemy):
 					_recycle()
+
+func _apply_direct_damage(target: Node2D) -> void:
+	if target.has_method("take_projectile_damage") and target.has_flank_window():
+		if not _pierced.has(target):
+			target.take_projectile_damage(_damage, owner_peer_id, global_position)
+	else:
+		target.take_damage(_damage, owner_peer_id)
 
 func _impact_for(target: Node) -> Pool.Impact:
 	if not target.is_in_group("boss") and target.has_method("has_impact_shield") and target.has_impact_shield():

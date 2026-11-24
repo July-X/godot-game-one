@@ -158,6 +158,8 @@ godot --headless --path . --scene res://scenes/main.tscn --quit-after 20
 
 改 Boss 护盾、掉落或奖励同步时，运行 `tests/run_probe.sh 7788 boss`。单人实弹、炸弹、同帧结算与换场可从 `tests/boss_lifecycle_probe.tscn` 独立复跑。改母舰画面或顶部生命条时，再运行 `tests/battle_presentation_probe.tscn`。[画面和联机复跑方法](docs/art_audio_pipeline.md#裂隙母舰可读性)
 
+改航道母舰的侧翼弱点时，运行 `tests/run_probe.sh 22503 rift-flank-host` 和 `tests/run_probe.sh 22502 rift-flank-client`，核对实弹扣盾、破盾收窗和窗口内外重连。用 `boss-coop` 检查普通局脉冲；改联机协议时验证混版拒绝开局。[航道复跑](docs/rift_route.md#侧翼反击窗)
+
 改首卡或试飞敌阵时，运行 `python3 tests/run_first_card_probe.py /tmp/first-card-results`。同画幅同路线的 A/B 须逐架、逐弹、逐帧走位一致。普通导演和试飞均须覆盖按键、超时，并跑到首只 Boss 实际受伤。入口和提示改动还要覆盖 16:9、20:9 的双指选卡、同版重试与返回换版。[验证口径](docs/first_card_trial.md)
 
 ## 7. 工作约束

@@ -125,6 +125,9 @@ func apply_network_boss_shield(stamp: int, hp: float, max_hp: float) -> bool:
 	_shield_stamp = stamp
 	_max_shield_hp = max_hp
 	_shield_hp = clampf(hp if advanced else minf(hp, _shield_hp), 0.0, max_hp)
+	if _flank_left > 0.0 and _is_network_ghost and (stamp != _flank_shield_stamp or not has_impact_shield()):
+		_flank_left = 0.0
+		_flank_cue.queue_redraw()
 	queue_redraw()
 	return advanced
 
@@ -172,6 +175,10 @@ var _aggro := AggroLedger.new()
 var _laser_target: Node2D
 var _dodge_used_this_shield := false
 var _pulse_left := 0.0
+var _flank_stamp := 0
+var _flank_shield_stamp := -1
+var _flank_side := Vector2.ZERO
+var _flank_left := 0.0
 var _pulse_hits: Dictionary[int, bool] = {}
 var _pulse := {"stamp": 0, "phase": PulsePhase.OPEN, "slot": 0, "from": Vector2.ZERO, "to": Vector2.ZERO}
 
@@ -218,11 +225,15 @@ const COOP_PULSE_DURATION := 0.18
 const COOP_PULSE_RADIUS := 34.0
 const COOP_PULSE_ESCAPE := 76.0
 const COOP_PULSE_DAMAGE := 10.0
+const ROUTE_FLANK_SECONDS := 1.2
+const ROUTE_FLANK_SHIELD_MULTIPLIER := 1.5
+const ROUTE_FLANK_MIN_OFFSET := 16.0
 
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 
 @onready var _sprite: Sprite2D = $Sprite2D
+@onready var _flank_cue: Node2D = $FlankCue
 
 func _apply_visual_state() -> void:
 	if _sprite:
@@ -277,6 +288,7 @@ func set_target(target: Node2D) -> void:
 	_target = target
 
 func _ready() -> void:
+	_flank_cue.draw.connect(_draw_flank_window)
 	_state = State.IDLE
 	_state_timer = 0.0
 	_last_position = global_position
@@ -298,6 +310,8 @@ func _physics_process(delta: float) -> void:
 		return
 	if _pulse.get("marked", false):
 		queue_redraw()
+	if _flank_left > 0.0:
+		_tick_flank_window(delta)
 	if _is_network_ghost:
 		global_rotation = lerp_angle(global_rotation, _network_target_rotation, 0.45)
 		return
@@ -536,6 +550,7 @@ func _break_shield() -> void:
 	_exposure_left = BOSS_EXPOSURE_SECONDS + _first_exposure_bonus
 	_first_exposure_bonus = 0.0
 	_shield_stamp += 1
+	_close_flank_window()
 	_dodge_shift = Vector2.ZERO
 	_clear_fire_pressure()
 	if _ultimate_laser_charging:
@@ -843,12 +858,19 @@ func _coop_pair_alive() -> bool:
 	return get_parent()._alive_players.size() == 2
 
 func coop_pulse_snapshot() -> Dictionary:
-	return _pulse.duplicate()
+	var snapshot := _pulse.duplicate()
+	if _flank_stamp > 0:
+		snapshot["flank"] = {"stamp": _flank_stamp, "shield_stamp": _flank_shield_stamp,
+			"side": _flank_side, "left": _flank_left}
+	return snapshot
 
 func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
+	if _is_network_ghost and next.has("flank"):
+		_apply_network_flank_window(next.flank)
 	if next.is_empty() or int(next.stamp) <= int(_pulse.stamp):
 		return
-	_pulse = next
+	_pulse = next.duplicate()
+	_pulse.erase("flank")
 	if _pulse.phase == PulsePhase.LOCK or _pulse.phase == PulsePhase.FIRE:
 		face_laser_direction(Vector2(_pulse.to - _pulse.from).normalized())
 	if live_edge and _pulse.phase == PulsePhase.FIRE:
@@ -947,6 +969,8 @@ func _tick_coop_pulse(delta: float) -> void:
 			_finish_coop_pulse()
 		elif _pulse_left <= 0.0:
 			_pulse_left = COOP_PULSE_DURATION
+			if _route_inducement:
+				_open_flank_window()
 			_set_coop_pulse(PulsePhase.FIRE, _pulse.slot, _pulse.from, _pulse.to)
 		else:
 			return
@@ -959,6 +983,63 @@ func _tick_coop_pulse(delta: float) -> void:
 		if not _pulse_hits.has(pilot.peer_id) and coop_pulse_contains(pilot.global_position):
 			_pulse_hits[pilot.peer_id] = true
 			pilot.take_damage(COOP_PULSE_DAMAGE)
+
+func has_flank_window() -> bool:
+	return _flank_left > 0.0 and has_impact_shield() and _health > 0.0 and not _dead
+
+func _open_flank_window() -> void:
+	_flank_stamp += 1
+	_flank_shield_stamp = _shield_stamp
+	# Keep the weak edge on the opposite screen side as the mothership turns after firing.
+	_flank_side = Vector2.LEFT if _pulse.to.x >= _pulse.from.x else Vector2.RIGHT
+	_flank_left = ROUTE_FLANK_SECONDS
+	_flank_cue.queue_redraw()
+
+func _close_flank_window() -> void:
+	if _flank_left <= 0.0:
+		return
+	_flank_stamp += 1
+	_flank_left = 0.0
+	_flank_side = Vector2.ZERO
+	_flank_cue.queue_redraw()
+	get_parent().publish_boss_pulse(self)
+
+func _tick_flank_window(delta: float) -> void:
+	if _flank_left <= delta and not _is_network_ghost:
+		_close_flank_window()
+	else:
+		_flank_left = maxf(0.0, _flank_left - delta)
+		_flank_cue.queue_redraw()
+
+func _apply_network_flank_window(window: Dictionary) -> void:
+	var stamp: int = window.stamp
+	if stamp < _flank_stamp:
+		return
+	var left: float = window.left if window.shield_stamp == _shield_stamp and has_impact_shield() else 0.0
+	if stamp == _flank_stamp:
+		# A snapshot of the same event can correct a stale clock without replaying the window.
+		_flank_left = minf(_flank_left, left)
+	else:
+		_flank_stamp = stamp
+		_flank_shield_stamp = window.shield_stamp
+		_flank_side = window.side
+		_flank_left = left
+	_flank_cue.queue_redraw()
+
+func _draw_flank_window() -> void:
+	if not has_flank_window():
+		return
+	var direction := _flank_side.rotated(-global_rotation)
+	var angle := direction.angle()
+	var shield_radius: float = $CollisionShape2D.shape.radius
+	var half_arc := acos(ROUTE_FLANK_MIN_OFFSET / shield_radius)
+	var tone := Color("#9effca")
+	_flank_cue.draw_arc(Vector2.ZERO, shield_radius + 3.0, angle - half_arc, angle + half_arc, 18, Color("#153a32"), 6.0, true)
+	_flank_cue.draw_arc(Vector2.ZERO, shield_radius + 3.0, angle - half_arc, angle + half_arc, 18, tone, 3.0, true)
+	var at := direction * (shield_radius + 11.0)
+	var edge := direction.orthogonal() * 5.0
+	var cap := direction * 6.0
+	_flank_cue.draw_polyline(PackedVector2Array([at - cap, at + edge, at + cap, at - edge, at - cap]), tone, 2.0, true)
 
 func _finish_coop_pulse() -> void:
 	_pulse_left = 0.0
@@ -1156,6 +1237,12 @@ func _score_dodge_position(pos: Vector2, drift: Vector2) -> float:
 	# 落点留出后续机动空间，并避开施压者正在横移的一侧。
 	return shift.length() + minf(margin_x, margin_y) * 0.5 - shift.dot(drift) / BOSS_DODGE_SHIFT
 
+## Called only by a direct projectile collision on the authority. Splash and hull damage use the base path.
+func take_projectile_damage(amount: float, killer_peer_id: int, at: Vector2) -> void:
+	if has_flank_window() and (at - global_position).dot(_flank_side) >= ROUTE_FLANK_MIN_OFFSET:
+		amount *= ROUTE_FLANK_SHIELD_MULTIPLIER
+	take_damage(amount, killer_peer_id)
+
 func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 	if _dead or _health <= 0.0 or _is_network_ghost:
 		return
@@ -1229,6 +1316,7 @@ func die() -> void:
 	if _dead:
 		return
 	_dead = true
+	_close_flank_window()
 	_pulse.phase = PulsePhase.OPEN
 	queue_redraw()
 	_ultimate_laser_charging = false
