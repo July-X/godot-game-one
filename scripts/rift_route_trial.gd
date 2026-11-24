@@ -10,7 +10,12 @@ const HUNTER_EXPOSURE_BONUS := 1.0
 const PRACTICE_WAVES := {78: .28, 1110: .72}
 const BUILD_WAVES := [CARD_TICK + 90, CARD_TICK + 760, CARD_TICK + 1770, ELITE_LEG + 54, 138 * 60, 168 * 60]
 const LEG_NAMES := ["拦截齐射", "让卡牌改变航线", "裂隙猎手", "裂隙母舰"]
+const LEG_HINTS := ["", "从侧翼截断齐射，中路可绕行", "预警时换线，破盾后反打", "被标记先横移，侧翼打盾"]
+const LEG_HINT_SECONDS := 2.0
 var leg := Leg.INTERCEPT
+var _settling := false
+var _route_hint_left := 0.0
+var _build_hint_pending := false
 var _draft_wait := false
 var _pending_slots: Dictionary[int, bool] = {}
 var _route_outcome := ""
@@ -32,11 +37,15 @@ func _authoritative() -> bool:
 func _elite_entry_seconds() -> float:
 	return HUNTER_ENTRY_SECONDS
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	# Invoke Main's rescue tick through the extracted production hook.
 	_tick_rescue_window()
 	if finished or not GameState.game_running:
 		return
+	if _route_hint_left > 0.0:
+		_route_hint_left = maxf(0.0, _route_hint_left - delta)
+		if _route_hint_left == 0.0:
+			_update_countdown()
 	if not _authoritative():
 		trial_tick += 1
 		for eid: int in _remote_cues.keys():
@@ -78,7 +87,7 @@ func _physics_process(_delta: float) -> void:
 		_fighters.clear()
 		_breaks.clear()
 		_cues.queue_redraw()
-		_show_route_leg(leg, true)
+		_apply_route_leg(leg, true)
 		if NetworkManager.is_online():
 			_rpc_route_leg.rpc(leg, true)
 	if trial_tick == BOSS_LEG:
@@ -125,6 +134,10 @@ func _open_route_drafts() -> void:
 		GameState.force_sync_to_peer(-1)
 
 func _on_choice(pid: int, card: String, _index: int) -> void:
+	if _build_hint_pending and pid == NetworkManager.local_player_id():
+		_build_hint_pending = false
+		_route_hint_left = LEG_HINT_SECONDS
+		_update_countdown()
 	if not _authoritative() or not _pending_slots.has(pid):
 		return
 	_pending_slots.erase(pid)
@@ -174,23 +187,33 @@ func _rpc_route_result(outcome: String, cuts: int) -> void:
 	_finish(outcome)
 
 func _set_leg(value: Leg) -> void:
-	leg = value
+	_apply_route_leg(value, false)
 	_log("leg", {"leg": leg})
-	_update_countdown()
 	if NetworkManager.is_online():
 		_rpc_route_leg.rpc(leg, false)
 
 func _update_countdown() -> void:
-	_show_route_leg(leg, false)
+	var title: String = "裂隙航道 · " + ("整备，母舰将至" if _settling else LEG_NAMES[leg])
+	_hud.set_wave_phase(LEG_HINTS[leg] if _route_hint_left > 0.0 else title, Color.LIGHT_CYAN)
 
-func _show_route_leg(next_leg: int, settling: bool) -> void:
-	_hud.set_wave_phase("裂隙航道 · " + ("整备，母舰将至" if settling else LEG_NAMES[next_leg]), Color.LIGHT_CYAN)
+func _apply_route_leg(next_leg: int, settling: bool, announce := true) -> void:
+	if next_leg not in range(LEG_NAMES.size()):
+		return
+	if settling or not announce:
+		_build_hint_pending = false
+		_route_hint_left = 0.0
+	elif next_leg != leg:
+		# The build transition opens cards on the same tick. Show its hint after the local choice.
+		_build_hint_pending = next_leg == Leg.BUILD and not UpgradeDraft.get_draft(NetworkManager.local_player_id()).get("chosen", false)
+		_route_hint_left = LEG_HINT_SECONDS if not _build_hint_pending and not LEG_HINTS[next_leg].is_empty() else 0.0
+	leg = next_leg
+	_settling = settling
+	_update_countdown()
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_route_leg(next_leg: int, settling: bool) -> void:
-	if next_leg in range(LEG_NAMES.size()):
-		leg = next_leg
-		_show_route_leg(leg, settling)
+	if not finished:
+		_apply_route_leg(next_leg, settling)
 
 func _add_fighter(role: String, kind: int, station: Vector2, fire := 0, health := 0, side := 0.0) -> void:
 	super._add_fighter(role, kind, station, fire, health, side)
@@ -228,10 +251,23 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 	_fighters.clear()
 	for eid: int in state.route.cues:
 		_rpc_route_cue(eid, state.route.cues[eid])
-	_rpc_route_leg(state.route.leg, state.route.settling)
+	_apply_route_leg(state.route.leg, state.route.settling, false)
 	if not str(state.route.outcome).is_empty():
 		_rpc_route_result(state.route.outcome, state.route.cuts)
 	return true
+
+func set_lan_hold(held: bool) -> void:
+	if held and (_route_hint_left > 0.0 or _build_hint_pending):
+		_build_hint_pending = false
+		_route_hint_left = 0.0
+		_update_countdown()
+	super.set_lan_hold(held)
+
+func _finish(outcome: String) -> void:
+	_build_hint_pending = false
+	_route_hint_left = 0.0
+	_update_countdown()
+	super._finish(outcome)
 
 func _on_level_up(_new_level: int) -> void:
 	# Authored mode has exactly one explicit draft, even if a future wave count changes.

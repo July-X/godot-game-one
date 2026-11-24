@@ -10,7 +10,9 @@ var _last_choice_source := ""
 
 func _run() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var mode := OS.get_cmdline_user_args()[2]
+	var args := OS.get_cmdline_user_args()
+	var mode := args[2]
+	_evidence = args[3] if args.size() > 3 else ""
 	var wide_host := mode.ends_with("-host")
 	var use_timeout := mode.begins_with("rift-timeout-")
 	var wide := (_role == "host") == wide_host
@@ -54,6 +56,9 @@ func _run() -> void:
 		trial.trial_tick = Trial.CARD_TICK - 1
 	var opened := await _wait_until(func(): return UpgradeDraft.has_draft(slot), 3)
 	_check("fixed_options_on_both_devices", opened and UpgradeDraft.get_draft(slot).cards == ["pierce", "splash", "power"], "")
+	var stage_seen := await _wait_until(func(): return trial.leg == Trial.Leg.BUILD, .4)
+	_check("build_hint_waits_for_local_card_and_leaves_draft_clear", stage_seen and trial._build_hint_pending
+		and trial._route_hint_left == 0.0 and trial._hud._draft_panel.visible, trial._hud._phase_label.text)
 	await _verify_draft_controls(trial, stick, touch_origin, slot)
 	await _barrier("both_drafts")
 	if not slow:
@@ -68,6 +73,13 @@ func _run() -> void:
 		return (GameState.get_card_count(Trial.OFFER[host_card], 1) == 1
 			and GameState.get_card_count(Trial.OFFER[guest_card], _guest) == 1), 11.5 if use_timeout else 3.0)
 	_check("distinct_cards_and_single_grants", both, "")
+	var expect_hint := not use_timeout or slow
+	var hinted := await _wait_until(func(): return trial._hud._phase_label.text == Trial.LEG_HINTS[Trial.Leg.BUILD], .3) if expect_hint else false
+	var cue_left := trial._route_hint_left
+	trial._rpc_route_leg(Trial.Leg.BUILD, false)
+	_check("build_hint_once_after_card_confirmation", (hinted and _hint_fits(trial) if expect_hint else cue_left == 0.0)
+		and trial._route_hint_left == cue_left, "%s remaining=%.2f" % [trial._hud._phase_label.text, cue_left])
+	await _capture("build-hint")
 	var cue := await _wait_until(func(): return not trial._fighters.is_empty(), 4.5)
 	_check("host_authored_wave_shared", cue and NetworkManager.battle_size(trial) == Vector2(1280, 720), "")
 	if _role == "host":
@@ -90,6 +102,8 @@ func _run() -> void:
 		return NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != wire_at_start and not get_tree().paused, 13)
 	_check("reconnect_does_not_reoffer_or_clear_cards", restored and trial.leg == Trial.Leg.BUILD and GameState.get_card_count(Trial.OFFER[guest_card], _guest) == 1
 		and not UpgradeDraft.has_draft(slot), "")
+	_check("recovery_restores_title_without_replaying_hint", restored and trial._route_hint_left == 0.0
+		and trial._hud._phase_label.text.ends_with(Trial.LEG_NAMES[Trial.Leg.BUILD]), trial._hud._phase_label.text)
 	await _barrier("rewire_complete")
 	await _verify_card_impacts(trial, host_card)
 	await _verify_elite(trial)
@@ -104,6 +118,13 @@ func _run() -> void:
 	_check("only_host_advances_boss_leg", on_boss, "")
 	await _barrier("boss_observed")
 	if on_boss:
+		if _role == "host":
+			trial._boss._start_ultimate_laser()
+		var charging := await _wait_until(func(): return trial._boss.get_attack_window() == BossModel.AttackWindow.CHARGING, .9)
+		_check("boss_hint_keeps_charge_and_buttons_clear", charging and trial._hud._phase_label.text == Trial.LEG_HINTS[Trial.Leg.BOSS]
+			and _hint_fits(trial), str(trial._hud._phase_label.get_global_rect()))
+		await _capture("boss-hint")
+		await _barrier("boss_hint_checked")
 		await _verify_exposure(trial._boss, 5.5 if wide_host else 4.5)
 		await _barrier("boss_first_exposure_observed")
 	if _role == "host" and on_boss:
@@ -116,6 +137,21 @@ func _run() -> void:
 	await _barrier("rift_complete")
 	await _wait_seconds(.25)
 	get_tree().quit(_summarize())
+
+func _hint_fits(trial: Trial) -> bool:
+	var hud := trial._hud
+	var hint: Rect2 = hud._phase_label.get_global_rect()
+	if not trial.get_viewport().get_visible_rect().encloses(hint) or hud._phase_label.get_minimum_size().x > hint.size.x:
+		return false
+	var reserved: Array[Control] = [hud._score_label, hud._player_scores_label, hud._draft_panel,
+		hud._alert_label, hud._boss_status_root, trial._options]
+	for slot: Dictionary in hud._skill_slots:
+		reserved.append(slot.button)
+	for control: Control in reserved:
+		if is_instance_valid(control) and control.is_visible_in_tree() and hint.intersects(control.get_global_rect()):
+			_log("hint rect %s intersects %s %s" % [hint, control.name, control.get_global_rect()])
+			return false
+	return true
 
 func _verify_exposure(boss: Node, expected: float) -> void:
 	if _role == "host":

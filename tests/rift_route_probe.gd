@@ -36,18 +36,26 @@ func _run() -> void:
 	await _frames(3)
 	_check("authored_card_opens_once", UpgradeDraft.has_draft(1) and UpgradeDraft.get_draft(1).cards == ["pierce", "splash", "power"])
 	_check("holds_schedule_not_global_tree", _world.trial_tick == Trial.CARD_TICK and not get_tree().paused)
+	_check("solo_waits_for_card_before_build_hint", _world._build_hint_pending and _world._route_hint_left == 0.0)
 	_check("choose_once", UpgradeDraft.choose_card(1, 0) and not UpgradeDraft.choose_card(1, 1))
+	_check("solo_build_hint_uses_stage_row", _world._hud._phase_label.text == Trial.LEG_HINTS[Trial.Leg.BUILD])
+	await _frames(121)
+	_check("hint_expires_while_stage_clock_advances", _world._route_hint_left == 0.0
+		and _world._hud._phase_label.text.ends_with(Trial.LEG_NAMES[Trial.Leg.BUILD]) and _world.trial_tick > Trial.CARD_TICK + 110)
 	_world.trial_tick = Trial.ELITE_LEG - 1
 	await _frames(2)
+	_check("hunter_leg_replaces_build_hint", _world._hud._phase_label.text == Trial.LEG_HINTS[Trial.Leg.ELITE])
 	_world.trial_tick = Trial.ELITE_LEG + 154
 	await _frames(3)
 	_check("existing_elite_spawns", is_instance_valid(_world._elite) and GameState.elite_encounter_count == 1)
 	_world.trial_tick = Trial.SETTLE_TICK - 1
 	await _frames(4)
 	_check("untouched_elite_can_be_bypassed", not is_instance_valid(_world._elite))
+	_check("settling_clears_hunter_hint", _world._route_hint_left == 0.0 and _world._hud._phase_label.text.contains("整备"))
 	_world.trial_tick = Trial.BOSS_LEG - 1
 	await _frames(4)
 	_check("existing_boss_spawns_once", is_instance_valid(_world._boss) and GameState.boss_encounter_count == 1)
+	_check("solo_boss_hint_uses_stage_row", _world._hud._phase_label.text == Trial.LEG_HINTS[Trial.Leg.BOSS])
 	if is_instance_valid(_world._boss):
 		var first_boss := _world._boss
 		await _verify_exposure("bypass", 270)
