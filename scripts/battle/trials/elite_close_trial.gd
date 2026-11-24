@@ -1,11 +1,11 @@
-extends "res://scripts/opening_trial.gd"
+extends "res://scripts/battle/trials/opening_trial.gd"
 ## 从镜像护航前一秒开始，沿用原型的生成、移动、选卡加成和清理。
 const START_TICK := FINALE_TICK - 60
 const LAST_TICK := START_TICK + 18 * 60
 const ELITE_SEED := 90220
 const TRIAL_CARD := "splash"
-const EliteRules := preload("res://scripts/elite.gd")
-const CannonShot := preload("res://scripts/bullet.gd")
+const EliteRules := preload("res://scripts/battle/enemies/elite.gd")
+const CannonShot := preload("res://scripts/battle/projectiles/bullet.gd")
 const CLOSE_RANGE := 208.0
 const OPENS_AT := .22
 const CLOSES_AT := 1.30

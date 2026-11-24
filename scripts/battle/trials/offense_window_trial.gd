@@ -1,10 +1,10 @@
-extends "res://scripts/main.gd"
+extends "res://scripts/battle/main.gd"
 ## 两张卡共用这条时间线。每股扇弹只由仍然存活的发射者放出。
 signal charge_interrupted(slot: int, fire_tick: int, world_position: Vector2)
 
-const Enemy := preload("res://scripts/enemy.gd")
-const TrialPalette := preload("res://scripts/palette.gd")
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
+const Enemy := preload("res://scripts/battle/enemies/enemy.gd")
+const TrialPalette := preload("res://scripts/visuals/palette.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 const OFFER := ["pierce", "power"]
 const COLUMN_X := [.30, .24, .34, .27, .32]
 const WAVE_TICKS := 540

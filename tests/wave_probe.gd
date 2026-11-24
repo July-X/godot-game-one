@@ -28,8 +28,8 @@ const TAG := "[WAVE]"
 const MAX_LEVEL := 60
 const SCREEN := Vector2(1280.0, 720.0)
 
-const DIRECTOR_PATH := "res://scripts/wave_director.gd"
-const MAIN_PATH := "res://scripts/main.gd"
+const DIRECTOR_PATH := "res://scripts/battle/wave_director.gd"
+const MAIN_PATH := "res://scripts/battle/main.gd"
 
 var _passed: int = 0
 var _failed: int = 0

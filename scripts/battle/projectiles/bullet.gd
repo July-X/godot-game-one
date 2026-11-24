@@ -1,7 +1,7 @@
 extends Area2D
 
 signal card_effect(card: String, target: Node2D)
-const Palette = preload("res://scripts/palette.gd")
+const Palette = preload("res://scripts/visuals/palette.gd")
 ## 子弹 — 支持对象池复用
 
 var _direction: Vector2 = Vector2.ZERO

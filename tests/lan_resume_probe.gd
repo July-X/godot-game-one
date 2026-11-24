@@ -4,7 +4,7 @@ extends "res://tests/lan_probe.gd"
 const HOME := Vector2(420, 430)
 const WING := Vector2(960, 566)
 const REVIVE_AT := Vector2(650, 570)
-const Boss = preload("res://scripts/boss.gd")
+const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
 const MARKED_SHOT_SPEED := 47.0
 var _directory: String
 var _scenario: String

@@ -4,8 +4,8 @@ const TITLE := "res://scenes/ui/title_screen.tscn"
 const SOLO := "res://scenes/main.tscn"
 const TRIAL_A := "res://scenes/first_card_trial_a.tscn"
 const TRIAL_B := "res://scenes/first_card_trial_b.tscn"
-const TrialGame := preload("res://scripts/first_card_trial.gd")
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
+const TrialGame := preload("res://scripts/battle/trials/first_card_trial.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 var passed := 0
 var failed := 0
 var opening_state: Array

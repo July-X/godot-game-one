@@ -5,6 +5,8 @@ logs/
 addons/
 backup_3d/
 *.uid
+# 主战斗场景的脚本引用包含这个 UID。
+!/scripts/battle/main.gd.uid
 backup_3d/
 .workbuddy/
 android/__pycache__/

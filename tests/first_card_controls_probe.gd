@@ -1,7 +1,7 @@
 extends Node
 
 const TRIAL := preload("res://scenes/first_card_trial.tscn")
-const TrialGame := preload("res://scripts/first_card_trial.gd")
+const TrialGame := preload("res://scripts/battle/trials/first_card_trial.gd")
 var trial: TrialGame
 var passed := 0
 var failed := 0

@@ -1,15 +1,15 @@
 extends Node
 
 const Scene := preload("res://scenes/opening_trial.tscn")
-const Rift := preload("res://scripts/rift_route_trial.gd")
+const Rift := preload("res://scripts/battle/trials/rift_route_trial.gd")
 const RiftScene := preload("res://scenes/rift_route_trial.tscn")
-const Opening := preload("res://scripts/opening_trial.gd")
+const Opening := preload("res://scripts/battle/trials/opening_trial.gd")
 const Mobile := preload("res://scenes/ui/mobile_controls.tscn")
-const Bullet := preload("res://scripts/bullet.gd")
-const Enemy := preload("res://scripts/enemy.gd")
-const Elite := preload("res://scripts/elite.gd")
-const CloseTrial := preload("res://scripts/elite_close_trial.gd")
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
+const Bullet := preload("res://scripts/battle/projectiles/bullet.gd")
+const Enemy := preload("res://scripts/battle/enemies/enemy.gd")
+const Elite := preload("res://scripts/battle/enemies/elite.gd")
+const CloseTrial := preload("res://scripts/battle/trials/elite_close_trial.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 const Title := "res://scenes/ui/title_screen.tscn"
 const OpeningChoices := "res://scenes/ui/opening_trial_choices.tscn"
 const Solo := "res://scenes/main.tscn"

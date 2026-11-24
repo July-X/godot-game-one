@@ -1,4 +1,4 @@
-extends "res://scripts/main.gd"
+extends "res://scripts/battle/main.gd"
 ## Exercise real paths. --capture=PATH renders a fixed crossing stress fixture; no change to game data.
 
 class Target extends CharacterBody2D:

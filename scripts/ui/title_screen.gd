@@ -1,6 +1,6 @@
 extends CanvasLayer
 
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 
 @export var show_opening_choices_on_entry := false
 

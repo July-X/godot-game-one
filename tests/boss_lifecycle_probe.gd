@@ -1,12 +1,12 @@
 extends "res://tests/lan_probe.gd"
 ## 同一场景可检查单人碰撞、真实 ENet 双端和死亡回调内的换场边界。
-const BURST = preload("res://scripts/shield_shatter_burst.gd")
+const BURST = preload("res://scripts/visuals/shield_shatter_burst.gd")
 const POWERUP = preload("res://scenes/entities/powerup.tscn")
 const TARGET := Vector2(608, 270)
 const ITEMS := ["core", "heal", "speed", "power", "core", "heal"]
-const BossModel = preload("res://scripts/boss.gd")
-const LaserModel = preload("res://scripts/boss_ultimate_laser_visual.gd")
-const HitModel = preload("res://scripts/hit_effect.gd")
+const BossModel = preload("res://scripts/battle/enemies/boss/boss.gd")
+const LaserModel = preload("res://scripts/battle/enemies/boss/boss_ultimate_laser_visual.gd")
+const HitModel = preload("res://scripts/visuals/hit_effect.gd")
 
 var bursts: Array[int] = []
 var release_cues := 0

@@ -21,17 +21,17 @@ run/max_fps=120
 
 [autoload]
 
-GameState="*res://scripts/game_state.gd"
-SFX="*res://scripts/sfx_manager.gd"
-BGM="*res://scripts/bgm_manager.gd"
-SpriteFactory="*res://scripts/sprite_factory.gd"
-Leaderboard="*res://scripts/leaderboard.gd"
-Pool="*res://scripts/pool.gd"
-NetworkManager="*res://scripts/network_manager.gd"
-HotspotManager="*res://scripts/hotspot_manager.gd"
-NetworkDiscovery="*res://scripts/network_discovery.gd"
-HarmonyBridge="*res://scripts/harmony_bridge.gd"
-UpgradeDraft="*res://scripts/upgrade_draft.gd"
+GameState="*res://scripts/battle/game_state.gd"
+SFX="*res://scripts/audio/sfx_manager.gd"
+BGM="*res://scripts/audio/bgm_manager.gd"
+SpriteFactory="*res://scripts/visuals/sprite_factory.gd"
+Leaderboard="*res://scripts/persistence/leaderboard.gd"
+Pool="*res://scripts/battle/pool.gd"
+NetworkManager="*res://scripts/network/network_manager.gd"
+HotspotManager="*res://scripts/network/hotspot_manager.gd"
+NetworkDiscovery="*res://scripts/network/network_discovery.gd"
+HarmonyBridge="*res://scripts/network/harmony_bridge.gd"
+UpgradeDraft="*res://scripts/battle/upgrade_draft.gd"
 
 [display]
 

@@ -7,13 +7,13 @@
 extends Node2D
 
 const MotionController = preload("res://scripts/player/motion_controller.gd")
-const Boss = preload("res://scripts/boss.gd")
+const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _laser_scene = preload("res://scenes/entities/laser_bolt.tscn")
-var _boss_ultimate_laser_visual_script = preload("res://scripts/boss_ultimate_laser_visual.gd")
-var _wave_director_script = preload("res://scripts/wave_director.gd")
+var _boss_ultimate_laser_visual_script = preload("res://scripts/battle/enemies/boss/boss_ultimate_laser_visual.gd")
+var _wave_director_script = preload("res://scripts/battle/wave_director.gd")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
@@ -81,7 +81,7 @@ const ENTITY_RESYNC_REQUEST_INTERVAL_MSEC: int = 750
 ## 贴图内不放跨界星星，滚动时按该边长取模循环即可无缝衔接。
 ## 取 512 而非更小：256 的贴图在 1280 宽的屏幕上会横排重复 5 次，
 ## 肉眼能直接看出网格状重复（实测截图确认）；512 只重复 2.5 次。
-const Palette = preload("res://scripts/palette.gd")
+const Palette = preload("res://scripts/visuals/palette.gd")
 ## 玩家极速兜底值（motion_controller.move_speed 默认 260）。
 ## 正常情况走 player.get_max_move_speed()，这里只作为玩家节点尚未就绪时的回退。
 const PLAYER_MOVE_SPEED_FALLBACK: float = 260.0
@@ -141,7 +141,7 @@ const DEATH_MARQUEE_FADE_SECONDS: float = 3.0
 @onready var _bg_color: ColorRect = $Backdrop/BgColor
 @onready var _backdrop: CanvasLayer = $Backdrop
 
-var _camera_shake_script = preload("res://scripts/camera_shake.gd")
+var _camera_shake_script = preload("res://scripts/visuals/camera_shake.gd")
 
 
 func _spawn_shake() -> void:

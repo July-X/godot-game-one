@@ -28,7 +28,7 @@ PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21203 rift-timeout-host
 PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 21204 rift-timeout-client
 ```
 
-复跑旧版时，把当前的 `tests/run_rift_build_probe.py` 和 `tests/opening_trial_probe.gd` 复制到 `3556637` 的临时副本，导入后在该副本执行 Python 命令并附加 `--baseline`。逐机出生、逐弹发射、实际命中和失血记录在输出目录。脚本沿固定手势操作，是否能主动换线留给不提示打法的真人试玩。
+复跑旧版时，从 `4c1d0d6` 取目录迁移前的 `tests/run_rift_build_probe.py` 和 `tests/opening_trial_probe.gd`，复制到 `3556637` 的临时副本，导入后在该副本执行 Python 命令并附加 `--baseline`。逐机出生、逐弹发射、实际命中和失血记录在输出目录。脚本沿固定手势操作，是否能主动换线留给不提示打法的真人试玩。
 
 ## 猎手击破奖励
 
@@ -74,7 +74,7 @@ PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 22504 boss-coop
 
 固定种子 90220，以脚本控机和近距离生成的实弹隔离落点。一发面值 4 的实弹打中普通区域仍扣 4，打中亮边扣 6，同脚本在 `a5e8536` 都扣 4。两组双人各 55 项，互换目标、主炮归属和 20:9／4:3；站在锁线上的目标实扣 10，读标横移的目标无伤。重连恢复约 1.05–1.08 秒余时，过期重连和旧包重放保持关闭。护盾剩 5 时，亮边一发破盾，本体血量维持不变。普通局的脉冲仍无弱点，协议 4 和 5 互换房主均明确阻断开局。
 
-复跑基线时，在 `a5e8536` 的临时副本中替换为同一份 `tests/rift_inducement_probe.gd`，使用同一场景，角色参数之后追加 `baseline`。双端直接按 `-- host 端口 rift-flank-host baseline` 和 `-- client 端口 rift-flank-host baseline` 运行。
+复跑基线时，在 `a5e8536` 的临时副本中替换为 `4c1d0d6` 的 `tests/rift_inducement_probe.gd`，使用同一场景，角色参数之后追加 `baseline`。双端直接按 `-- host 端口 rift-flank-host baseline` 和 `-- client 端口 rift-flank-host baseline` 运行。
 
 ### 终极激光外焰
 
@@ -113,7 +113,7 @@ for rate in basic fast; do
 done
 ```
 
-在旧版使用同一测试场景和脚本，参数追加 `measure` 仅记录读数，不套新版门槛。
+在旧版使用 `4c1d0d6` 的测试场景和脚本，参数追加 `measure` 仅记录读数，不套新版门槛。
 
 双人专项使用真实 ENet 回环和交换房主的 20:9、4:3。机师倒地后，下一招从存活机师中选择。换传输身份时只补剩余预警，房主照原计划发弹一次。猎手的短齐射复用现有可靠散射队列。桌面同版本大厅及协议版本不同时的阻断均已复跑。触控、画幅和走位数据来自模拟，手机和平板真机仍待验。
 

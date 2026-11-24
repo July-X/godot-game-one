@@ -1,6 +1,6 @@
 extends "res://tests/lan_probe.gd"
 ## 观察实际启动的音频回放。把重发分隔几个混音周期，误播就会独立计数。
-const Player = preload("res://scripts/player.gd")
+const Player = preload("res://scripts/player/player.gd")
 const HIT := "res://scenes/effects/hit_effect.tscn"
 
 var _break_playbacks := {}

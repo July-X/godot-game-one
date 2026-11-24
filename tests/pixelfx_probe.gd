@@ -2,8 +2,8 @@ extends Node
 ## 固定开火帧及接触帧。目标与危险弹走正式场景，截图只读完成绘制的视口。
 const MAIN := preload("res://scenes/main.tscn")
 const HIT := preload("res://scenes/effects/hit_effect.tscn")
-const BURST := preload("res://scripts/explosion.gd")
-const PALETTE := preload("res://scripts/palette.gd")
+const BURST := preload("res://scripts/visuals/explosion.gd")
+const PALETTE := preload("res://scripts/visuals/palette.gd")
 const CENTERS := [Vector2(640, 300), Vector2(571, 277), Vector2(632, 258), Vector2(696, 283)]
 const CONTACTS := [32, 64, 94, 97, 100, 103, 106, 109]
 const TARGETS := [0, 0, 1, 2, 3, 1, 2, 3]

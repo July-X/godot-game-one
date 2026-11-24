@@ -1,7 +1,7 @@
 extends Node2D
 
-const Boss = preload("res://scripts/boss.gd")
-const BEAM_SHADER := preload("res://scripts/boss_laser_beam.gdshader")
+const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
+const BEAM_SHADER := preload("res://scripts/battle/enemies/boss/boss_laser_beam.gdshader")
 const EMBER := Color("#f16c36")
 const AMBER := Color("#ffb86b")
 const PIXEL := Vector2.ONE * 2.0

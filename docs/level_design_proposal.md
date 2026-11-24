@@ -47,7 +47,7 @@ if _difficulty_timer > 8.0: _difficulty_timer = 0.0;  _spawn_enemy_if_below_cap(
 
 ## 2. 已落地：波次编排器（Wave Director）
 
-实现：`scripts/wave_director.gd`，接入 `main.gd` 的 `_tick_wave_director()`。
+实现：`scripts/battle/wave_director.gd`，接入 `main.gd` 的 `_tick_wave_director()`。
 
 ### 2.1 结构：一关 = 一段 4 拍乐句
 

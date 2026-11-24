@@ -1,6 +1,6 @@
 extends "res://tests/boss_coop_probe.gd"
 
-const Ledger := preload("res://scripts/boss_aggro.gd")
+const Ledger := preload("res://scripts/battle/enemies/boss/boss_aggro.gd")
 var _mirror := false
 var _targets: Dictionary = {}
 var _directions: Dictionary = {}

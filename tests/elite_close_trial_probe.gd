@@ -1,7 +1,7 @@
 extends "res://tests/opening_trial_probe.gd"
 
 const CloseScene := preload("res://scenes/elite_close_trial.tscn")
-const Close := preload("res://scripts/elite_close_trial.gd")
+const Close := preload("res://scripts/battle/trials/elite_close_trial.gd")
 
 var close_trial: Close
 var break_tick := -1

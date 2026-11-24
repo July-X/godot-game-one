@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dmykyxanlrvbu"]
 
-[ext_resource type="Script" path="res://scripts/hud.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/ui/hud.gd" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pilot_status.tscn" id="2"]
 
 [sub_resource type="StyleBoxFlat" id="3"]

@@ -1,8 +1,8 @@
-extends "res://scripts/main.gd"
+extends "res://scripts/battle/main.gd"
 ## 单人首卡试飞。出生和扇弹只读游戏时钟，与选卡、击杀数及随机导演无关。
-const Enemy := preload("res://scripts/enemy.gd")
-const TrialPalette := preload("res://scripts/palette.gd")
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
+const Enemy := preload("res://scripts/battle/enemies/enemy.gd")
+const TrialPalette := preload("res://scripts/visuals/palette.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 const FIRST_OFFER := ["pierce", "splash", "graze_focus"]
 # 出生和停靠点按视口比例排列。右队先分开进入，再收拢到溅射半径内。
 const ORDERS := [

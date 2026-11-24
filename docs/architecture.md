@@ -27,7 +27,7 @@
 ## 2. 文件结构
 
 ```
-├── project.godot              # 引擎配置 + 10 个 autoload 注册
+├── project.godot              # 引擎配置 + 11 个 Autoload 注册
 ├── scenes/
 │   ├── main.tscn              # 战斗主场景 (Node2D)
 │   ├── offense_window_trial.tscn # 45 秒单人试飞，继承战斗主场景
@@ -57,34 +57,18 @@
 │       ├── hud.tscn           # 抬头显示 (CanvasLayer)
 │       └── mobile_controls.tscn # 移动端摇杆 + 技能按钮
 ├── scripts/
-│   ├── game_state.gd          # Autoload，全局状态真理源
-│   ├── sfx_manager.gd         # Autoload，程序化音效
-│   ├── bgm_manager.gd         # Autoload，程序化 BGM
-│   ├── sprite_factory.gd      # Autoload，程序化贴图
-│   ├── leaderboard.gd         # Autoload，排行榜持久化
-│   ├── pool.gd                # Autoload，子弹/命中特效取用与回收入口（不做节点复用）
-│   ├── network_manager.gd     # Autoload，ENet 连接生命周期
-│   ├── hotspot_manager.gd     # Autoload，Wi-Fi 热点（调试回退）
-│   ├── network_discovery.gd   # Autoload，调试发现后端
-│   ├── harmony_bridge.gd      # Autoload，鸿蒙近场发现桥接层
-│   ├── main.gd                # 战斗主场景控制器（刷怪 / 实体同步 / 联机权威）
-│   ├── player.gd              # 玩家主控（233 行壳子）
-│   ├── player/                # 玩家逻辑子模块
-│   │   ├── motion_controller.gd    # 移动 / 边界反弹 / 动画
-│   │   ├── combat_controller.gd    # 射击 / 导弹 / 技能 / 拾取
-│   │   ├── feedback_controller.gd  # 外观 / 受击反馈 / 爆炸
-│   │   └── action_router.gd        # 输入分发│   ├── enemy.gd / elite.gd / boss.gd
-│   ├── bullet.gd / laser_bolt.gd / homing_missile.gd / asteroid.gd
-│   ├── powerup.gd / explosion.gd / hit_effect.gd / screen_shake.gd
-│   ├── generate_assets/make_pixelfx.mjs # 离线生成普通火花和普通敌机击毁图集，供上述特效脚本读取
-│   ├── laser_bolt.gd / lightning_line.gd   # 激光与闪电链绘制
-│   ├── shield_ring.gd         # 玩家护盾环 draw_arc
-│   ├── shield_circle.gd       # 精英/Boss 护盾圆形光晕
-│   ├── shield_shatter_burst.gd # 破盾碎裂特效
-│   ├── cooldown_overlay.gd    # 技能/激光冷却覆盖层（单文件，含两种形态）
-│   ├── boss_ultimate_laser_visual.gd / boss_laser_beam.gdshader # 终局激光阶段、束段和端帽
-│   ├── rift_hunter_attack.gd   # 航道猎手的锁向、缺口和预警快照
-│   ├── hud.gd / title_screen.gd / lobby.gd / mobile_controls.gd
+│   ├── battle/                # 战斗主控、局内状态、波次、选卡、掉落、实体取用
+│   │   ├── enemies/           # 普通敌人、小行星、精英及裂隙猎手
+│   │   │   └── boss/          # 母舰行为、仇恨、终局激光绘制及着色器
+│   │   ├── projectiles/       # 子弹、导弹、激光弹
+│   │   └── trials/            # 首卡、进攻窗口、开场、近身试飞及裂隙航道
+│   ├── player/                # 玩家入口、输入、移动、射击、受击表现
+│   ├── network/               # 联机生命周期、断线恢复、发现及鸿蒙桥接
+│   ├── ui/                    # 标题、大厅、HUD（抬头显示）、移动端控件
+│   ├── audio/                 # 背景音乐和程序化音效
+│   ├── visuals/               # 通用战斗特效、视效、配色和贴图
+│   ├── persistence/           # 排行榜本地存储
+│   └── generate_assets/       # 离线美术和音频生成工具
 ├── tests/
 │   ├── lan_probe.gd           # 双进程 headless 联机回归探针
 │   ├── lan_probe.tscn
@@ -115,20 +99,21 @@
 
 加入端子弹保持纯渲染。房主在已有实体位置包中最多附带一个已结算的子弹落点，坐标与盾面标记共 3 个浮点数。精英破盾提示由可靠护盾同步与显式破盾消息共用的状态生成。只有战斗击毁的销毁通知会在远端播放爆炸，清场继续静默。
 
-## 3. Autoload 全局系统（10 个）
+## 3. Autoload 全局系统（11 个）
 
 | Autoload | 脚本 | 职责 |
 |----------|------|------|
-| `GameState` | `game_state.gd` | 全局状态真理源，信号广播中心 |
-| `SFX` | `sfx_manager.gd` | 程序化音源，8 个开火声部，12 个共享声部。玩家受击、激光预警、破盾、精英击毁各用 1 个专用声部 |
-| `BGM` | `bgm_manager.gd` | 原创巡航与 Boss 循环、切换与预警衰减 |
-| `SpriteFactory` | `sprite_factory.gd` | 程序化贴图生成与缓存 |
-| `Leaderboard` | `leaderboard.gd` | `ConfigFile` 排行榜持久化 |
-| `Pool` | `pool.gd` | 子弹 / 命中特效的取用与回收入口，不做节点复用（见 §12） |
-| `NetworkManager` | `network_manager.gd` | ENet 连接生命周期，Host/Client 统一入口 |
-| `HotspotManager` | `hotspot_manager.gd` | Wi-Fi 热点（调试回退路径） |
-| `NetworkDiscovery` | `network_discovery.gd` | 调试发现后端 |
-| `HarmonyBridge` | `harmony_bridge.gd` | 鸿蒙原生插件适配层，插件缺失时内部回退 |
+| `GameState` | `scripts/battle/game_state.gd` | 全局状态真理源，信号广播中心 |
+| `SFX` | `scripts/audio/sfx_manager.gd` | 程序化音源，8 个开火声部，12 个共享声部。玩家受击、激光预警、破盾、精英击毁各用 1 个专用声部 |
+| `BGM` | `scripts/audio/bgm_manager.gd` | 原创巡航与 Boss 循环、切换与预警衰减 |
+| `SpriteFactory` | `scripts/visuals/sprite_factory.gd` | 程序化贴图生成与缓存 |
+| `Leaderboard` | `scripts/persistence/leaderboard.gd` | `ConfigFile` 排行榜持久化 |
+| `Pool` | `scripts/battle/pool.gd` | 子弹 / 命中特效的取用与回收入口，不做节点复用（见 §12） |
+| `NetworkManager` | `scripts/network/network_manager.gd` | ENet 连接生命周期，Host/Client 统一入口 |
+| `HotspotManager` | `scripts/network/hotspot_manager.gd` | Wi-Fi 热点（调试回退路径） |
+| `NetworkDiscovery` | `scripts/network/network_discovery.gd` | 调试发现后端 |
+| `HarmonyBridge` | `scripts/network/harmony_bridge.gd` | 鸿蒙原生插件适配层，插件缺失时内部回退 |
+| `UpgradeDraft` | `scripts/battle/upgrade_draft.gd` | 升级选卡、超时及同步 |
 
 ### 3.1 GameState（`game_state.gd`）
 
@@ -209,7 +194,7 @@ main._process(delta)
 
 ---
 
-## 5. 玩家系统（`player.gd` + `scripts/player/`）
+## 5. 玩家系统（`scripts/player/`）
 
 玩家逻辑已从单文件拆分：`player.gd` 只保留节点装配与信号连接，具体行为分四个模块。
 
@@ -321,7 +306,7 @@ _max_shield_hp = old_max * 0.10
 
 ### 8.3 终局究极激光炮
 
-时序与伤害常量定义在 `scripts/boss.gd`。
+时序与伤害常量定义在 `scripts/battle/enemies/boss/boss.gd`。
 
 | 常量 | 值 | 含义 |
 |------|-----|------|
@@ -651,13 +636,13 @@ Main 在房主和加入端的 `_rpc_set_boss_bg` 里应用同一个阶段值并�
 
 ## 16. 验证
 
-`scenes/offense_window_trial.tscn` 由标题单独启动。它继承战斗主场景，在 `scripts/offense_window_trial.gd` 接管试飞的出生和发射时钟。扇弹复用普通敌机的弹体生成入口，由后排在场状态决定。新版在发射者的死亡信号上核对当前蓄力的截止帧，用试飞自带的绘制节点和短音反馈中断。选卡前可切到 `offense_window_trial_v1.tscn` 的旧版预设。重试沿用预设，离场清除临时选卡。[搭配与复跑](offense_window_trial.md)
+`scenes/offense_window_trial.tscn` 由标题单独启动。它继承战斗主场景，在 `scripts/battle/trials/offense_window_trial.gd` 接管试飞的出生和发射时钟。扇弹复用普通敌机的弹体生成入口，由后排在场状态决定。新版在发射者的死亡信号上核对当前蓄力的截止帧，用试飞自带的绘制节点和短音反馈中断。选卡前可切到 `offense_window_trial_v1.tscn` 的旧版预设。重试沿用预设，离场清除临时选卡。[搭配与复跑](offense_window_trial.md)
 
-`scenes/opening_trial.tscn` 也是独立单人入口。`scripts/opening_trial.gd` 给普通敌机安排站位、蓄力和齐射，在第 20 秒用 `UpgradeDraft.offer_cards` 调用正式三选一，在镜像编队入场后调用主场景的精英生成。试飞结束走主场景的实体、控件清理，使用自己的结果面板。[输入、实弹与验收](opening_trial.md)
+`scenes/opening_trial.tscn` 也是独立单人入口。`scripts/battle/trials/opening_trial.gd` 给普通敌机安排站位、蓄力和齐射，在第 20 秒用 `UpgradeDraft.offer_cards` 调用正式三选一，在镜像编队入场后调用主场景的精英生成。试飞结束走主场景的实体、控件清理，使用自己的结果面板。[输入、实弹与验收](opening_trial.md)
 
 `scenes/elite_close_trial.tscn` 从开场试飞的镜像队开始。B 只在这个场景监听主炮完成的直接碰撞，依照精英原有破盾时钟和本机距离补伤害。标题页的二级选择分别加载 A/B 场景预设，重试通过原场景重载保留版本。近身试飞返回时重用标题页，在 `opening_trial_choices.tscn` 中打开同一选择。[对照入口和实测](elite_close_trial.md)
 
-首卡试飞复用 `scenes/main.tscn`。子场景 `scenes/first_card_trial.tscn` 和 `scripts/first_card_trial.gd` 只接管首次二级选择与随后 550 个物理帧。固定出生表、撤离、预告和扇弹都在该脚本内。常规抽卡和试飞通过 `UpgradeDraft.offer_cards` 共用确认、加卡及超时路径。
+首卡试飞复用 `scenes/main.tscn`。子场景 `scenes/first_card_trial.tscn` 和 `scripts/battle/trials/first_card_trial.gd` 只接管首次二级选择与随后 550 个物理帧。固定出生表、撤离、预告和扇弹都在该脚本内。常规抽卡和试飞通过 `UpgradeDraft.offer_cards` 共用确认、加卡及超时路径。
 
 标题页在自己的按钮区显示两种中性选择。短场景 `first_card_trial_a.tscn` 和 `first_card_trial_b.tscn` 继承同一试玩场景，选版附在场景上，重载直接保留。场景切换等按键与触摸处理结束后再执行。行动提示仍画在背景层，直接运行时沿用 `--trial-hint`。选卡来源保存在当前升级记录，继续复用原确认信号。标题入口及 `--trial-log` 启用本地结果记录。
 
@@ -708,7 +693,7 @@ godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 
 ### 16.1 难度曲线门禁
 
-`tests/curve_probe.gd`（headless 单进程，不需要 ENet）直接 `load("res://scripts/main.gd")`
+`tests/curve_probe.gd`（headless 单进程，不需要 ENet）直接 `load("res://scripts/battle/main.gd")`
 调用 `compute_enemy_speed()` / `compute_post_elite_multiplier()`，断言：
 
 | 断言 | 含义 |
@@ -751,7 +736,7 @@ godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 
 ### 16.3 波次编排门禁
 
-`tests/wave_probe.gd`（headless 单进程，不需要 ENet）直接 `load("res://scripts/wave_director.gd")`，
+`tests/wave_probe.gd`（headless 单进程，不需要 ENet）直接 `load("res://scripts/battle/wave_director.gd")`，
 断言 **25 项**节奏不变量。与 §16.1 的曲线门禁互不重叠：
 
 | 断言 | 含义 |
@@ -783,7 +768,7 @@ godot --headless --fixed-fps 60 --path . res://tests/combat_visual_probe.tscn
 敌人类型 `randi()%3`、出生点四边随机。问题不是慢，而是**没有形状**：
 同屏压力是一条恒定直线，且四条压力通道在 L13~L56 全部触顶（见 `docs/level_design_proposal.md`）。
 
-现由 `scripts/wave_director.gd` 接管全部杂兵投放：
+现由 `scripts/battle/wave_director.gd` 接管全部杂兵投放：
 
 | 概念 | 取值 |
 |------|------|

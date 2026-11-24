@@ -3,7 +3,7 @@ extends Node
 ## Contacts are replayed deterministically through the actual bullet callback.
 const MAIN := preload("res://scenes/main.tscn")
 const BULLET := preload("res://scenes/entities/bullet.tscn")
-const Boss := preload("res://scripts/boss.gd")
+const Boss := preload("res://scripts/battle/enemies/boss/boss.gd")
 const DURATION := 60
 const HIT_COUNT := 60
 const CONTACT_DAMAGE := 0.25

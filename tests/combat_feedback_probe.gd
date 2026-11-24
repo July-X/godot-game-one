@@ -2,7 +2,7 @@ extends Node
 ## 60 帧/秒固定事件，同时用于无窗口回归和 Godot Movie Maker 有声对照。
 const MAIN := preload("res://scenes/main.tscn")
 const ELITE := preload("res://scenes/entities/elite.tscn")
-const PALETTE := preload("res://scripts/palette.gd")
+const PALETTE := preload("res://scripts/visuals/palette.gd")
 var main
 var player
 var normal
@@ -73,7 +73,7 @@ func _voices(stream: AudioStream) -> Array:
 	return active
 
 func _explosions() -> Array:
-	return main.get_children().filter(func(node): return node.get_script() == preload("res://scripts/explosion.gd"))
+	return main.get_children().filter(func(node): return node.get_script() == preload("res://scripts/visuals/explosion.gd"))
 
 func _check(label: String, ok: bool, detail := "") -> void:
 	if ok:

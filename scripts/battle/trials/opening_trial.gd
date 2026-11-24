@@ -1,10 +1,10 @@
-extends "res://scripts/main.gd"
+extends "res://scripts/battle/main.gd"
 ## 开场试飞的时钟与编队。飞机、选卡、碰撞和精英继续走主场景路径。
 signal volley_interrupted(role: String, at: Vector2, release_tick: int)
 
-const Enemy := preload("res://scripts/enemy.gd")
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
-const TrialPalette := preload("res://scripts/palette.gd")
+const Enemy := preload("res://scripts/battle/enemies/enemy.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
+const TrialPalette := preload("res://scripts/visuals/palette.gd")
 const OFFER := ["pierce", "splash", "power"]
 const DRAFT_TICK := 20 * 60
 const FINALE_TICK := 55 * 60

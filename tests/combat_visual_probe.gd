@@ -50,7 +50,7 @@ func _run() -> void:
 	# 这枚慢弹与断环右侧相交，录帧能直接看出谁在上层。
 	var shooter = get_tree().get_first_node_in_group("enemies")
 	shooter._spawn_enemy_bullet(GOLD_POS + Vector2(20, 0), PI / 2, 1,
-		shooter.SPEED_SLOW, preload("res://scripts/palette.gd").ENEMY_BULLET_SLOW)
+		shooter.SPEED_SLOW, preload("res://scripts/visuals/palette.gd").ENEMY_BULLET_SLOW)
 	var enemy_shots := get_tree().get_nodes_in_group("enemy_bullets")
 	for shot in enemy_shots:
 		shot.set_physics_process(false)

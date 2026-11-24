@@ -1,7 +1,7 @@
 extends Node
 
 const TRIAL := preload("res://scenes/offense_window_trial.tscn")
-const Trial := preload("res://scripts/offense_window_trial.gd")
+const Trial := preload("res://scripts/battle/trials/offense_window_trial.gd")
 const LEGACY_PATH := "res://scenes/offense_window_trial_v1.tscn"
 const MobileControls := preload("res://scenes/ui/mobile_controls.tscn")
 const TITLE := "res://scenes/ui/title_screen.tscn"

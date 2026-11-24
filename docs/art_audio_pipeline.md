@@ -20,7 +20,7 @@ Godot 4.6.2 以 `b451652` 作基线。同一脚本、种子和视口按第 492�
 
 真实图形双进程中，房主 1280×720 和加入端 1600×720 各 53/53。双方都录到推进光束、对齐的舰首和选卡叠层。常规联机 40/40，反馈联机 27/27。
 
-在基线和当前版本运行同一份 `battle_presentation_probe.gd`。基线可以用 `git archive b451652` 解到临时目录，复制该脚本并导入。截图和录像写入各自的已有输出目录。
+基线可以用 `git archive b451652` 解到临时目录，使用 `git show 4c1d0d6:tests/battle_presentation_probe.gd` 取目录迁移前的探针后导入。当前项目使用工作树里的探针。截图和录像写入各自的已有输出目录。
 
 ```bash
 godot --windowed --resolution 1280x720 --fixed-fps 60 --disable-vsync --audio-driver Dummy \
@@ -163,7 +163,9 @@ MacBook 用 Godot 4.6.2 录制了两版的 1280×720 与 1600×720。第 622 物
 out=$(mktemp -d)
 mkdir -p "$out"/{baseline,A16,A20,B16,B20,wide-host,wide-client}
 git archive 70f2ad1 | tar -x -C "$out/baseline"
-cp tests/battle_presentation_probe.{gd,tscn} "$out/baseline/tests/"
+for ext in gd tscn; do
+    git show "4c1d0d6:tests/battle_presentation_probe.$ext" > "$out/baseline/tests/battle_presentation_probe.$ext"
+done
 godot --headless --path "$out/baseline" --import
 godot --headless --path . --import
 godot --path "$out/baseline" --windowed --resolution 1280x720 --fixed-fps 60 --audio-driver Dummy \
@@ -216,7 +218,9 @@ bash tests/run_probe.sh 19117 wide-client "$out/wide-client"
 out=$(mktemp -d)
 mkdir -p "$out"/{baseline,A,B,OFF,A-clear,B-clear,OFF-clear}
 git archive 0939598 | tar -x -C "$out/baseline"
-cp tests/pixelfx_probe.{gd,tscn} "$out/baseline/tests/"
+for ext in gd tscn; do
+    git show "4c1d0d6:tests/pixelfx_probe.$ext" > "$out/baseline/tests/pixelfx_probe.$ext"
+done
 godot --headless --path "$out/baseline" --import
 godot --headless --path . --import
 take() {
@@ -274,7 +278,7 @@ bash tests/run_probe.sh 18753 feedback
 
 ## 资产来源
 
-### 程序化生成（`scripts/sprite_factory.gd`）
+### 程序化生成（`scripts/visuals/sprite_factory.gd`）
 
 | 资源 | 函数 |
 |------|------|

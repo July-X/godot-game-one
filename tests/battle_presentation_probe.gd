@@ -2,8 +2,8 @@ extends Node
 ## 同一份夹具可在基线和候选版本录制。输入、弹体、选卡和激光由游戏处理。
 const MAIN = preload("res://scenes/main.tscn")
 const BULLET = preload("res://scenes/entities/bullet.tscn")
-const PALETTE = preload("res://scripts/palette.gd")
-const SafeArea = preload("res://scripts/battle_safe_area.gd")
+const PALETTE = preload("res://scripts/visuals/palette.gd")
+const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
 const CARDS := ["pierce", "splash", "power"]
 
 var _main

@@ -1,4 +1,4 @@
-extends "res://scripts/opening_trial.gd"
+extends "res://scripts/battle/trials/opening_trial.gd"
 ## Authored encounter clock; player and projectile physics remain in Main.
 enum Leg { INTERCEPT, BUILD, ELITE, BOSS }
 const HUNTER_ENTRY_SECONDS := 0.26

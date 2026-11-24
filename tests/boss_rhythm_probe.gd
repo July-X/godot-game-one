@@ -1,7 +1,7 @@
 extends Node
 ## 固定相同配装，程序瞄准并用实弹测 Boss；旧版也可运行同一夹具。
 const MAIN := preload("res://scenes/main.tscn")
-const Boss := preload("res://scripts/boss.gd")
+const Boss := preload("res://scripts/battle/enemies/boss/boss.gd")
 const CENTER := Vector2(640.0, 360.0)
 const STEP := 1.0 / 60.0
 const MAX_TICKS := 60 * 240

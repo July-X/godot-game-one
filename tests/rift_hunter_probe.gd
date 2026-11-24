@@ -1,8 +1,8 @@
 extends "res://tests/boss_coop_probe.gd"
 
-const Trial := preload("res://scripts/rift_route_trial.gd")
+const Trial := preload("res://scripts/battle/trials/rift_route_trial.gd")
 const Route := preload("res://scenes/rift_route_trial.tscn")
-const Weapon := preload("res://scripts/rift_hunter_attack.gd")
+const Weapon := preload("res://scripts/battle/enemies/rift_hunter_attack.gd")
 const LINE := Weapon.Pattern.LINE
 const RING := Weapon.Pattern.RING
 var _volleys: Array[Dictionary] = []

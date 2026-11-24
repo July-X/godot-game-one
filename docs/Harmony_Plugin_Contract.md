@@ -4,7 +4,7 @@
 
 ## 1. Godot 侧入口
 
-- Autoload: `scripts/harmony_bridge.gd`（单例名：`HarmonyBridge`）
+- Autoload: `scripts/network/harmony_bridge.gd`（单例名：`HarmonyBridge`）
 - 检测插件单例候选名（任一命中即可）：
   - `HarmonyNearbyGame`
   - `HarmonyBridge`

@@ -82,7 +82,7 @@ var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
 var _powerup_scene = preload("res://scenes/entities/powerup.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
-var _shield_shatter_scene = preload("res://scripts/shield_shatter_burst.gd")
+var _shield_shatter_scene = preload("res://scripts/visuals/shield_shatter_burst.gd")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _shield_sprite: Sprite2D = $ShieldSprite
@@ -97,7 +97,7 @@ func _ready() -> void:
 	_sprite.texture = SpriteFactory.create_elite_sprite()
 	_hide_square_shield_sprite()
 	_shield_circle = Node2D.new()
-	_shield_circle.set_script(preload("res://scripts/shield_circle.gd"))
+	_shield_circle.set_script(preload("res://scripts/visuals/shield_circle.gd"))
 	_shield_circle.z_index = -1
 	_shield_circle.position = Vector2(0, 0)
 	add_child(_shield_circle)
@@ -181,8 +181,8 @@ func _handle_movement(delta: float) -> void:
 		var strafe_dir: Vector2 = perp * _dodge_direction
 		velocity = velocity.lerp(strafe_dir * speed * 0.6, 0.8 * delta)
 
-const RouteAggro := preload("res://scripts/boss_aggro.gd")
-const RouteWeapon := preload("res://scripts/rift_hunter_attack.gd")
+const RouteAggro := preload("res://scripts/battle/enemies/boss/boss_aggro.gd")
+const RouteWeapon := preload("res://scripts/battle/enemies/rift_hunter_attack.gd")
 var route_evasion := false
 var _route_aggro := RouteAggro.new()
 var _route_weapon: RouteWeapon

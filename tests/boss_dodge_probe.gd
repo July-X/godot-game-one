@@ -1,6 +1,6 @@
 extends "res://tests/lan_probe.gd"
 ## 固定发射坐标，实际子弹碰撞和网络同步由战斗场景处理。
-const BossModel := preload("res://scripts/boss.gd")
+const BossModel := preload("res://scripts/battle/enemies/boss/boss.gd")
 const CENTER := Vector2(640, 280)
 const LEFT_EDGE := Vector2(104, 280)
 var mothership: BossModel

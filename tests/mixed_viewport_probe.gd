@@ -2,9 +2,9 @@ extends "res://tests/lan_probe.gd"
 ## 真实大厅开局，P1/P2 通过视口输入飞到四边。可选图形模式见 run_probe.sh。
 
 const FIELD := Vector2(1280, 720)
-const Director = preload("res://scripts/wave_director.gd")
-const BossModel = preload("res://scripts/boss.gd")
-const SafeArea = preload("res://scripts/battle_safe_area.gd")
+const Director = preload("res://scripts/battle/wave_director.gd")
+const BossModel = preload("res://scripts/battle/enemies/boss/boss.gd")
+const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
 const SHOT_SPEED := 240.0
 const DROP_AT := Vector2(924, 380)
 const RESCUE_AT := Vector2(264, 414)

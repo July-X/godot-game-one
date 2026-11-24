@@ -1,5 +1,5 @@
 extends Node
-const Palette = preload("res://scripts/palette.gd")
+const Palette = preload("res://scripts/visuals/palette.gd")
 ## 战斗控制器
 ##
 ## 负责：普攻、技能（散射/激光）、追踪导弹、自动拾取。

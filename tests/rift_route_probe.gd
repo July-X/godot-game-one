@@ -3,7 +3,7 @@ extends Node
 const Route := preload("res://scenes/rift_route_trial.tscn")
 const Landing := preload("res://scenes/ui/title_screen.tscn")
 const Main := preload("res://scenes/main.tscn")
-const Trial := preload("res://scripts/rift_route_trial.gd")
+const Trial := preload("res://scripts/battle/trials/rift_route_trial.gd")
 var _failed := 0
 var _world: Trial
 

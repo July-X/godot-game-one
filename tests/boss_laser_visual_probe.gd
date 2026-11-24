@@ -1,7 +1,7 @@
 extends Node
 
-const Boss = preload("res://scripts/boss.gd")
-const Laser = preload("res://scripts/boss_ultimate_laser_visual.gd")
+const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
+const Laser = preload("res://scripts/battle/enemies/boss/boss_ultimate_laser_visual.gd")
 const BULLET := preload("res://scenes/entities/bullet.tscn")
 const START := Vector2(123, 134)
 const END := Vector2(471, 254)

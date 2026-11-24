@@ -22,7 +22,7 @@ const TAG := "[CURVE]"
 const MAX_LEVEL := 60
 ## 直接加载 main.gd 脚本资源来读常量与静态函数：
 ## 不给 main.gd 加 class_name，探针就能在完全不实例化战斗场景的情况下验证曲线。
-const MAIN_SCRIPT_PATH := "res://scripts/main.gd"
+const MAIN_SCRIPT_PATH := "res://scripts/battle/main.gd"
 
 var _passed: int = 0
 var _failed: int = 0
@@ -156,7 +156,7 @@ func _check_spawn_density_bounded() -> void:
 ##   - 数值卡必须有层数上限，否则满级后抽到就毫无意义
 ##   - 每张卡都要能被 GameState.apply_card 认识（漏一张 = 抽到了不生效）
 func _check_card_pool_invariants() -> void:
-	var draft_script: GDScript = load("res://scripts/upgrade_draft.gd")
+	var draft_script: GDScript = load("res://scripts/battle/upgrade_draft.gd")
 	if draft_script == null:
 		_check("card_pool_loaded", false, "无法加载 upgrade_draft.gd")
 		return
@@ -201,7 +201,7 @@ func _check_card_pool_invariants() -> void:
 ## 玩家连续 12 级看到完全相同的三张卡。这个 bug 不会报错、不会崩，
 ## 只会让构筑系统静默失效——所以必须由门禁守住。
 func _check_draft_distribution_varies() -> void:
-	var draft_script: GDScript = load("res://scripts/upgrade_draft.gd")
+	var draft_script: GDScript = load("res://scripts/battle/upgrade_draft.gd")
 	if draft_script == null:
 		_check("draft_rng_varies", false, "无法加载 upgrade_draft.gd")
 		return

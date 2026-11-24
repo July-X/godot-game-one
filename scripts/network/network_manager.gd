@@ -6,7 +6,7 @@
 ## 连接拓扑：Wi-Fi 热点 LAN（Host 开热点，Client 连热点后输入 IP）
 ## 无需互联网，局域网内延迟 < 10ms，适合移动端面对面对战。
 extends Node
-const LanRecovery = preload("res://scripts/lan_recovery.gd")
+const LanRecovery = preload("res://scripts/network/lan_recovery.gd")
 
 ## 默认端口，可在项目设置中覆盖
 const DEFAULT_PORT: int = 7777

@@ -70,7 +70,7 @@ var trial_draft_movement_only: bool = false
 var _pickup_area: Area2D
 var _graze_area: Area2D = null
 var _shield_container: Node2D
-var ShieldRing = preload("res://scripts/shield_ring.gd")
+var ShieldRing = preload("res://scripts/visuals/shield_ring.gd")
 var _shield_dirty: bool = false
 var _pending_shield_layers: int = 0
 const SHIELD_RECHARGE_INTERVAL: float = 8.0

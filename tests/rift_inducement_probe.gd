@@ -1,9 +1,9 @@
 extends "res://tests/boss_coop_probe.gd"
 
-const Trial := preload("res://scripts/rift_route_trial.gd")
+const Trial := preload("res://scripts/battle/trials/rift_route_trial.gd")
 const Route := preload("res://scenes/rift_route_trial.tscn")
 const TRACK := BossModel.PulsePhase.TRACK
-const Bullet := preload("res://scripts/bullet.gd")
+const Bullet := preload("res://scripts/battle/projectiles/bullet.gd")
 var _flank_impact := Vector2.INF
 
 func _run() -> void:

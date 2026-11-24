@@ -1,6 +1,6 @@
 extends "res://tests/lan_probe.gd"
 ## 双进程保留实际位移、命中、倒地、重连与奖励。重排每段起始站位及攻击次序以隔离用例。
-const BossModel := preload("res://scripts/boss.gd")
+const BossModel := preload("res://scripts/battle/enemies/boss/boss.gd")
 const AT := Vector2(640, 190)
 const P1_AT := Vector2(430, 595)
 const P2_AT := Vector2(850, 595)

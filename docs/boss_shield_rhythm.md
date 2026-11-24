@@ -65,7 +65,7 @@ godot --headless --path . res://tests/mobile_check.tscn
 python3 tests/run_first_card_probe.py "$(mktemp -d)"
 ```
 
-在基线的临时副本中只复制 `tests/boss_rhythm_probe.gd` 和 `tests/boss_rhythm_probe.tscn`。两版分别导入后运行以下命令。将最后一个参数换成 `assisted` 可复跑脚本保命对照。
+从 `4c1d0d6` 获取目录迁移前的 `tests/boss_rhythm_probe.gd` 和 `tests/boss_rhythm_probe.tscn`，复制到基线的临时副本。两版分别导入后运行以下命令。将最后一个参数换成 `assisted` 可复跑脚本保命对照。
 
 ```bash
 godot --headless --fixed-fps 60 --path . res://tests/boss_rhythm_probe.tscn -- evade

@@ -1,8 +1,8 @@
 extends "res://tests/boss_coop_probe.gd"
 
 const Route := preload("res://scenes/rift_route_trial.tscn")
-const Trial := preload("res://scripts/rift_route_trial.gd")
-const Elite := preload("res://scripts/elite.gd")
+const Trial := preload("res://scripts/battle/trials/rift_route_trial.gd")
+const Elite := preload("res://scripts/battle/enemies/elite.gd")
 const Mobile := preload("res://scenes/ui/mobile_controls.tscn")
 var _last_choice_frame := 0
 var _last_choice_tick := 0

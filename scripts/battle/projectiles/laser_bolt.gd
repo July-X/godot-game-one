@@ -1,13 +1,13 @@
 extends Area2D
 
-const Palette = preload("res://scripts/palette.gd")
+const Palette = preload("res://scripts/visuals/palette.gd")
 
 var _direction: Vector2 = Vector2.ZERO
 var _speed: float = 1200.0
 var _damage: float = 5.0
 var _lifetime: float = 0.6
 var _chain_max: int = 4
-var LightningLine = preload("res://scripts/lightning_line.gd")
+var LightningLine = preload("res://scripts/visuals/lightning_line.gd")
 var _line_points: PackedVector2Array = PackedVector2Array()
 var _has_bounced: bool = false
 var _target: Node2D = null

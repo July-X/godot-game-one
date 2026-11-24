@@ -1,7 +1,7 @@
 extends Node
 ## 固定种子的实弹回归；用 -- measure 在旧版只报读数。
-const Trial := preload("res://scripts/rift_route_trial.gd")
-const Weapon := preload("res://scripts/rift_hunter_attack.gd")
+const Trial := preload("res://scripts/battle/trials/rift_route_trial.gd")
+const Weapon := preload("res://scripts/battle/enemies/rift_hunter_attack.gd")
 const Route := preload("res://scenes/rift_route_trial.tscn")
 var trial: Trial
 var first_enemy_frame := -1

@@ -81,12 +81,14 @@ godot-game-one/
 │   ├── effects/                # explosion / hit_effect / screen_shake
 │   └── ui/                     # title_screen / lobby / hud / mobile_controls
 ├── scripts/
-│   ├── main.gd                 # 主场景控制器（刷怪、实体同步、联机权威）
-│   ├── player.gd + player/     # 玩家逻辑，已拆分为 4 个子模块
-│   ├── game_state.gd           # Autoload，全局状态真理源
-│   ├── boss.gd / elite.gd      # Boss 三阶段 / 精英四阶段
-│   ├── network_manager.gd      # Autoload，ENet 连接生命周期
-│   └── harmony_bridge.gd       # Autoload，鸿蒙近场发现桥接层
+│   ├── battle/                # 主场景、局内状态、敌人、弹体和试飞
+│   ├── player/                # 玩家主控、输入、移动、射击和受击
+│   ├── network/               # 联机、重连、发现及鸿蒙桥接
+│   ├── ui/                    # 标题、大厅、战斗界面和移动端控件
+│   ├── audio/                 # 音乐与音效
+│   ├── visuals/               # 通用特效、配色与贴图
+│   ├── persistence/           # 排行榜存储
+│   └── generate_assets/       # 离线素材生成
 ├── tests/
 │   ├── run_probe.sh             # 联机回归门禁入口（起双进程 + 收口退出码 + 扫报错）
 │   ├── lan_probe.gd             # 双进程联机回归（40 项断言）
@@ -100,10 +102,10 @@ godot-game-one/
 
 游戏直接使用仓库内的贴图和程序化音源。
 
-- **贴图**：`scripts/sprite_factory.gd` 生成玩家/敌人/精英/子弹/道具/爆炸序列帧/星空
+- **贴图**：`scripts/visuals/sprite_factory.gd` 生成玩家/敌人/精英/子弹/道具/爆炸序列帧/星空
 - **例外**：Boss（`boss_01`~`boss_05`）与玩家等级外形（`lv01`~`lv05`）使用仓库 AI 生成的 PNG
 - 普通命中和普通敌机击毁使用离线生成的 PixelFX 图集。冰蓝火花标记接触处，暖色碎片标记击毁中心。[实拍与素材归属](./docs/art_audio_pipeline.md#普通命中与普通敌机击毁的-pixelfx-对照)
-- **音效**：`scripts/sfx_manager.gd` 程序化合成 8-bit 风格音效
+- **音效**：`scripts/audio/sfx_manager.gd` 程序化合成 8-bit 风格音效
 - **背景音乐**：巡航与 Boss 使用同一原创四音动机，保留两段各自的编排和循环。激光预警、玩家受击时音乐短暂衰减。[战斗界面、背景与音画复跑](./docs/art_audio_pipeline.md#战斗界面远行与裂隙)
 
 ## 联机模式

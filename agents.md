@@ -233,7 +233,7 @@ godot --headless --path . --quit
 - **联机闭环 ✅**：2 人 Wi-Fi LAN / 鸿蒙近场发现 + ENet 战斗同步，Host 权威
 - **程序化管线 ✅**：贴图、音效、BGM 全部程序化，零外部资源依赖
 - **联机回归门禁 ✅**：`tests/run_probe.sh` + `tests/lan_probe.gd`，**40 项断言**（房主 24 项、加入端 16 项），一条命令收口退出码
-- **关卡节奏 ✅**：`scripts/wave_director.gd` 接管全部杂兵投放。4 拍乐句（各 16 秒）
+- **关卡节奏 ✅**：`scripts/battle/wave_director.gd` 接管全部杂兵投放。4 拍乐句（各 16 秒）
   + 6 种阵型 + 每 5 级一个章节主题。**章节平均速率 ≡ 改造前速率**（误差 0.000%），
   峰谷比 4.25×。设计全文见 `docs/level_design_proposal.md`
 - **双门禁 ✅**：`tests/curve_probe.gd`（14 项，守数值曲线不越界）
@@ -263,11 +263,11 @@ godot --headless --path . --quit
 
 - 通讯方案固定为 **Wi-Fi 热点 LAN + Godot ENet**，不再讨论蓝牙/星闪方案。
 - 多人模式新增文件：
-  - `scripts/network_manager.gd`（Autoload）
-  - `scenes/ui/lobby.tscn` + `scripts/lobby.gd`
+  - `scripts/network/network_manager.gd`（Autoload）
+  - `scenes/ui/lobby.tscn` + `scripts/ui/lobby.gd`
 - 多人模式改动文件：
-  - `scripts/player.gd`（authority 守卫；权威必须 `set_multiplayer_authority(peer_id, true)` 递归设置）
-  - `scripts/main.gd`（多玩家生成 + 玩家位置显式同步，**不使用 MultiplayerSynchronizer**）
+  - `scripts/player/player.gd`（authority 守卫；权威必须 `set_multiplayer_authority(peer_id, true)` 递归设置）
+  - `scripts/battle/main.gd`（多玩家生成 + 玩家位置显式同步，**不使用 MultiplayerSynchronizer**）
   - `project.godot`（注册 NetworkManager autoload）
 - 敌人逻辑服务器权威，不在客户端重复执行；客户端只做渲染和输入。
 - 任何 `@rpc("any_peer")` 函数体内必须有 `if not multiplayer.is_server(): return` 守卫。

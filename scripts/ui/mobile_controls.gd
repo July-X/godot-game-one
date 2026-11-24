@@ -1,5 +1,5 @@
 extends CanvasLayer
-const SafeArea = preload("res://scripts/battle_safe_area.gd")
+const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
 
 @export var joystick_radius: float = 112.0
 @export var knob_scale: float = 0.38

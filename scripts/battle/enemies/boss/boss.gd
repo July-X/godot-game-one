@@ -169,7 +169,7 @@ var _laser_dot_by_slot: Dictionary[int, float] = {}
 var _coop_encounter := false
 var _route_inducement := false
 var _pulse_used_this_shield := false
-const AggroLedger := preload("res://scripts/boss_aggro.gd")
+const AggroLedger := preload("res://scripts/battle/enemies/boss/boss_aggro.gd")
 signal attack_target_selected(attack: String, slot: int, direction: Vector2)
 var _aggro := AggroLedger.new()
 var _laser_target: Node2D
@@ -508,7 +508,7 @@ func play_shield_release(world_position: Vector2) -> void:
 		return
 	# 解除后母舰会继续移动，碎片留在权威解除坐标。
 	var world := get_parent() as Node2D
-	var burst := preload("res://scripts/shield_shatter_burst.gd").new()
+	var burst := preload("res://scripts/visuals/shield_shatter_burst.gd").new()
 	burst.position = world.to_local(world_position)
 	burst.z_index = -1
 	world.add_child(burst)

@@ -1,7 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1"]
-[ext_resource type="Script" path="res://scripts/offense_window_trial.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/battle/trials/offense_window_trial.gd" id="2"]
 
 [node name="OffenseWindowTrial" instance=ExtResource("1")]
 script = ExtResource("2")

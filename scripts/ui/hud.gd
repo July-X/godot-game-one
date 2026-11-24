@@ -1,6 +1,6 @@
 extends CanvasLayer
-const Palette = preload("res://scripts/palette.gd")
-const SafeArea = preload("res://scripts/battle_safe_area.gd")
+const Palette = preload("res://scripts/visuals/palette.gd")
+const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
 ## HUD 控制器 — 动态技能条 + 像素风 UI
 
 @onready var _score_label: Label = $ScoreLabel
@@ -173,7 +173,7 @@ func _populate_draft(cards: Array) -> void:
 	while _draft_card_buttons.size() < cards.size():
 		var icon := Control.new()
 		icon.name = "Icon"
-		icon.set_script(preload("res://scripts/card_icon.gd"))
+		icon.set_script(preload("res://scripts/ui/card_icon.gd"))
 		var card_name := _label(22, Vector2.ZERO, Vector2.ZERO)
 		card_name.name = "CardName"
 		var description := _label(18, Vector2.ZERO, Vector2.ZERO)

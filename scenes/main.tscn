@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://ggd54n5uic4"]
 
-[ext_resource type="Script" uid="uid://ynas1xbwywjy" path="res://scripts/main.gd" id="1"]
-[ext_resource type="Script" path="res://scripts/battle_backdrop.gd" id="2"]
+[ext_resource type="Script" uid="uid://ynas1xbwywjy" path="res://scripts/battle/main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/visuals/battle_backdrop.gd" id="2"]
 [node name="Main" type="Node2D" unique_id=1494631403]
 script = ExtResource("1")
 

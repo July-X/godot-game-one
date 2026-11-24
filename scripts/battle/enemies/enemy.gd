@@ -39,7 +39,7 @@ var _warn_tween: Tween = null
 ## 预警弹道方向（世界坐标单位向量）
 var _warn_dir: Vector2 = Vector2.ZERO
 
-const Palette = preload("res://scripts/palette.gd")
+const Palette = preload("res://scripts/visuals/palette.gd")
 
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _health_bar: ProgressBar = $HealthBar

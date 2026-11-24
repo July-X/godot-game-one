@@ -4,7 +4,7 @@ extends Control
 
 signal game_start_requested
 
-const SafeArea := preload("res://scripts/battle_safe_area.gd")
+const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 ## 开局或战斗消息不兼容时更新此版本。检查先于任何开局远程调用。
 const LAN_PROTOCOL := "space-bullet-hell-lan:5"
 const VERSION_WAIT_MS := 3000
