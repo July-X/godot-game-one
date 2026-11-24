@@ -218,17 +218,18 @@ func _on_body_entered(body: Node2D) -> void:
 		## 多人：Client 子弹击中本地幽灵敌人 → 报告 Host
 		if body.is_in_group("enemies") and body.has_method("take_damage"):
 			var impact := _impact_for(body)
+			var steady := _needs_steady_camera(body, impact)
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if body.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
 						attacker_peer = NetworkManager.local_player_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, body.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
-				_spawn_hit(impact)
+				_spawn_hit(impact, steady)
 				_recycle()
 			else:
 				body.take_damage(_damage, owner_peer_id)
-				_spawn_hit(impact)
+				_spawn_hit(impact, steady)
 				if _resolve_hit(body):
 					_recycle()
 	else:
@@ -259,17 +260,18 @@ func _on_area_entered(area: Area2D) -> void:
 		if area.is_in_group("enemy_hitbox") and area.get_parent().has_method("take_damage"):
 			var enemy := area.get_parent()
 			var impact := _impact_for(enemy)
+			var steady := _needs_steady_camera(enemy, impact)
 			if NetworkManager.is_online() and not multiplayer.is_server():
 				if enemy.has_method("get_entity_id"):
 					var attacker_peer := owner_peer_id
 					if attacker_peer <= 0:
 						attacker_peer = NetworkManager.local_player_id()
 					GameState._rpc_report_enemy_hit.rpc_id(1, enemy.get_entity_id(), maxi(1, int(round(_damage))), attacker_peer)
-				_spawn_hit(impact)
+				_spawn_hit(impact, steady)
 				_recycle()
 			else:
 				enemy.take_damage(_damage, owner_peer_id)
-				_spawn_hit(impact)
+				_spawn_hit(impact, steady)
 				if _resolve_hit(enemy):
 					_recycle()
 
@@ -278,14 +280,26 @@ func _impact_for(target: Node) -> Pool.Impact:
 		return Pool.Impact.SHIELD
 	return Pool.contact_for(target)
 
-func _spawn_hit(impact: Pool.Impact) -> void:
+# Capture before damage: the hit may break the shield, finish the attack or kill the boss.
+func _needs_steady_camera(target: Node, impact: Pool.Impact) -> bool:
+	if impact != Pool.Impact.BOSS_SHIELD and impact != Pool.Impact.BOSS_HULL:
+		return false
+	return target.has_method("uses_steady_hit_feedback") and target.uses_steady_hit_feedback()
+
+func _spawn_hit(impact: Pool.Impact, steady_camera: bool = false) -> void:
 	## 日常命中的反馈：极轻的震屏 + 命中音。
 	## 这里最容易犯的错是给太重——自动射击每秒钟能命中十几次，
 	## 一旦每次都震，连击时画面会持续抖，弹幕反而看不清。
 	## 所以强度压到 0.06，并把"手感"主要交给命中音的连击升调。
 	var scene := get_tree().current_scene
 	if scene != null and scene.has_method("emit_hit_feedback"):
-		scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, _is_player_bullet and not Pool.is_shield_contact(impact))
+		var audible := _is_player_bullet and not Pool.is_shield_contact(impact)
+		if not steady_camera:
+			scene.emit_hit_feedback(scene.SHAKE_HIT, 0.0, audible)
+		else:
+			scene.add_boss_laser_hit_bump()
+			if audible:
+				SFX.play_hit_confirm(scene.SHAKE_HIT)
 	Pool.spawn_hit(global_position, impact)
 	if _is_player_bullet and NetworkManager.is_online() and multiplayer.is_server():
 		if scene and scene.has_method("register_projectile_impact"):

@@ -622,8 +622,11 @@ func _kill_in_beam_phase(stage: BossModel.AttackWindow, sample: int) -> bool:
 	_check(label + "_exactly_one_score_reward_drop_and_explosion", settled and drops.size() == 6
 		and explosions == 1 and _reward_count(local_id) == reward + 1 and GameState.score == score_before + 1000,
 		"drops=%d explosions=%d score=%d" % [drops.size(), explosions, GameState.score - score_before])
+	# The reliable marker follows the deliberately late packets. Wait for receipt
+	# so this checks rejection of delivered packets, not a fixed network delay.
+	var stale_packets_seen := _role != "client" or await _wait_until(func(): return stale_probe_done == sample, 1.5)
 	_check(label + "_old_packets_cannot_restore_retired_boss",
-		(_role != "client" or stale_probe_done == sample) and not is_instance_valid(target)
+		stale_packets_seen and not is_instance_valid(target)
 			and not _main._has_active_boss() and _main._boss_laser_visual == null
 			and (not NetworkManager.is_online() or _main._despawned_entity_ids.has(eid)), "")
 	if _role == "client":

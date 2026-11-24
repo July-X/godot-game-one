@@ -6,12 +6,13 @@ signal preview_changed(snapshot: Dictionary)
 enum Pattern { NONE, LINE, RING }
 enum Stage { REST, WARNING, FOLLOWUP }
 
-const FIRST_DELAY := 0.55
 const LINE_WARNING := 0.60
 const LINE_REPEAT := 0.18
 const LINE_LEAD := 0.23
 const LINE_HALF_ANGLE := PI / 20.0
 const LINE_SPEED := 480.0
+const OPENING_DAMAGE := 6.0
+const OPENING_SHIFT := 132.0
 const RING_WARNING := 0.65
 const RING_SLOTS := 14
 const RING_STEP := TAU / RING_SLOTS
@@ -32,6 +33,8 @@ var _origin := Vector2.ZERO
 var _angle := 0.0
 var _slot := 0
 var _stamp := 0
+var _opening_volley := true
+var _opening_from := Vector2.ZERO
 var _shown: int = Pattern.NONE
 var _show_left := 0.0
 var _last_positions: Dictionary[int, Vector2] = {}
@@ -44,7 +47,7 @@ func configure(hunter: CharacterBody2D, entry_seconds: float) -> void:
 	# 预警原点是离散的世界坐标，首帧不能从上一次原点插值滑入。
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	z_index = -1
-	_left = entry_seconds + FIRST_DELAY
+	_left = entry_seconds
 
 
 func attack_pending() -> bool:
@@ -63,6 +66,10 @@ func tick(delta: float, exposed: bool, dodging: bool) -> void:
 	if exposed:
 		return
 	_left = maxf(0.0, _left - delta)
+	if _opening_volley and _stage == Stage.WARNING:
+		# 提前画出真实发射点。机体过渡不改变锁定路线或碰撞规则。
+		var t := 1.0 - _left / LINE_WARNING
+		_hunter.global_position = _opening_from.lerp(_origin, smoothstep(0.0, 1.0, t))
 	if _left > 0.0:
 		return
 	match _stage:
@@ -91,6 +98,13 @@ func _begin(pilots: Array[Node2D]) -> void:
 		_slot = target.peer_id
 		var prediction: Vector2 = target.global_position + _velocities.get(_slot, Vector2.ZERO) * LINE_LEAD
 		var field := NetworkManager.battle_size(_hunter)
+		if _opening_volley:
+			_opening_from = _origin
+			var side := 1.0 if prediction.x <= _origin.x else -1.0
+			var x := _origin.x + side * OPENING_SHIFT
+			if x < 64.0 or x > field.x - 64.0:
+				x = _origin.x - side * OPENING_SHIFT
+			_origin.x = clampf(x, 64.0, field.x - 64.0)
 		var aim := Vector2(prediction).clamp(Vector2.ZERO, field)
 		_angle = _origin.direction_to(aim).angle()
 		_left = LINE_WARNING
@@ -126,9 +140,11 @@ func _ring_gap_towards(at: Vector2) -> float:
 
 func _fire() -> void:
 	var narrow := _pattern == Pattern.LINE
+	var damage := OPENING_DAMAGE if _opening_volley else (2.0 if narrow else 1.0)
+	_opening_volley = false
 	for direction in projectile_angles(_pattern, _angle):
 		var start := _origin + Vector2.from_angle(direction) * MUZZLE
-		_hunter._spawn_enemy_bullet(start, direction, 2.0 if narrow else 1.0,
+		_hunter._spawn_enemy_bullet(start, direction, damage,
 			LINE_SPEED if narrow else RING_SPEED, LINE_COLOR if narrow else RING_COLOR, true)
 	SFX.play_enemy_volley()
 
@@ -149,6 +165,7 @@ func _recover() -> void:
 
 
 func cancel() -> void:
+	_opening_volley = false
 	var was_warning := _stage == Stage.WARNING
 	_recover()
 	if was_warning:

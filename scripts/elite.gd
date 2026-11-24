@@ -196,6 +196,10 @@ var _route_dodge_cue := 0.0
 var _route_dodge_flash: Tween
 var _route_pressure_slot := 0
 const ROUTE_DODGE_CUE_SECONDS := 0.20
+# 横移要真正绕出原有瞄准线，不只是让机体抖一下。
+const ROUTE_DODGE_SECONDS := 0.34
+const ROUTE_DODGE_SPEED := 300.0
+const ROUTE_DODGE_CLEARANCE := ROUTE_DODGE_SECONDS * ROUTE_DODGE_SPEED + 5.0
 signal route_dodge_charging(seconds: float)
 signal route_evaded
 signal route_attack_changed(snapshot: Dictionary)
@@ -237,11 +241,11 @@ func _tick_route_evasion(delta: float) -> void:
 	if _route_dodge_cue > 0.0:
 		_route_dodge_cue = maxf(0.0, _route_dodge_cue - delta)
 		if _route_dodge_cue == 0.0:
-			_route_dodge_left = .24
+			_route_dodge_left = ROUTE_DODGE_SECONDS
 			route_evaded.emit()
 	if _route_dodge_left > 0.0:
 		_route_dodge_left = maxf(0.0, _route_dodge_left - delta)
-		velocity = _route_dodge_vector * 210.0
+		velocity = _route_dodge_vector * ROUTE_DODGE_SPEED
 		return
 	if _route_dodge_cue > 0.0 or _route_dodge_cd > 0.0 or _route_pressure_hits < 3:
 		return
@@ -254,8 +258,8 @@ func _tick_route_evasion(delta: float) -> void:
 		return
 	var side := pilot.global_position.direction_to(global_position).orthogonal()
 	var bounds := Rect2(Vector2(64, 70), NetworkManager.battle_size(self) - Vector2(128, 140))
-	var left := global_position + side * 54.0
-	var right := global_position - side * 54.0
+	var left := global_position + side * ROUTE_DODGE_CLEARANCE
+	var right := global_position - side * ROUTE_DODGE_CLEARANCE
 	if side.is_zero_approx() or not (bounds.has_point(left) or bounds.has_point(right)):
 		return
 	_route_dodge_vector = side if bounds.has_point(left) and (not bounds.has_point(right)
