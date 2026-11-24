@@ -64,6 +64,7 @@ func _run() -> void:
 	await _frames(4)
 	if "--capture" not in OS.get_cmdline_user_args():
 		_check("fatal_boss_hull_settles_trial_win", _world.finished and _world._result.text.begins_with("通关"))
+		_check("solo_win_review_suggests_card_or_route", _world._result.text.ends_with("下局试试另一张首卡或另一条拦截路线"))
 	_check("no_leaderboard_entry_for_win", Leaderboard.get_entries() == baseline)
 	_world._restart.call_deferred()
 	await get_tree().scene_changed
@@ -81,6 +82,8 @@ func _run() -> void:
 	await _frames(4)
 	_check("death_settles_trial_not_normal_hud", _world.finished and _world._result.text.begins_with("被击落")
 		and not _world._hud._game_over_panel.visible and Leaderboard.get_entries() == baseline)
+	_check("solo_zero_cut_review_suggests_first_intercept", _world.interruptions == 0
+		and _world._result.text.ends_with("下局试着先切掉一股齐射"))
 	_world._return_to_title.call_deferred()
 	await get_tree().scene_changed
 	get_tree().current_scene._on_single_pressed()

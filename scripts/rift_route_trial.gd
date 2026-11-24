@@ -182,6 +182,8 @@ func _complete_route(outcome: String) -> void:
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_route_result(outcome: String, cuts: int) -> void:
+	if finished:
+		return
 	interruptions = cuts
 	_route_outcome = outcome
 	_finish(outcome)
@@ -264,10 +266,24 @@ func set_lan_hold(held: bool) -> void:
 	super.set_lan_hold(held)
 
 func _finish(outcome: String) -> void:
+	if finished:
+		return
 	_build_hint_pending = false
 	_route_hint_left = 0.0
 	_update_countdown()
 	super._finish(outcome)
+	_result.text += "\n" + _next_attempt_tip(outcome)
+	_layout_options()
+
+func _next_attempt_tip(outcome: String) -> String:
+	if outcome == "通关":
+		return "下局试试另一张首卡或另一条拦截路线"
+	if outcome == "被击落":
+		if interruptions == 0:
+			return "下局试着先切掉一股齐射"
+		if leg == Leg.BOSS:
+			return "下局试着横移，再从侧翼打盾"
+	return "下局试着换一条拦截路线"
 
 func _on_level_up(_new_level: int) -> void:
 	# Authored mode has exactly one explicit draft, even if a future wave count changes.

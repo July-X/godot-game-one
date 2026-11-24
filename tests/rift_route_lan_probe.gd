@@ -13,12 +13,14 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var mode := args[2]
 	_evidence = args[3] if args.size() > 3 else ""
+	var review := mode == "rift-review"
 	var wide_host := mode.ends_with("-host")
 	var use_timeout := mode.begins_with("rift-timeout-")
 	var wide := (_role == "host") == wide_host
 	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
-	get_window().content_scale_size = Vector2i(1600, 720) if wide else Vector2i(960, 720)
+	var viewport_width: int = (1280 if _role == "host" else 960) if review else (1600 if wide else 960)
+	get_window().content_scale_size = Vector2i(viewport_width, 720)
 	var err := NetworkManager.create_host(_port) if _role == "host" else NetworkManager.join_host("127.0.0.1", _port)
 	if not _require("real_enet", err == OK and await _wait_until(func(): return NetworkManager.is_online() and not NetworkManager.connected_peers.is_empty(), 8)):
 		return
@@ -31,6 +33,10 @@ func _run() -> void:
 	if not _require("stable_player_slots", await _wait_until(func(): return _cond_both_players() and NetworkManager.recovery.is_reserved(), 6)):
 		return
 	_guest = NetworkManager.recovery.guest_slot
+	if review:
+		await _verify_route_reviews(trial)
+		get_tree().quit(_summarize())
+		return
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Input.emulate_mouse_from_touch = true
 	var slot := NetworkManager.local_player_id()
@@ -137,6 +143,87 @@ func _run() -> void:
 	await _barrier("rift_complete")
 	await _wait_seconds(.25)
 	get_tree().quit(_summarize())
+
+func _verify_route_reviews(trial: Trial) -> void:
+	var cases := [
+		{"name": "zero", "leg": Trial.Leg.INTERCEPT, "cuts": 0, "outcome": "被击落", "tip": "下局试着先切掉一股齐射"},
+		{"name": "early", "leg": Trial.Leg.BUILD, "cuts": 1, "outcome": "被击落", "tip": "下局试着换一条拦截路线"},
+		{"name": "boss", "leg": Trial.Leg.BOSS, "cuts": 2, "outcome": "被击落", "tip": "下局试着横移，再从侧翼打盾"},
+		{"name": "win", "leg": Trial.Leg.BOSS, "cuts": 3, "outcome": "通关", "tip": "下局试试另一张首卡或另一条拦截路线"},
+	]
+	var scores := Leaderboard.get_entries().duplicate(true)
+	for sample: Dictionary in cases:
+		var label: String = sample.name
+		if not trial.has_node("MobileControls"):
+			trial._spawn_mobile_controls()
+		trial._player.set_physics_process(false)
+		await _barrier("review_ready_" + label)
+		if _role == "host":
+			trial._set_leg(sample.leg)
+			await _review_intercept_shots(trial, int(sample.cuts))
+			if sample.leg == Trial.Leg.BOSS:
+				trial._start_route_boss()
+			if sample.outcome == "通关":
+				trial._boss.take_damage(trial._boss.get_shield_hp(), 1)
+				trial._boss.take_damage(trial._boss.get_network_max_health(), 1)
+			else:
+				for pilot in trial._players.values():
+					pilot.force_kill()
+				GameState.force_sync_to_peer(-1)
+		var settled := await _wait_until(func(): return trial.finished, 3.0)
+		if sample.outcome == "被击落":
+			_check(label + "_defeat_is_authoritative", await _wait_until(func():
+				return not GameState.is_player_alive(1) and not GameState.is_player_alive(_guest), .8), "")
+		var expected := "%s · 截断 %d 次\n%s" % [sample.outcome, sample.cuts, sample.tip]
+		_check(label + "_same_review_and_actual_intercepts", settled and trial.leg == sample.leg
+			and trial.interruptions == sample.cuts and trial._result.text == expected,
+			"leg=%d %s" % [trial.leg, trial._result.text.replace("\n", " | ")])
+		_check(label + "_review_fits_and_clears_stage_hint", Trial.SafeArea.for_viewport(get_viewport()).encloses(trial._options.get_global_rect())
+			and trial._route_hint_left == 0.0 and not trial._build_hint_pending and not trial._hud._game_over_panel.visible, "")
+		trial._rpc_route_result("被击落", 99)
+		_check(label + "_old_result_cannot_rewrite_review", trial.interruptions == sample.cuts and trial._result.text == expected, "")
+		var retry: Button = trial.get_node("TrialUI/Options/Buttons/Retry")
+		var back: Button = trial.get_node("TrialUI/Options/Buttons/Back")
+		_check(label + "_existing_buttons_respect_authority", retry.is_visible_in_tree() == (_role == "host")
+			and back.is_visible_in_tree(), "")
+		if _role == "host" and label == "boss":
+			await _capture("review-phone")
+		elif _role == "client" and label == "win":
+			await _capture("review-tablet")
+		if _role == "client":
+			trial._restart()
+			await get_tree().process_frame
+			_check(label + "_guest_retry_cannot_reload", get_tree().current_scene == trial and trial.finished, "")
+		await _barrier("review_read_" + label)
+		var previous := trial.get_instance_id()
+		if _role == "host":
+			retry.pressed.emit()
+		var reset := await _wait_until(func():
+			var current := get_tree().current_scene
+			return current is Trial and current.get_instance_id() != previous, 4.0)
+		if not _require(label + "_host_retry_reloads_both", reset):
+			return
+		trial = get_tree().current_scene as Trial
+		_main = trial
+		_check(label + "_retry_has_no_result_or_hint", not trial.finished and trial.interruptions == 0 and not trial._result.visible
+			and not trial._result.text.contains("下局") and trial.leg == Trial.Leg.INTERCEPT and trial._route_hint_left == 0.0, "")
+		if not _require(label + "_pilots_ready_after_retry", await _wait_until(_cond_both_players, 5.0)):
+			return
+	_check("all_reviews_leave_ordinary_leaderboard_unchanged", Leaderboard.get_entries() == scores, "")
+	await _barrier("all_reviews_checked")
+	await _wait_seconds(.22)
+
+func _review_intercept_shots(trial: Trial, count: int) -> void:
+	for index in count:
+		var role := "review-emitter-%d" % index
+		trial._add_fighter(role, 1, Vector2(.27 + index * .22, .39), 90, 1)
+		var order: Dictionary = trial._fighters[role]
+		var ship: Node2D = order.ship
+		order.origin = order.target
+		ship.position = order.target
+		trial._player._combat._spawn_bullet(ship.global_position + Vector2(0, 50), -PI * .5, 4, true, 1, 760.0)
+	_check("host_count_comes_from_bullet_collisions_%d" % count, await _wait_until(func(): return trial.interruptions == count, .8),
+		"actual=%d" % trial.interruptions)
 
 func _hint_fits(trial: Trial) -> bool:
 	var hud := trial._hud
