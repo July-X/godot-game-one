@@ -58,7 +58,7 @@ func _run() -> void:
 	if not _require("opening_tracks_stable_slot", not first.is_empty() and first.slot == near_slot):
 		return
 	if _role != "client":
-		_check("entry_then_short_delay", absi(lead_frames - 123) <= 3, str(lead_frames))
+		_check("quick_entry_immediately_warns", absi(lead_frames - 16) <= 3, str(lead_frames))
 	var hp := GameState.get_current_health(near_slot)
 	await _capture("pursuit-warning")
 	if online:

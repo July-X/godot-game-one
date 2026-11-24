@@ -1,6 +1,7 @@
 extends "res://scripts/opening_trial.gd"
 ## Authored encounter clock; player and projectile physics remain in Main.
 enum Leg { INTERCEPT, BUILD, ELITE, BOSS }
+const HUNTER_ENTRY_SECONDS := 0.26
 const CARD_TICK := 35 * 60
 const ELITE_LEG := 90 * 60
 const SETTLE_TICK := 197 * 60
@@ -27,6 +28,9 @@ func _ready() -> void:
 
 func _authoritative() -> bool:
 	return not NetworkManager.is_online() or multiplayer.is_server()
+
+func _elite_entry_seconds() -> float:
+	return HUNTER_ENTRY_SECONDS
 
 func _physics_process(_delta: float) -> void:
 	# Invoke Main's rescue tick through the extracted production hook.
@@ -66,7 +70,7 @@ func _physics_process(_delta: float) -> void:
 		_set_leg(Leg.ELITE)
 	if trial_tick == ELITE_LEG + 155:
 		_spawn_elite()
-		_elite.enable_route_combat(ELITE_ENTRY_SECONDS)
+		_elite.enable_route_combat(HUNTER_ENTRY_SECONDS)
 		_elite.route_evaded.connect(func(): _log("elite_side_step", {}))
 	if trial_tick == SETTLE_TICK:
 		_elite = null

@@ -95,6 +95,7 @@
 │   ├── lan_resume_probe.gd / .tscn       # 同连接唤醒、实际重连、晚回前台和超时
 │   ├── lobby_start_probe.gd / .tscn      # 大厅同版本开局及混版提示
 │   ├── rift_hunter_probe.gd / .tscn      # 猎手的实弹、破盾、重连与图形预警
+│   ├── rift_hunter_pressure_probe.gd / .tscn # 猎手首攻、站桩/闪避、固定瞄准压力对照
 │   ├── combat_feedback_probe.gd / .tscn # 固定事件的有声回放和反馈门禁
 │   ├── pixelfx_probe.gd / .tscn、compare_pixelfx.py # 普通命中与击毁的逐帧实拍及弹体像素比对
 │   ├── impact_scope_probe.gd / .tscn # 真实扣血与各武器接触，对照历史图形帧

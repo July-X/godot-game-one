@@ -156,6 +156,11 @@ func add_shake(intensity: float) -> void:
 	_camera_shake.add_trauma(intensity)
 
 
+func add_boss_laser_hit_bump() -> void:
+	if is_instance_valid(_camera_shake):
+		_camera_shake.add_soft_hit_bump()
+
+
 ## 统一反馈入口：震屏 + 命中定格 + 音效
 ## design 见 docs/Design_Decisions.md「命中反馈链」。
 ## hitstop 只在单机生效：联机会改变物理步进节奏导致两端 desync，
@@ -1084,6 +1089,9 @@ func _on_elite_spawn_requested() -> void:
 
 const ELITE_ENTRY_SECONDS := 1.5
 
+func _elite_entry_seconds() -> float:
+	return ELITE_ENTRY_SECONDS
+
 func _spawn_elite() -> void:
 	_show_elite_warning()
 	GameState.elite_encounter_count += 1
@@ -1107,7 +1115,7 @@ func _spawn_elite() -> void:
 		_rpc_show_elite_warning.rpc()
 	add_child(_elite)
 	var tween := create_tween()
-	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), ELITE_ENTRY_SECONDS).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(_elite, "position", Vector2(_screen_center_x(), 120), _elite_entry_seconds()).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _on_elite_shield_broken_window_started() -> void:
 	var eid := -1
@@ -2046,6 +2054,8 @@ func _rpc_sync_entity_positions(data: PackedFloat32Array, impact := PackedFloat3
 		elif impact[2] == Pool.Impact.BOSS_HULL:
 			kind = Pool.Impact.BOSS_HULL
 		Pool.spawn_hit(Vector2(impact[0], impact[1]), kind)
+		if (kind == Pool.Impact.BOSS_SHIELD or kind == Pool.Impact.BOSS_HULL) and _has_active_boss() and _boss.uses_steady_hit_feedback():
+			add_boss_laser_hit_bump()
 		if not Pool.is_shield_contact(kind):
 			SFX.play_hit_confirm(SHAKE_HIT)
 	var i := 0

@@ -27,6 +27,7 @@ var _next_attack := 0
 var _circle_radius: float = 220.0
 var _entry_tween: Tween = null
 var _hit_recoil_tween: Tween = null
+var _hit_flash_tween: Tween = null
 var entity_id: int = 0
 var _network_window_stamp := -1
 var _finished_laser_cycles := 0
@@ -53,6 +54,10 @@ static func window_from_stamp(stamp: int) -> AttackWindow:
 	if stamp < 0:
 		return AttackWindow.UNKNOWN
 	return (AttackWindow.OPEN + stamp % WINDOWS_PER_CYCLE) as AttackWindow
+
+## Uses the same authoritative window on the host and the replicated window on the guest.
+func uses_steady_hit_feedback() -> bool:
+	return get_attack_window() >= AttackWindow.CHARGING
 
 func get_attack_window_stamp() -> int:
 	if _is_network_ghost:
@@ -550,6 +555,7 @@ func _start_ultimate_laser() -> void:
 			return
 	_stop_entry_motion()
 	_laser_used_this_shield = true
+	_reset_hit_animation_for_laser()
 	_ultimate_laser_charging = true
 	_ultimate_laser_firing = false
 	_ultimate_laser_charge_timer = BOSS_ULTIMATE_LASER_CHARGE
@@ -1165,8 +1171,10 @@ func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 	if _health == 0.0:
 		die()
 		return
-	_hit_flash()
-	_hit_recoil()
+	var steady := uses_steady_hit_feedback()
+	_hit_flash(steady)
+	if not steady:
+		_hit_recoil()
 
 func _record_fire_pressure(killer_peer_id: int) -> void:
 	_fire_pressure_hits += 1
@@ -1174,10 +1182,28 @@ func _record_fire_pressure(killer_peer_id: int) -> void:
 	if killer_peer_id > 0:
 		_pressure_hits_by_peer[killer_peer_id] = _pressure_hits_by_peer.get(killer_peer_id, 0) + 1
 
-func _hit_flash() -> void:
-	_sprite.modulate = Color(1.8, 1.28, 1.16)
-	var tween := create_tween()
-	tween.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.08)
+func _reset_hit_animation_for_laser() -> void:
+	if _hit_recoil_tween != null:
+		_hit_recoil_tween.kill()
+		_hit_recoil_tween = null
+	_sprite.scale = Vector2.ONE * BOSS_VISUAL_SCALE
+	if _hit_flash_tween != null:
+		_hit_flash_tween.kill()
+		_hit_flash_tween = null
+	_sprite.modulate = Color.WHITE
+
+func _hit_flash(steady: bool) -> void:
+	if _hit_flash_tween != null:
+		if steady:
+			# Don't restart a flash on every projectile during the laser.
+			return
+		_hit_flash_tween.kill()
+	_sprite.modulate = Color(1.16, 1.08, 1.04) if steady else Color(1.8, 1.28, 1.16)
+	_hit_flash_tween = create_tween()
+	_hit_flash_tween.tween_property(_sprite, "modulate", Color.WHITE, 0.08)
+	_hit_flash_tween.finished.connect(func():
+		_hit_flash_tween = null
+	)
 
 func _hit_recoil() -> void:
 	if _hit_recoil_tween and _hit_recoil_tween.is_running():
