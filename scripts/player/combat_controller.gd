@@ -29,7 +29,10 @@ func update(delta: float) -> void:
 	_spawn_homing_missiles(delta)
 	_try_pickup_nearby()
 
-	if _shoot_timer <= 0.0:
+	# The joining pilot can move as soon as it binds, but its first volley waits for the room acknowledgement.
+	var waiting_for_remix: bool = GameState.rift_remix and NetworkManager.is_online() and not NetworkManager.is_host \
+		and not _player.get_parent()._player_entry_ready
+	if _shoot_timer <= 0.0 and not waiting_for_remix:
 		_shoot()
 
 	_consume_actions()

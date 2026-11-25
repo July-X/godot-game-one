@@ -11,6 +11,7 @@ var _passed := 0
 var _failed := 0
 var _battle_at := 0
 var _guest_shot_at := 0
+var _guest_shot_count := 0
 var _guest_position := Vector2.INF
 
 func _ready() -> void:
@@ -102,11 +103,16 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 			if remix:
 				_check("authority_has_both_pilots_before_practice_wave", await _wait_until(func():
 					return battle._player_entry_ready and battle.trial_tick < 78, .3))
+				_check("authority_keeps_receiving_guest_projectiles", await _wait_until(func(): return _guest_shot_count >= 3, 1.3))
 		else:
 			await _verify_entry_replays(battle)
 			if remix:
 				_check("guest_has_both_pilots_before_practice_wave", battle._player_entry_ready and battle.trial_tick < 78)
-			await get_tree().create_timer(1.0).timeout
+			if OS.get_cmdline_user_args().has("recover"):
+				await get_tree().create_timer(1.0).timeout
+			else:
+				# Keep shooting through the host's entire observation window on slow samples.
+				await _wait_until(func(): return not NetworkManager.is_online(), 6.0)
 		if remix and OS.get_cmdline_user_args().has("recover"):
 			await _verify_remix_recovery_and_retry(host)
 
@@ -115,16 +121,16 @@ func _trace_spawn(node: Node) -> void:
 		_trace("pilot_spawned", {"node": str(node.name), "instance": node.get_instance_id()})
 
 func _schedule_bullet_check(node: Node) -> void:
-	if node is Bullet and _guest_shot_at == 0:
+	if node is Bullet:
 		_observe_guest_bullet.call_deferred(node.get_instance_id())
 
 func _observe_guest_bullet(instance: int) -> void:
-	if _guest_shot_at > 0:
-		return
 	var bullet := instance_from_id(instance) as Bullet
 	if is_instance_valid(bullet) and bullet._is_player_bullet and bullet.owner_peer_id > 1 and not bullet._is_network_ghost:
-		_guest_shot_at = Time.get_ticks_msec()
-		_trace("authority_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
+		_guest_shot_count += 1
+		if _guest_shot_at == 0:
+			_guest_shot_at = Time.get_ticks_msec()
+			_trace("authority_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
 
 func _drive_pilot_once_bound(battle: Node) -> void:
 	var slot := NetworkManager.local_player_id()

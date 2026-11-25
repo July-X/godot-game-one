@@ -68,6 +68,9 @@ var _player_entry_deadline := 0
 var _next_player_entry_request := 0
 var _player_entry_ready := false
 var _player_entry_message: Label
+var _initial_guest_volley_sent := false
+var _entry_shot_trace := false
+var _entry_shot_trace_counts: Dictionary = {}
 var _entity_sync_timer: float = 0.0
 var _health_sync_timer: float = 0.0
 var _player_report_timer: float = 0.0
@@ -189,6 +192,7 @@ func emit_hit_feedback(intensity: float, hitstop_seconds: float = 0.0,
 
 
 func _ready() -> void:
+	_entry_shot_trace = OS.get_cmdline_user_args().has("--entry-shot-trace")
 	_hitstop_last_usec = Time.get_ticks_usec()
 	_wave_director = _wave_director_script.new()
 	_wave_director.name = "WaveDirector"
@@ -2289,6 +2293,8 @@ func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player:
 		return
 	var pending := _pending_scatter_spawns if scatter else _pending_bullet_spawns
 	pending.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b, owner_peer_id])
+	if _entry_shot_trace and is_player and not scatter and not multiplayer.is_server():
+		_trace_entry_shot("queued", owner_peer_id, pending.size())
 
 ## 每帧 flush 待发送子弹
 func _flush_bullet_spawns() -> void:
@@ -2298,7 +2304,14 @@ func _flush_bullet_spawns() -> void:
 		if multiplayer.is_server():
 			_rpc_spawn_bullets.rpc(data)
 		else:
-			_rpc_spawn_bullets.rpc_id(1, data)
+			var opening := GameState.rift_remix and _player_entry_ready and not _initial_guest_volley_sent
+			# Both RPCs spawn the same authoritative bullets. Only the first guest batch needs guaranteed delivery.
+			var method := "_rpc_request_scatter" if opening else "_rpc_spawn_bullets"
+			var sent := rpc_id(1, method, data)
+			if opening and sent == OK:
+				_initial_guest_volley_sent = true
+			if _entry_shot_trace:
+				_trace_entry_shot("flush_initial_reliable" if opening else "flush_ordered", NetworkManager.local_player_id(), data.size(), sent)
 	# 技能散射与航道猎手的固定齐射共用可靠队列，加入端能看到实际判定的整轮弹体。
 	if not _pending_scatter_spawns.is_empty():
 		var data := _pending_scatter_spawns.duplicate()
@@ -2426,6 +2439,8 @@ func _flush_laser_spawns() -> void:
 ## Host → Client（或 Client → Host）：刷出子弹视觉副本
 @rpc("any_peer", "unreliable_ordered", "call_remote")
 func _rpc_spawn_bullets(data: Array) -> void:
+	if _entry_shot_trace and is_inside_tree() and multiplayer.is_server():
+		_trace_entry_shot("rpc_ordered", multiplayer.get_remote_sender_id(), data.size())
 	if not NetworkManager.is_online():
 		return
 	## Client → Host：Host 接收后需要再广播一次，确保加入端能看到自己的子弹。
@@ -2439,10 +2454,15 @@ func _rpc_spawn_bullets(data: Array) -> void:
 
 @rpc("any_peer", "reliable", "call_remote")
 func _rpc_request_scatter(data: Array) -> void:
-	if not multiplayer.is_server():
+	if not is_inside_tree() or not multiplayer.is_server():
 		return
 	var sender := NetworkManager.gameplay_sender()
+	if _entry_shot_trace:
+		_trace_entry_shot("rpc_reliable", sender, data.size())
 	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(sender):
+		return
+	# The guest's acknowledgement and its reliable shots are ordered on the same reliable stream.
+	if GameState.rift_remix and not _player_entry_ready:
 		return
 	_spawn_network_bullets(data, sender)
 	_rpc_spawn_scatter.rpc(data)
@@ -2477,6 +2497,17 @@ func _spawn_network_bullets(data: Array, sender := -1) -> void:
 			bullet.apply_owner_cards(owner_slot)
 		if not multiplayer.is_server() and bullet.has_method("set_network_ghost"):
 			bullet.set_network_ghost(true)
+		elif _entry_shot_trace and is_player and sender > 1:
+			_trace_entry_shot("authority_setup", sender, 1)
+
+func _trace_entry_shot(stage: String, slot: int, count: int, status := OK) -> void:
+	var seen := int(_entry_shot_trace_counts.get(stage, 0))
+	if seen >= 8:
+		return
+	_entry_shot_trace_counts[stage] = seen + 1
+	print("[ENTRY_SHOT] ", stage, " ", JSON.stringify({"round": GameState.get_sync_round(), "slot": slot,
+		"count": count, "status": status, "ready": _player_entry_ready, "held": _lan_frozen_frame >= 0,
+		"wall_ms": int(Time.get_unix_time_from_system() * 1000)}))
 
 ## 激光同步：
 @rpc("authority", "reliable", "call_remote")
