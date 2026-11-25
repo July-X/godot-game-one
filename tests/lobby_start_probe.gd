@@ -55,6 +55,8 @@ func _verify_start(lobby: Node, host: bool, rift: bool) -> void:
 		if host:
 			_check("guest_can_report_after_entering_battle",
 				await _wait_until(func(): return get_tree().current_scene.get_player_report_count() > 0, 4.0))
+		else:
+			await get_tree().create_timer(1.0).timeout
 
 func _verify_rejection(lobby: Node, host: bool) -> void:
 	var status: Label = lobby._lbl_host_status if host else lobby._lbl_join_status

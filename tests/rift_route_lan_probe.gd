@@ -98,6 +98,14 @@ func _run() -> void:
 		return get_tree().get_nodes_in_group("ordinary_enemies").any(func(ship: Node): return ship.health == Trial.ARMOR_HP), 1.5)
 	_check("armored_flank_starts_with_shared_health", wing_present, "")
 	await _barrier("wave_observed")
+	if _role == "host":
+		var order: Dictionary = trial._fighters.wing
+		await _wait_until(func(): return trial._is_charging(order), 2.5)
+		var ship: Node2D = order.ship
+		trial._player._combat._spawn_bullet(ship.global_position + Vector2(0, 38), -PI * .5, 9, true, 1, 760.0)
+	_check("real_bullet_interrupt_shows_one_local_cue", await _wait_until(func():
+		return trial._cut_cues.size() == 1, 3.1), "")
+	await _barrier("cut_observed")
 	if _role == "client":
 		NetworkManager.recovery.set_background(true)
 		await _wait_seconds(.2)
@@ -110,6 +118,7 @@ func _run() -> void:
 		and not UpgradeDraft.has_draft(slot), "")
 	_check("recovery_restores_title_without_replaying_hint", restored and trial._route_hint_left == 0.0
 		and trial._hud._phase_label.text.ends_with(Trial.LEG_NAMES[Trial.Leg.BUILD]), trial._hud._phase_label.text)
+	_check("recovery_does_not_replay_cut_feedback", trial._cut_cues.is_empty(), "")
 	await _barrier("rewire_complete")
 	await _verify_card_impacts(trial, host_card)
 	await _verify_elite(trial)
@@ -288,6 +297,7 @@ func _drag(at: Vector2) -> void:
 func _verify_card_impacts(trial: Trial, host_card: int) -> void:
 	var targets: Array[Node2D] = []
 	if _role == "host":
+		trial._clear_non_boss_entities()
 		for lane in 2:
 			var x := 240.0 + lane * 795.0
 			var pierce := lane == host_card

@@ -12,6 +12,7 @@ const BUILD_WAVES := [CARD_TICK + 90, CARD_TICK + 760, CARD_TICK + 1770, ELITE_L
 const LEG_NAMES := ["拦截齐射", "让卡牌改变航线", "裂隙猎手", "裂隙母舰"]
 const LEG_HINTS := ["", "从侧翼截断齐射，中路可绕行", "预警时换线，破盾后反打", "被标记先横移，侧翼打盾"]
 const LEG_HINT_SECONDS := 2.0
+const CUT_CUE_TICKS := 27
 var leg := Leg.INTERCEPT
 var _settling := false
 var _route_hint_left := 0.0
@@ -21,6 +22,7 @@ var _pending_slots: Dictionary[int, bool] = {}
 var _route_outcome := ""
 var _hunter_defeated := false
 var _remote_cues: Dictionary[int, int] = {}
+var _cut_cues: Array[Dictionary] = []
 
 func _ready() -> void:
 	super._ready()
@@ -28,6 +30,8 @@ func _ready() -> void:
 	if _authoritative():
 		volley_interrupted.connect(func(role: String, _at: Vector2, deadline: int):
 			_log("interrupted", {"role": role, "release": deadline}))
+	else:
+		(multiplayer as SceneMultiplayer).peer_packet.connect(_on_route_packet)
 	_log("start", {})
 	_update_countdown()
 
@@ -42,6 +46,9 @@ func _physics_process(delta: float) -> void:
 	_tick_rescue_window()
 	if finished or not GameState.game_running:
 		return
+	while not _cut_cues.is_empty() and trial_tick >= int(_cut_cues[0].until):
+		_cut_cues.pop_front()
+		_cues.queue_redraw()
 	if _route_hint_left > 0.0:
 		_route_hint_left = maxf(0.0, _route_hint_left - delta)
 		if _route_hint_left == 0.0:
@@ -86,6 +93,7 @@ func _physics_process(delta: float) -> void:
 		_clear_non_boss_entities()
 		_fighters.clear()
 		_breaks.clear()
+		_cut_cues.clear()
 		_cues.queue_redraw()
 		_apply_route_leg(leg, true)
 		if NetworkManager.is_online():
@@ -93,7 +101,7 @@ func _physics_process(delta: float) -> void:
 	if trial_tick == BOSS_LEG:
 		_set_leg(Leg.BOSS)
 		_start_route_boss()
-	if not _fighters.is_empty() or not _breaks.is_empty():
+	if not _fighters.is_empty() or not _breaks.is_empty() or not _cut_cues.is_empty():
 		_move_fighters()
 		while not _breaks.is_empty() and trial_tick >= int(_breaks[0].until):
 			_breaks.pop_front()
@@ -120,6 +128,53 @@ func _draw_fan_heading(center: Vector2, at: Vector2, progress: float) -> void:
 		var direction := _fan_direction(at, offset)
 		_cues.draw_dashed_line(center + direction * 34, center + direction * lerpf(82, 140, progress),
 			ink, 1.5, 9.0, false)
+	if leg == Leg.BUILD:
+		for side: float in [-1.0, 1.0]:
+			var edge := center + Vector2(side * 24.0, 0)
+			_cues.draw_polyline(PackedVector2Array([edge + Vector2(-side * 7, -9), edge,
+				edge + Vector2(-side * 7, 9)]), ink, 2.5, true)
+
+func _draw_cues() -> void:
+	super._draw_cues()
+	if leg == Leg.BUILD and _fighters.values().any(func(order: Dictionary): return _is_charging(order)):
+		for side: float in [-1.0, 1.0]:
+			var x := field.x * .5 + side * minf(field.x * .045, 32.0)
+			_cues.draw_dashed_line(Vector2(x, field.y * .44), Vector2(x, field.y * .66),
+				Color(.54, .87, 1.0, .24), 1.5, 10.0, false)
+	for cue: Dictionary in _cut_cues:
+		var alpha := float(int(cue.until) - trial_tick) / CUT_CUE_TICKS
+		for index: int in 3:
+			var at: Vector2 = cue.at + Vector2((index - 1) * 13, 37 - (1.0 - alpha) * 14)
+			_cues.draw_line(at + Vector2(-4, 5), at + Vector2(4, -5),
+				Color(.66, 1.0, .88, alpha), 2.5, true)
+
+func _on_emitter_died(role: String) -> void:
+	var cuts_before := interruptions
+	super._on_emitter_died(role)
+	if interruptions == cuts_before:
+		return
+	var order: Dictionary = _fighters[role]
+	# Cancel the queued release explicitly before showing a confirmed cut.
+	order.fire = -1
+	if leg == Leg.BUILD:
+		var at: Vector2 = order.ship.global_position
+		_show_cut(at)
+		_send_route_packet(["cut", at])
+
+func _show_cut(at: Vector2) -> void:
+	_cut_cues.append({"at": _cues.to_local(at), "until": trial_tick + CUT_CUE_TICKS})
+	_cues.queue_redraw()
+
+func _send_route_packet(event: Array) -> void:
+	if NetworkManager.is_online() and multiplayer.is_server():
+		(multiplayer as SceneMultiplayer).send_bytes(var_to_bytes(event), 0, MultiplayerPeer.TRANSFER_MODE_RELIABLE)
+
+func _on_route_packet(peer: int, packet: PackedByteArray) -> void:
+	if peer != 1 or finished or _lan_frozen_frame >= 0:
+		return
+	var event: Variant = bytes_to_var(packet)
+	if event is Array and event.size() == 2 and event[0] == "cut" and event[1] is Vector2:
+		_show_cut(event[1])
 
 func _open_route_drafts() -> void:
 	var slots: Array[int] = [1]
@@ -204,6 +259,8 @@ func _apply_route_leg(next_leg: int, settling: bool, announce := true) -> void:
 	if settling or not announce:
 		_build_hint_pending = false
 		_route_hint_left = 0.0
+		_cut_cues.clear()
+		_cues.queue_redraw()
 	elif next_leg != leg:
 		# The build transition opens cards on the same tick. Show its hint after the local choice.
 		_build_hint_pending = next_leg == Leg.BUILD and not UpgradeDraft.get_draft(NetworkManager.local_player_id()).get("chosen", false)
@@ -259,6 +316,9 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 	return true
 
 func set_lan_hold(held: bool) -> void:
+	if held:
+		_cut_cues.clear()
+		_cues.queue_redraw()
 	if held and (_route_hint_left > 0.0 or _build_hint_pending):
 		_build_hint_pending = false
 		_route_hint_left = 0.0
@@ -270,6 +330,8 @@ func _finish(outcome: String) -> void:
 		return
 	_build_hint_pending = false
 	_route_hint_left = 0.0
+	_cut_cues.clear()
+	_cues.queue_redraw()
 	_update_countdown()
 	super._finish(outcome)
 	_result.text += "\n" + _next_attempt_tip(outcome)

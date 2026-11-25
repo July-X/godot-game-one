@@ -41,7 +41,9 @@ def check_candidate(rows):
             for hit in pierce["hits"][f"{tick}-column-{rank}"]
         }
         assert any(h[1] in preceding_shots and h[3] == "pierce" for h in pierce["hits"][column])
-        assert any(h[3] == "splash" for h in by_route["splash", "cluster"]["hits"][cluster])
+        splash = by_route["splash", "cluster"]
+        assert any(h[3] == "splash" for h in splash["hits"][cluster])
+        assert sum(event[0] == cluster for event in splash["interruptions"]) == 1
         strong = by_route["power", "wing"]["hits"][wing]
         regular = by_route["pierce", "wing"]["hits"][wing]
         assert len(strong) == 1 and strong[0][-1] <= 0
@@ -49,10 +51,14 @@ def check_candidate(rows):
         for card, route in PROFILES:
             row = by_route[card, route]
             if route == "dodge":
+                assert len(row["fans"][cluster]) == 3
+                assert not any(event[0] == cluster for event in row["interruptions"])
                 assert sum(len(row["fans"].get(f"{tick}-{name}", [])) for name in EMITTERS) >= 6
                 continue
             aimed = f"{tick}-" + (route if route == "wing" else f"{route}-rear")
             assert aimed in row["deaths"] and aimed not in row["fans"], (card, route, aimed)
+            feedback = sum(event[0] == aimed for event in row["interruptions"])
+            assert feedback == int(aimed in row["charges"]), (card, route, aimed, feedback)
             assert any(f"{tick}-{name}" in row["fans"] for name in EMITTERS)
     assert all(not any(loss[1] == "hull" for loss in row["losses"]) for row in rows)
 
