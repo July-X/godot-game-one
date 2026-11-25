@@ -72,3 +72,29 @@ bash tests/run_probe.sh 20604 wide-client
 - 干净源码运行 `godot --headless --path . --editor --import --quit` 通过。协议 7／8 互换房主执行 `godot --headless --path . res://tests/lobby_start_probe.tscn -- {host,client} 19920 expect-mismatch`，两方向房主 6／加入端 4 项，明确阻断混联。
 
 本地验收使用同一台电脑上的真实 ENet（Godot 联机传输）双进程和鼠标输入注入。鸿蒙近场、双真机及云端环境仍待独立复跑。
+
+## 母舰双向牵制
+
+只在双人变奏生效。定向脉冲锁向时显示 1.6 秒的双折角盾沿，由未被锁定的机师实弹命中。沿用 1.5 倍盾伤，每窗首次有效命中显示「牵制成功」约 0.85 秒。下一窗优先交换标记者，另一个候选缺少安全路线时仍走已有选敌。0.30 秒跟踪、0.60 秒锁向预警与既有脉冲伤害保持原值。实际发射后仍按原规则给 1.2 秒普通弱点窗。队友倒地或等待恢复会撤去双人提示，普通弱点规则继续。
+
+协作窗沿用母舰的实时脉冲和恢复快照，带独立事件序号、盾轮、标记者、侧翼槽位、方向及余时。成功通报仅实时发送并按事件号去重。协议升级为 9，防止旧端漏掉提前打开的合作盾沿。
+
+固定种子 `90220`。脚本给两架飞机相同装备，布置起始站位并通过移动控制器横移。两次换位各由玩家飞机的默认主炮实弹打盾，标记者在脉冲发射时离开危险区。测试逐轮对比锁定与发射的世界坐标端点。中心、错人和窗外的对照弹用已有可靠批次送到房主，固定接触点，三项均仅扣盾 4，成功回执保持不变。默认主炮命中扣盾 6，每窗一次回执。5 点残盾的合作命中提前结束脉冲，母舰本体保持 1000，普通盾沿也未开启。
+
+```bash
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 20778 rift-duo-host
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 20779 rift-duo-client
+photos=$(mktemp -d)
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 20776 rift-duo-host "$photos"
+photos=$(mktemp -d)
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 20777 rift-duo-client "$photos"
+godot --headless --path . res://tests/rift_inducement_probe.tscn -- solo 20742 rift-duo-solo
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 20756 rift-flank-host
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 20710 boss-coop
+```
+
+`[RIFT]` 的 `flank_hit` 和 `duo_success` 记录房主实际扣盾、命中位置、稳定槽位及回执序号。双端验证重复回执、尝试错人、等待换线、旧窗口回放、倒地及重试后的旧局消息。图形探针用 1600×720 与 960×720 的桌面视口，注入触摸显示摇杆并加入一颗敌弹作为视觉对照。真实大厅以协议 9 进变奏，兼容性探针分别以协议 8 和 9 开房，使用对方版本加入 `res://tests/lobby_start_probe.tscn -- {host,client} 20732 expect-mismatch`，双方均显示不兼容并留在大厅。
+
+Godot 4.7.2 下，两个房主画幅各通过房主 48 项及加入端 43 项，开启图形后各通过 53 及 48 项。20:9 房主组首轮 P2 被锁、P1 命中，交换后 P1 被锁、P2 命中。4:3 房主组以相反顺序通过。两组各记录三个回执，分别来自两次主炮成功和一次破盾成功。普通母舰 42 项、单人变奏 23 项、外焰 21 项、猎手 32 项、复盘 121 项和普通双进程 40 项通过。
+
+首跑的图形探针曾在锁向时间内压入图片写盘和多轮对照，导致断言错过判定点。复跑把图片编码移到测试结束并独立安排对照窗口。原版侧翼探针曾把加入端本地倒计时与恢复快照的微小差异判为失败。基线 `eafe763` 和本版都出现过恢复值多 1 个物理帧，双方各有通过样本。普通局真实大厅也偶发首弹超时，云端在变奏预载前的版本已记录同类现象。以上两处沿用现有行为。游戏画面和输入由脚本驱动，手机及平板真机、鸿蒙近场和真人分工未验。

@@ -73,10 +73,10 @@ func _physics_process(delta: float) -> void:
 			_shoot_left += GameState.get_shoot_cooldown(pilot.peer_id)
 
 
-func _arrange(label: String) -> void:
+func _arrange(label: String, host_at := P1_AT, guest_at := P2_AT) -> void:
 	var pilot := _main._player as Node2D
 	pilot._motion.stop_for_downed()
-	pilot.global_position = P1_AT if _role == "host" else P2_AT
+	pilot.global_position = host_at if _role == "host" else guest_at
 	pilot._invincible_timer = 0
 	pilot._rescue_protected_until = 0
 	_steer = Vector2.ZERO
@@ -87,7 +87,7 @@ func _arrange(label: String) -> void:
 		GameState.set_shield_layers(_guest, 0)
 	await _barrier(label + "_placed")
 	if _role == "host":
-		var aligned := await _wait_until(func(): return _main._players[_guest].global_position.distance_to(P2_AT) < 1.0, 2)
+		var aligned := await _wait_until(func(): return _main._players[_guest].global_position.distance_to(guest_at) < 1.0, 2)
 		_check(label + "_host_received_guest_position", aligned, str(_main._players[_guest].global_position))
 	await _barrier(label + "_ready")
 
@@ -112,6 +112,7 @@ func _lock_on(label: String, expected: int) -> Dictionary:
 	var wing := P2_AT if expected == 1 else P1_AT
 	_check(label + "_same_target_warning_and_clear_side", seen and cue.slot == expected and boss.coop_pulse_contains(target)
 		and not boss.coop_pulse_contains(wing) and boss.get_attack_window() == BossModel.AttackWindow.OPEN
+		and not boss.has_duo_window() and not cue.has("duo")
 		and Vector2(end - origin).normalized().dot(AT.direction_to(target)) > 0.998,
 		"slot=%d stamp=%d from=%s to=%s hud=%s" % [cue.slot, cue.stamp, origin, end, _main._hud._boss_status_phase.text])
 	if expected == 1 and label == "p1":

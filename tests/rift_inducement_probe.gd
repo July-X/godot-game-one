@@ -4,7 +4,13 @@ const Trial := preload("res://scripts/battle/trials/rift_route_trial.gd")
 const Route := preload("res://scenes/rift_route_trial.tscn")
 const TRACK := BossModel.PulsePhase.TRACK
 const Bullet := preload("res://scripts/battle/projectiles/bullet.gd")
+const Mobile := preload("res://scenes/ui/mobile_controls.tscn")
+const Palette := preload("res://scripts/visuals/palette.gd")
+const DUO_P1_AT := Vector2(490, 355)
+const DUO_P2_AT := Vector2(790, 355)
 var _flank_impact := Vector2.INF
+var _duo_receipts: Array[int] = []
+var _duo_frames: Dictionary[String, Image] = {}
 
 func _run() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -14,6 +20,8 @@ func _run() -> void:
 	var solo := _role == "solo"
 	var wide_host := mode.ends_with("-host") or mode == "rift-outer-burn"
 	var baseline := args.has("baseline")
+	var duo := mode.begins_with("rift-duo-")
+	GameState.rift_remix = duo
 	_evidence = args[3] if args.size() > 3 and args[3] != "baseline" else ""
 	var viewport_size := Vector2i(1600, 720) if (_role == "host") == wide_host else Vector2i(960, 720)
 	if not solo:
@@ -25,6 +33,8 @@ func _run() -> void:
 			return
 	seed(90220)
 	var trial := Route.instantiate() as Trial
+	if duo and not solo:
+		trial.add_child(Mobile.instantiate())
 	get_tree().root.add_child(trial)
 	get_tree().current_scene = trial
 	_main = trial
@@ -34,6 +44,8 @@ func _run() -> void:
 			and NetworkManager.battle_size(trial) == Vector2(1280, 720)):
 			return
 		_guest = NetworkManager.recovery.guest_slot
+		if duo and not _require("remix_entry_ready", await _wait_until(func(): return trial._player_entry_ready, 1.5)):
+			return
 	trial._player.set_physics_process(false)
 	trial._player.set_process_unhandled_input(false)
 	trial._player._motion.mobile_mode = true
@@ -53,8 +65,10 @@ func _run() -> void:
 			await _induce("solo", 1, true)
 		"rift-outer-burn", "rift-outer-burn-mirror", "rift-outer-burn-solo":
 			await _check_outer_burn(solo, mode.ends_with("-mirror"))
-		"rift-flank-solo", "rift-flank-host", "rift-flank-client":
+		"rift-flank-solo", "rift-flank-host", "rift-flank-client", "rift-duo-solo":
 			await _flank_matrix(solo, 1 if solo or not wide_host else _guest, baseline)
+		"rift-duo-host", "rift-duo-client":
+			await _duo_matrix(_guest if wide_host else 1)
 		_:
 			# Both candidates must win on actual projectile damage, including twice in a row.
 			var first := _guest if wide_host else 1
@@ -68,7 +82,20 @@ func _run() -> void:
 	if not solo:
 		await _barrier("done")
 		await _wait_seconds(.22)
+	for name: String in _duo_frames:
+		var output := _evidence.path_join("%s-%s.png" % [name, _role])
+		_check(name + "_screenshot", _duo_frames[name].save_png(output) == OK, output)
 	get_tree().quit(_summarize())
+
+func _capture(name: String) -> void:
+	if not name.begins_with("duo-"):
+		await super._capture(name)
+		return
+	if _evidence.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	await RenderingServer.frame_post_draw
+	# Encode and write PNGs after verification so image I/O cannot consume the lock window.
+	_duo_frames[name] = get_viewport().get_texture().get_image()
 
 func _induce(label: String, target: int, solo: bool) -> void:
 	var boss: BossModel = _main._boss
@@ -309,6 +336,7 @@ func _flank_case(label: String, solo: bool, target: int, move: bool, baseline: b
 	var locked := await _wait_until(func(): return _phase() == LOCK, .80)
 	var lock := boss.coop_pulse_snapshot()
 	_check(label + "_lock_has_no_flank", locked and not _flank_active(), str(lock))
+	_check(label + "_old_route_or_solo_has_no_duo_window", not boss.has_duo_window() and not lock.has("duo"), "")
 	await _capture(label + "-locked")
 	if move and me == target:
 		# Once the line is fixed, cross it during the warning toward the exposed side.
@@ -347,12 +375,218 @@ func _flank_case(label: String, solo: bool, target: int, move: bool, baseline: b
 		await _barrier(label + "_shot_checked")
 	return pulse
 
-func _fire_flank_round(offset: Vector2, damage: int, splash := false) -> void:
+func _duo_matrix(favored: int) -> void:
+	_main.child_entered_tree.connect(_watch_flank_projectile)
+	_main._boss.route_duo_success.connect(func(stamp: int, _marked: int, _wing: int): _duo_receipts.append(stamp))
+	var other := _guest if favored == 1 else 1
+	await _duo_success_case("first", favored, favored)
+	await _recharge()
+	var lock := await _duo_success_case("exchanged", other, favored)
+	if lock.is_empty():
+		return
+	var trial := _main as Trial
+	var success_stamp := trial._last_duo_success_stamp
+	var resumed := await _reconnect_guest("duo_live_reconnect")
+	var boss: BossModel = _main._boss
+	if _role == "client":
+		boss.apply_network_coop_pulse(lock)
+	_check("rewire_closes_duo_without_replaying_success", resumed and not boss.has_duo_window()
+		and boss._duo_success_left == 0.0 and trial._last_duo_success_stamp == success_stamp, str(boss.coop_pulse_snapshot()))
+	await _barrier("duo_recovered")
+	await _recharge()
+	var missed := await _begin_duo("missed", favored, favored)
+	if missed.is_empty():
+		return
+	var me := NetworkManager.local_player_id()
+	var shield := boss.get_shield_hp()
+	if me == missed.duo.wing:
+		_fire_flank_round(Vector2(0, 25), 4, false, true)
+	_check("center_hit_cannot_claim_success", await _wait_until(func():
+		return is_equal_approx(shield - boss.get_shield_hp(), 4.0), .40)
+		and trial._last_duo_success_stamp == success_stamp, "slot=%d shield=%.1f→%.1f" % [missed.duo.wing, shield, boss.get_shield_hp()])
+	await _barrier("duo_center_hit")
+	shield = boss.get_shield_hp()
+	if me == missed.duo.marked:
+		_fire_flank_round(Vector2(missed.duo.side) * 24.0 + Vector2(0, 22), 4, false, true)
+	_check("marked_pilot_cannot_claim_early_wing_hit", await _wait_until(func():
+		return is_equal_approx(shield - boss.get_shield_hp(), 4.0), .40)
+		and _phase() == LOCK and trial._last_duo_success_stamp == success_stamp,
+		"slot=%d shield=%.1f→%.1f" % [missed.duo.marked, shield, boss.get_shield_hp()])
+	await _barrier("duo_wrong_pilot_hit")
+	var expired := await _wait_until(func(): return not boss.has_duo_window() and not boss.has_flank_window(), 2.1)
+	_check("missed_window_expires_without_success", expired and trial._last_duo_success_stamp == success_stamp, "")
+	# Re-center the moving boss for the late-shot comparison on both peers.
+	if _role == "host":
+		boss.set_physics_process(false)
+		boss.global_position = AT
+	_check("same_fixed_contact_for_late_shot", await _wait_until(func(): return boss.global_position.distance_to(AT) < 1.0, .6), "")
+	await _barrier("duo_late_contact_ready")
+	shield = boss.get_shield_hp()
+	if NetworkManager.local_player_id() == missed.duo.wing:
+		_fire_flank_round(Vector2(missed.duo.side) * 24.0 + Vector2(0, 22), 4, false, true)
+	_check("late_shot_is_ordinary", await _wait_until(func(): return is_equal_approx(shield - boss.get_shield_hp(), 4.0), .65)
+		and trial._last_duo_success_stamp == success_stamp, "shield=%.1f→%.1f" % [shield, boss.get_shield_hp()])
+	await _barrier("duo_late_checked")
+	if _role == "host":
+		boss.set_physics_process(true)
+	await _recharge()
+	var breaking := await _begin_duo("breaking", other, favored)
+	if breaking.is_empty():
+		return
+	var hull := boss.get_network_health()
+	if _role == "host":
+		boss._shield_hp = 5.0
+	await _barrier("duo_break_ready")
+	if NetworkManager.local_player_id() == breaking.duo.wing:
+		_fire_flank_round(Vector2(breaking.duo.side) * 24.0 + Vector2(0, 22), 4, false, true)
+	var broke := await _wait_until(func():
+		return not boss.has_impact_shield() and trial._last_duo_success_stamp == int(breaking.duo.stamp), .55)
+	_check("wing_break_cancels_pulse_and_never_spills_into_hull", broke and _phase() == OPEN
+		and not boss.has_duo_window() and not boss.has_flank_window() and is_equal_approx(hull, boss.get_network_health()),
+		"stamp=%d wing=%d shield=%.1f hull=%.1f" % [breaking.duo.stamp, breaking.duo.wing, boss.get_shield_hp(), boss.get_network_health()])
+	success_stamp = trial._last_duo_success_stamp
+	await _barrier("duo_break_checked")
+	var restored := await _wait_until(boss.has_impact_shield, 6.0)
+	_check("shield_returns_after_cooperation_break", restored, "")
+	await _barrier("duo_break_recharged")
+	if (await _begin_duo("downed", favored, favored)).is_empty():
+		return
+	if _role == "host":
+		trial._players[_guest].force_kill()
+	_check("downed_partner_closes_cooperation_and_cancels_unsafe_pulse", await _wait_until(func():
+		return not boss.has_duo_window() and _phase() == OPEN, .7) and trial._last_duo_success_stamp == success_stamp, "")
+	if _role == "host":
+		_check("one_pilot_cannot_open_coop_pulse", not boss._try_coop_pulse(), "")
+	var previous := trial.get_instance_id()
+	var old_round := GameState.get_sync_round()
+	await _barrier("duo_down_checked")
+	if _role == "host":
+		trial.get_node("TrialUI/Options/Buttons/Retry").pressed.emit()
+	var retried := await _wait_until(func():
+		var current := get_tree().current_scene as Trial
+		return is_instance_valid(current) and current.get_instance_id() != previous and current._player_entry_ready, 5.0)
+	_check("retry_resets_window_and_success", retried and get_tree().current_scene._last_duo_success_stamp == 0
+		and GameState.get_sync_round() > old_round and get_tree().current_scene._boss == null,
+		"old_round=%d current_round=%d" % [old_round, GameState.get_sync_round()])
+	if retried:
+		_main = get_tree().current_scene
+		if _role == "host":
+			_main.trial_tick = Trial.BOSS_LEG - 1
+		var new_boss := await _wait_until(func(): return is_instance_valid(_main._boss), 2.0)
+		if _role == "client":
+			_main._on_route_packet(1, var_to_bytes([old_round, ["duo_success", success_stamp]]))
+		_check("retry_ignores_old_round_success", new_boss and _main._last_duo_success_stamp == 0
+			and not _main._boss.has_duo_window() and _main._boss._duo_success_left == 0.0, "")
+	if _role == "host":
+		_check("exactly_one_authority_receipt_per_hit_window", _duo_receipts.size() == 3
+			and _duo_receipts[0] < _duo_receipts[1] and _duo_receipts[1] < _duo_receipts[2], str(_duo_receipts))
+
+func _begin_duo(label: String, expected: int, favored: int) -> Dictionary:
+	await _arrange("duo_" + label, DUO_P1_AT, DUO_P2_AT)
+	var boss: BossModel = _main._boss
+	if _role == "host":
+		boss.global_position = AT
+		boss._aggro = BossModel.AggroLedger.new()
+		boss._aggro.record_damage(favored, boss.get_network_max_health() * .25)
+		boss._shoot_timer = 90.0
+		boss._try_coop_pulse()
+		if label == "first" and not _evidence.is_empty():
+			# A real hostile round in open space makes the visual comparison repeatable.
+			boss._spawn_enemy_bullet(AT + Vector2(92, 32), PI * .5, 1.0, 125.0, Palette.ENEMY_BULLET_FAST)
+	var tracking := await _wait_until(func(): return _phase() == TRACK, .7)
+	_check(label + "_tracking_is_unchanged", tracking and not boss.has_duo_window(), "")
+	if label == "first":
+		await _capture("duo-first-tracking")
+	var locked := await _wait_until(func(): return _phase() == LOCK and boss.has_duo_window(), .9)
+	if not _require(label + "_duo_starts_only_on_lock", locked):
+		return {}
+	var lock := boss.coop_pulse_snapshot()
+	var wing := _guest if expected == 1 else 1
+	var side := Vector2.LEFT if lock.to.x >= lock.from.x else Vector2.RIGHT
+	_check(label + "_marked_and_wing_use_stable_slots", lock.slot == expected and lock.duo.marked == expected
+		and lock.duo.wing == wing and lock.duo.side == side and float(lock.duo.left) > 1.45
+		and float(lock.duo.left) <= BossModel.ROUTE_DUO_SECONDS, str(lock))
+	return lock
+
+func _duo_success_case(label: String, expected: int, favored: int) -> Dictionary:
+	var lock := await _begin_duo(label, expected, favored)
+	if lock.is_empty():
+		return {}
+	var trial := _main as Trial
+	var boss: BossModel = trial._boss
+	var target_hp := GameState.get_current_health(expected)
+	var target_start: Vector2 = trial._players[expected].global_position
+	var me := NetworkManager.local_player_id()
+	var previous := trial._last_duo_success_stamp
+	var fired := {}
+	_watch_duo_fire(expected, target_start, fired)
+	var joystick := trial.get_node("MobileControls")
+	if not joystick._ui_root.visible:
+		var touch := InputEventScreenTouch.new()
+		touch.position = Vector2(140, 568)
+		touch.pressed = true
+		get_viewport().push_input(touch, true)
+	if me == expected:
+		_steer = Vector2.LEFT if expected == 1 else Vector2.RIGHT
+	var phase_label: Label = trial._hud._boss_status_phase
+	var phase_seen := await _wait_until(func(): return phase_label.text.contains("打盾"), .18)
+	var panel: Rect2 = trial._hud._boss_status_root.get_global_rect()
+	_check(label + "_duo_hud_keeps_score_and_touch_controls_clear", phase_seen
+		and Trial.SafeArea.for_viewport(get_viewport()).encloses(panel)
+		and phase_label.get_minimum_size().x <= phase_label.size.x
+		and not panel.intersects(trial._hud._score_label.get_global_rect())
+		and joystick._ui_root.visible and not panel.intersects(joystick._base_node.get_global_rect())
+		and trial._hud._skill_slots.all(func(slot: Dictionary): return not panel.intersects(slot.button.get_global_rect())), "")
+	await _capture("duo-" + label + "-lock")
+	var shield := boss.get_shield_hp()
+	if me == lock.duo.wing:
+		_fire_duo_primary(lock.duo.side)
+	var hit := await _wait_until(func():
+		return is_equal_approx(shield - boss.get_shield_hp(), 6.0) and trial._last_duo_success_stamp == int(lock.duo.stamp), .55)
+	_check(label + "_wing_primary_from_pilot_scores_during_lock", hit and _phase() == LOCK and previous < int(lock.duo.stamp),
+		"stamp=%d marked=%d wing=%d shield=%.1f→%.1f contact=%s" %
+		[lock.duo.stamp, expected, lock.duo.wing, shield, boss.get_shield_hp(), _flank_impact])
+	await _barrier(label + "_wing_hit")
+	await _capture("duo-" + label + "-success")
+	shield = boss.get_shield_hp()
+	var notice_before := boss._duo_success_left
+	if _role == "client":
+		trial._on_route_packet(1, var_to_bytes([GameState.get_sync_round(), ["duo_success", int(lock.duo.stamp)]]))
+		_check(label + "_repeat_receipt_cannot_replay_success", boss._duo_success_left == notice_before, "")
+	if me == lock.duo.wing:
+		_fire_flank_round(Vector2(lock.duo.side) * 24.0 + Vector2(0, 22), 4, false, true)
+	_check(label + "_second_valid_hit_does_not_extend_success", await _wait_until(func():
+		return is_equal_approx(shield - boss.get_shield_hp(), 6.0), .55) and boss._duo_success_left < notice_before
+		and trial._last_duo_success_stamp == int(lock.duo.stamp), "shield=%.1f→%.1f" % [shield, boss.get_shield_hp()])
+	var fired_seen := await _wait_until(func(): return not fired.is_empty(), .85)
+	_steer = Vector2.ZERO
+	_check(label + "_marked_pilot_moves_out_without_relocking", fired_seen and fired.from == lock.from and fired.to == lock.to
+		and fired.moved >= 65.0 and GameState.get_current_health(expected) == target_hp,
+		"slot=%d moved=%.1f hull=%d lane=%s→%s" % [expected, fired.get("moved", 0.0), GameState.get_current_health(expected), lock.from, lock.to])
+	await _barrier(label + "_locked_lane_checked")
+	joystick.cancel_move_touch()
+	return lock
+
+func _watch_duo_fire(marked: int, start: Vector2, observed: Dictionary) -> void:
+	if await _wait_until(func(): return _phase() == FIRE, .85):
+		var pulse: Dictionary = _main._boss.coop_pulse_snapshot()
+		observed.merge({"from": pulse.from, "to": pulse.to,
+			"moved": start.distance_to(_main._players[marked].global_position)})
+
+func _fire_duo_primary(side: Vector2) -> void:
+	var pilot: Node2D = _main._player
+	var to_boss: Vector2 = _main._boss.global_position - pilot.global_position
+	# Aim the two stock barrels at the edge. With a 36 px aim offset, one round
+	# grazes the shield on the lit side and the other passes outside the circle.
+	pilot.rotation = to_boss.angle() + PI * .5 + side.x * asin(36.0 / to_boss.length())
+	pilot._combat._shoot()
+
+func _fire_flank_round(offset: Vector2, damage: int, splash := false, reliable := false) -> void:
 	var pilot: Node2D = _main._player
 	var aim: Vector2 = _main._boss.global_position + offset
 	var axis := pilot.global_position.direction_to(aim)
 	_flank_impact = Vector2.INF
-	pilot._combat._spawn_bullet(aim - axis * 58.0, axis.angle(), damage, true, 1, 760.0)
+	pilot._combat._spawn_bullet(aim - axis * 58.0, axis.angle(), damage, true, 1, 760.0, reliable)
 	if splash:
 		# Give only the shield-breaking round the same splash radius as the card.
 		var shot := get_tree().get_nodes_in_group("player_bullets").back() as Bullet

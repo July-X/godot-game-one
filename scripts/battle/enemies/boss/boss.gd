@@ -5,6 +5,7 @@ signal phase_changed(phase_name: String)
 signal shield_released
 signal first_exposure_bonus_used
 signal route_flank_hit(at: Vector2, slot: int, shield_before: float, shield_after: float)
+signal route_duo_success(stamp: int, marked: int, wing: int)
 
 enum State { IDLE, CIRCLE, ATTACK, RETREAT, ENRAGED }
 enum AttackWindow { UNKNOWN, OPEN, CHARGING, SWEEP, HOLD }
@@ -130,6 +131,9 @@ func apply_network_boss_shield(stamp: int, hp: float, max_hp: float) -> bool:
 	if _flank_left > 0.0 and _is_network_ghost and (stamp != _flank_shield_stamp or not has_impact_shield()):
 		_flank_left = 0.0
 		_flank_cue.queue_redraw()
+	if _duo.left > 0.0 and _is_network_ghost and (stamp != _duo.shield_stamp or not has_impact_shield()):
+		_duo.left = 0.0
+		_flank_cue.queue_redraw()
 	queue_redraw()
 	return advanced
 
@@ -181,6 +185,11 @@ var _flank_stamp := 0
 var _flank_shield_stamp := -1
 var _flank_side := Vector2.ZERO
 var _flank_left := 0.0
+var _route_duo_enabled := false
+var _duo := {"stamp": 0, "shield_stamp": -1, "marked": 0, "wing": 0, "side": Vector2.ZERO, "left": 0.0}
+var _last_duo_marked := 0
+var _duo_scored := false
+var _duo_success_left := 0.0
 var _pulse_hits: Dictionary[int, bool] = {}
 var _pulse := {"stamp": 0, "phase": PulsePhase.OPEN, "slot": 0, "from": Vector2.ZERO, "to": Vector2.ZERO}
 
@@ -228,6 +237,8 @@ const COOP_PULSE_RADIUS := 34.0
 const COOP_PULSE_ESCAPE := 76.0
 const COOP_PULSE_DAMAGE := 10.0
 const ROUTE_FLANK_SECONDS := 1.2
+const ROUTE_DUO_SECONDS := 1.6
+const ROUTE_DUO_SUCCESS_SECONDS := .85
 const ROUTE_FLANK_SHIELD_MULTIPLIER := 1.5
 const ROUTE_FLANK_MIN_OFFSET := 16.0
 
@@ -314,6 +325,8 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 	if _flank_left > 0.0:
 		_tick_flank_window(delta)
+	if _duo.left > 0.0 or _duo_success_left > 0.0:
+		_tick_duo_window(delta)
 	if _is_network_ghost:
 		global_rotation = lerp_angle(global_rotation, _network_target_rotation, 0.45)
 		return
@@ -545,8 +558,9 @@ func extend_first_exposure(seconds: float) -> void:
 	if _shield_stamp == ShieldPhase.RAISED:
 		_first_exposure_bonus = seconds
 
-func enable_route_inducement() -> void:
+func enable_route_inducement(duo := false) -> void:
 	_route_inducement = true
+	_route_duo_enabled = duo and _coop_encounter
 
 func _break_shield() -> void:
 	var rewarded := _first_exposure_bonus > 0.0
@@ -554,6 +568,7 @@ func _break_shield() -> void:
 	_first_exposure_bonus = 0.0
 	_shield_stamp += 1
 	_close_flank_window()
+	_close_duo_window()
 	_dodge_shift = Vector2.ZERO
 	_clear_fire_pressure()
 	if _ultimate_laser_charging:
@@ -867,15 +882,20 @@ func coop_pulse_snapshot() -> Dictionary:
 	if _flank_stamp > 0:
 		snapshot["flank"] = {"stamp": _flank_stamp, "shield_stamp": _flank_shield_stamp,
 			"side": _flank_side, "left": _flank_left}
+	if _duo.stamp > 0:
+		snapshot["duo"] = _duo.duplicate()
 	return snapshot
 
 func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
 	if _is_network_ghost and next.has("flank"):
 		_apply_network_flank_window(next.flank)
+	if _is_network_ghost and next.has("duo"):
+		_apply_network_duo_window(next.duo)
 	if next.is_empty() or int(next.stamp) <= int(_pulse.stamp):
 		return
 	_pulse = next.duplicate()
 	_pulse.erase("flank")
+	_pulse.erase("duo")
 	if _pulse.phase == PulsePhase.LOCK or _pulse.phase == PulsePhase.FIRE:
 		face_laser_direction(Vector2(_pulse.to - _pulse.from).normalized())
 	if live_edge and _pulse.phase == PulsePhase.FIRE:
@@ -883,6 +903,10 @@ func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
 	queue_redraw()
 
 func coop_pulse_label() -> String:
+	if _duo_success_left > 0.0:
+		return "牵制成功"
+	if has_duo_window():
+		return "P1 引开 · P2 打盾" if _duo.marked == 1 else "P2 引开 · P1 打盾"
 	if _pulse.phase == PulsePhase.OPEN:
 		return ""
 	var pilot := "P1" if int(_pulse.slot) == 1 else "P2"
@@ -900,6 +924,8 @@ func _try_coop_pulse() -> bool:
 		if not _coop_pair_alive() or GameState.get_alive_player_ids().size() != 2:
 			return false
 		ids = _rank_attack_pilots("pulse")
+		if _route_duo_enabled and ids.size() == 2 and ids[0] == _last_duo_marked:
+			ids.reverse()
 	for slot: int in ids:
 		var path := _pulse_path(slot)
 		if path.is_empty():
@@ -948,6 +974,8 @@ func _pulse_path(slot: int) -> Dictionary:
 func _lock_pulse(slot: int, path: Dictionary, time_left: float) -> void:
 	attack_target_selected.emit("pulse", slot, path.axis)
 	_pulse_left = time_left
+	if _route_duo_enabled:
+		_open_duo_window(slot, path.from, path.to)
 	_set_coop_pulse(PulsePhase.LOCK, slot, path.from, path.to)
 
 func _set_coop_pulse(phase: PulsePhase, slot := 0, origin := Vector2.ZERO, end := Vector2.ZERO) -> void:
@@ -992,6 +1020,72 @@ func _tick_coop_pulse(delta: float) -> void:
 func has_flank_window() -> bool:
 	return _flank_left > 0.0 and has_impact_shield() and _health > 0.0 and not _dead
 
+func has_duo_window() -> bool:
+	return _duo.left > 0.0 and _duo.shield_stamp == _shield_stamp and has_impact_shield() and _health > 0.0 and not _dead
+
+func has_projectile_flank_window() -> bool:
+	return has_flank_window() or has_duo_window()
+
+func _open_duo_window(marked: int, origin: Vector2, end: Vector2) -> void:
+	var alive := GameState.get_alive_player_ids()
+	if alive.size() != 2 or not alive.has(marked):
+		return
+	var wing := alive[1] if alive[0] == marked else alive[0]
+	if not _attack_pilot_alive(_pulse_pilot(wing)):
+		return
+	_last_duo_marked = marked
+	_duo_scored = false
+	_duo = {"stamp": int(_duo.stamp) + 1, "shield_stamp": _shield_stamp, "marked": marked,
+		"wing": wing, "side": Vector2.LEFT if end.x >= origin.x else Vector2.RIGHT, "left": ROUTE_DUO_SECONDS}
+	_flank_cue.queue_redraw()
+
+func _close_duo_window() -> void:
+	if _duo.left <= 0.0:
+		return
+	_duo.stamp += 1
+	_duo.left = 0.0
+	_flank_cue.queue_redraw()
+	get_parent().publish_boss_pulse(self)
+
+func _duo_pair_available() -> bool:
+	return _coop_pair_alive() and _attack_pilot_alive(_pulse_pilot(_duo.marked)) and _attack_pilot_alive(_pulse_pilot(_duo.wing))
+
+func _tick_duo_window(delta: float) -> void:
+	if not _is_network_ghost and not _duo_pair_available():
+		cancel_route_duo_window()
+		return
+	_duo_success_left = maxf(_duo_success_left - delta, 0.0)
+	if _duo.left <= 0.0:
+		return
+	if not _is_network_ghost and _duo.left <= delta:
+		_close_duo_window()
+	else:
+		_duo.left = maxf(float(_duo.left) - delta, 0.0)
+		_flank_cue.queue_redraw()
+
+func cancel_route_duo_window() -> void:
+	_duo_success_left = 0.0
+	if _is_network_ghost:
+		_duo.left = 0.0
+		_flank_cue.queue_redraw()
+	else:
+		_close_duo_window()
+
+func play_route_duo_success() -> void:
+	_duo_success_left = ROUTE_DUO_SUCCESS_SECONDS
+
+func _apply_network_duo_window(window: Dictionary) -> void:
+	var stamp: int = window.stamp
+	if stamp < _duo.stamp:
+		return
+	var left: float = window.left if window.shield_stamp == _shield_stamp and has_impact_shield() else 0.0
+	if stamp == _duo.stamp:
+		_duo.left = minf(_duo.left, left)
+	else:
+		_duo = window.duplicate()
+		_duo.left = left
+	_flank_cue.queue_redraw()
+
 func _open_flank_window() -> void:
 	_flank_stamp += 1
 	_flank_shield_stamp = _shield_stamp
@@ -1032,9 +1126,11 @@ func _apply_network_flank_window(window: Dictionary) -> void:
 	_flank_cue.queue_redraw()
 
 func _draw_flank_window() -> void:
-	if not has_flank_window():
+	var duo_open := has_duo_window()
+	if not duo_open and not has_flank_window():
 		return
-	var direction := _flank_side.rotated(-global_rotation)
+	var side_vector: Vector2 = _duo.side if duo_open else _flank_side
+	var direction := side_vector.rotated(-global_rotation)
 	var angle := direction.angle()
 	var shield_radius: float = $CollisionShape2D.shape.radius
 	var half_arc := acos(ROUTE_FLANK_MIN_OFFSET / shield_radius)
@@ -1047,8 +1143,14 @@ func _draw_flank_window() -> void:
 	var back := direction * 11.0
 	var edge := direction.orthogonal() * 8.0
 	_flank_cue.draw_polyline(PackedVector2Array([point + back - edge, point, point + back + edge]), tone, 3.0, true)
+	if duo_open:
+		var outer := point + direction * 13.0
+		_flank_cue.draw_polyline(PackedVector2Array([outer + back - edge, outer, outer + back + edge]),
+			tone, 3.0, true)
 
 func _finish_coop_pulse() -> void:
+	if _pulse.phase == PulsePhase.LOCK:
+		_close_duo_window()
 	_pulse_left = 0.0
 	_shoot_timer = minf(1.25 / _phase_speed_mult(), BOSS_ATTACK_GAP_LIMIT)
 	_set_coop_pulse(PulsePhase.OPEN)
@@ -1252,10 +1354,19 @@ func _score_dodge_position(pos: Vector2, drift: Vector2) -> float:
 func take_projectile_damage(amount: float, killer_peer_id: int, at: Vector2) -> bool:
 	if _is_network_ghost or amount <= 0.0:
 		return false
-	if has_flank_window() and (at - global_position).dot(_flank_side) >= ROUTE_FLANK_MIN_OFFSET:
+	var offset := at - global_position
+	var duo_hit: bool = has_duo_window() and killer_peer_id == _duo.wing and _duo_pair_available() \
+		and offset.dot(_duo.side) >= ROUTE_FLANK_MIN_OFFSET
+	if duo_hit or (has_flank_window() and offset.dot(_flank_side) >= ROUTE_FLANK_MIN_OFFSET):
 		var shield_before := _shield_hp
+		var first_duo_hit := duo_hit and not _duo_scored
+		var duo_stamp: int = _duo.stamp
+		if first_duo_hit:
+			_duo_scored = true
 		take_damage(amount * ROUTE_FLANK_SHIELD_MULTIPLIER, killer_peer_id)
 		route_flank_hit.emit(at, killer_peer_id, shield_before, _shield_hp)
+		if first_duo_hit:
+			route_duo_success.emit(duo_stamp, _duo.marked, killer_peer_id)
 		return _shield_hp == 0.0
 	take_damage(amount, killer_peer_id)
 	return false
@@ -1334,6 +1445,7 @@ func die() -> void:
 		return
 	_dead = true
 	_close_flank_window()
+	_close_duo_window()
 	_pulse.phase = PulsePhase.OPEN
 	queue_redraw()
 	_ultimate_laser_charging = false

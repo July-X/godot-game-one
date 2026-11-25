@@ -276,7 +276,7 @@ func _on_area_entered(area: Area2D) -> void:
 					_recycle()
 
 func _apply_direct_damage(target: Node2D) -> bool:
-	if target.has_method("take_projectile_damage") and target.has_flank_window():
+	if target.has_method("has_projectile_flank_window") and target.has_projectile_flank_window():
 		if not _pierced.has(target):
 			# A splash card can still hit neighbors. Don't send the same round through the opened hull.
 			return target.take_projectile_damage(_damage, owner_peer_id, global_position)

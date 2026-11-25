@@ -28,6 +28,7 @@ var _route_outcome := ""
 var _hunter_defeated := false
 var _hunter_reward_spent := false
 var _flank_hits := 0
+var _last_duo_success_stamp := 0
 var _route_review: Dictionary = {}
 var _route_notice := ""
 var _remote_cues: Dictionary[int, int] = {}
@@ -225,6 +226,8 @@ func _on_route_packet(peer: int, packet: PackedByteArray) -> void:
 		_show_cut(event[1])
 	elif event[0] == "flank_hit" and event[1] is Vector2:
 		_show_flank_hit(event[1])
+	elif event[0] == "duo_success" and event[1] is int:
+		_show_duo_success(event[1])
 	elif event[0] == "hunter" and event[1] is String and HUNTER_NOTICE.has(event[1]):
 		_show_hunter_notice(event[1])
 
@@ -248,6 +251,17 @@ func _on_flank_hit(at: Vector2, slot: int, shield_before: float, shield_after: f
 	_show_flank_hit(at)
 	_send_route_packet(["flank_hit", at])
 	_log("flank_hit", {"slot": slot, "position": str(at), "shield_before": shield_before, "shield_after": shield_after})
+
+func _show_duo_success(stamp: int) -> void:
+	if not remix or not is_instance_valid(_boss) or stamp <= _last_duo_success_stamp:
+		return
+	_last_duo_success_stamp = stamp
+	_boss.play_route_duo_success()
+
+func _on_duo_success(stamp: int, marked: int, wing: int) -> void:
+	_show_duo_success(stamp)
+	_send_route_packet(["duo_success", stamp])
+	_log("duo_success", {"stamp": stamp, "marked": marked, "wing": wing})
 
 func _open_route_drafts() -> void:
 	var slots: Array[int] = [1]
@@ -276,8 +290,9 @@ func _start_route_boss() -> void:
 	_show_boss_warning()
 	_spawn_boss(5)
 	if is_instance_valid(_boss):
-		_boss.enable_route_inducement()
+		_boss.enable_route_inducement(remix)
 		_boss.route_flank_hit.connect(_on_flank_hit)
+		_boss.route_duo_success.connect(_on_duo_success)
 		if _hunter_defeated:
 			_boss.extend_first_exposure(HUNTER_EXPOSURE_BONUS)
 			_boss.first_exposure_bonus_used.connect(func():
@@ -405,6 +420,8 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 
 func set_lan_hold(held: bool) -> void:
 	if held:
+		if is_instance_valid(_boss):
+			_boss.cancel_route_duo_window()
 		_cut_cues.clear()
 		_flank_sparks.clear()
 		_spark_layer.queue_redraw()
