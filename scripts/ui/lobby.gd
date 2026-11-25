@@ -7,7 +7,7 @@ signal game_start_requested
 const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 ## 开局或战斗消息不兼容时更新此版本。检查先于任何开局远程调用。
-const LAN_PROTOCOL := "space-bullet-hell-lan:7"
+const LAN_PROTOCOL := "space-bullet-hell-lan:8"
 const VERSION_WAIT_MS := 3000
 const VERSION_ERROR := "联机版本不兼容，请将两台设备更新到同一版本后重试"
 

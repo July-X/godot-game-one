@@ -164,6 +164,18 @@ func peer_for_slot(slot: int) -> int:
 func gameplay_sender() -> int:
 	return 0 if recovery.deadline > 0 else slot_for_peer(multiplayer.get_remote_sender_id())
 
+## Request through the autoload so a room transition cannot discard the request with the old scene.
+@rpc("any_peer", "reliable", "call_remote")
+func request_battle_players(round_id: int, ready: bool) -> void:
+	if not multiplayer.is_server():
+		return
+	var slot := gameplay_sender()
+	var battle: Node = recovery.battle
+	if slot <= 1 or slot != recovery.guest_slot or round_id != recovery.round_id:
+		return
+	if is_instance_valid(battle) and battle.is_inside_tree() and battle.is_node_ready():
+		battle.reply_battle_players(multiplayer.get_remote_sender_id(), ready)
+
 func drop_lan_transport() -> void:
 	var peer := multiplayer.multiplayer_peer
 	if peer != null:

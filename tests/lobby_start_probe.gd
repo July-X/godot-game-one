@@ -5,8 +5,13 @@ const LOBBY := "res://scenes/ui/lobby.tscn"
 const RIFT := "res://scenes/rift_route_trial.tscn"
 const NORMAL := "res://scenes/main.tscn"
 const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
+const Player := preload("res://scripts/player/player.gd")
+const Bullet := preload("res://scripts/battle/projectiles/bullet.gd")
 var _passed := 0
 var _failed := 0
+var _battle_at := 0
+var _guest_shot_at := 0
+var _guest_position := Vector2.INF
 
 func _ready() -> void:
 	Engine.max_fps = 60
@@ -17,6 +22,10 @@ func _run() -> void:
 	var host := args[0] == "host"
 	var port := int(args[1])
 	var case_name := args[2] if args.size() > 2 else "normal"
+	if args.has("device-a") or args.has("device-b"):
+		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+		get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
+		get_window().content_scale_size = Vector2i(1600 if args.has("device-a") else 960, 720)
 	get_tree().current_scene = null
 	get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn")
 	await get_tree().scene_changed
@@ -44,6 +53,7 @@ func _run() -> void:
 func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 	var remix := case_name == "remix"
 	var rift := remix or case_name == "rift"
+	get_tree().node_added.connect(_trace_spawn)
 	if host:
 		var button: Button = lobby.get_node("VBox/PanelHost/BtnRiftRoute" if rift else "VBox/PanelHost/BtnStart")
 		var enabled := await _wait_until(func(): return button.is_visible_in_tree() and not button.disabled, 4.0)
@@ -65,16 +75,113 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 	_check("expected_battle_loaded", await _wait_until(func():
 		return (is_instance_valid(get_tree().current_scene) and get_tree().current_scene.scene_file_path == expected), 6.0))
 	if is_instance_valid(get_tree().current_scene) and get_tree().current_scene.scene_file_path == expected:
+		var battle := get_tree().current_scene
+		if not battle.has_method("_get_networked_player_spawn_position"):
+			_check("battle_script_loaded", false)
+			return
+		_battle_at = Time.get_ticks_msec()
+		_trace("scene", {"role": "host" if host else "client", "round": GameState.get_sync_round(), "slot": NetworkManager.local_player_id()})
+		if remix and OS.get_cmdline_user_args().has("entry-timeout"):
+			await _verify_entry_timeout(battle, host)
+			return
+		if host:
+			battle.child_entered_tree.connect(_schedule_bullet_check)
+			_guest_position = battle._get_networked_player_spawn_position(2)
+		# Client position and shots still go through the game's input and ENet paths.
+		_drive_pilot_once_bound(battle)
 		if rift:
 			_check("same_selected_route_on_arrival", get_tree().current_scene.remix == remix)
 		_check("both_pilots_synced", await _wait_until(func(): return get_tree().current_scene._players.size() == 2, 4.0))
 		if host:
-			_check("guest_can_report_after_entering_battle",
-				await _wait_until(func(): return get_tree().current_scene.get_player_report_count() > 0, 4.0))
+			var active := await _wait_until(func():
+				var guest: Node2D = battle._players.get(NetworkManager.recovery.guest_slot)
+				return is_instance_valid(guest) and guest.position.distance_to(_guest_position) > 8.0 and _guest_shot_at > 0, 4.0)
+			var ready_ms := Time.get_ticks_msec() - _battle_at
+			_trace("active_on_host", {"move_and_shot_ms": ready_ms, "first_shot_ms": _guest_shot_at - _battle_at})
+			_check("guest_can_move_and_shoot_within_one_second", active and ready_ms <= 1000)
+			if remix:
+				_check("authority_has_both_pilots_before_practice_wave", await _wait_until(func():
+					return battle._player_entry_ready and battle.trial_tick < 78, .3))
 		else:
+			await _verify_entry_replays(battle)
+			if remix:
+				_check("guest_has_both_pilots_before_practice_wave", battle._player_entry_ready and battle.trial_tick < 78)
 			await get_tree().create_timer(1.0).timeout
-		if remix:
+		if remix and OS.get_cmdline_user_args().has("recover"):
 			await _verify_remix_recovery_and_retry(host)
+
+func _trace_spawn(node: Node) -> void:
+	if node is Player:
+		_trace("pilot_spawned", {"node": str(node.name), "instance": node.get_instance_id()})
+
+func _schedule_bullet_check(node: Node) -> void:
+	if node is Bullet and _guest_shot_at == 0:
+		_observe_guest_bullet.call_deferred(node.get_instance_id())
+
+func _observe_guest_bullet(instance: int) -> void:
+	if _guest_shot_at > 0:
+		return
+	var bullet := instance_from_id(instance) as Bullet
+	if is_instance_valid(bullet) and bullet._is_player_bullet and bullet.owner_peer_id > 1 and not bullet._is_network_ghost:
+		_guest_shot_at = Time.get_ticks_msec()
+		_trace("authority_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
+
+func _drive_pilot_once_bound(battle: Node) -> void:
+	var slot := NetworkManager.local_player_id()
+	var bound := await _wait_until(func():
+		var pilot: Player = battle._players.get(slot)
+		return (is_instance_valid(pilot) and pilot.is_node_ready() and battle._player == pilot
+			and pilot._is_locally_controlled_player()), 3.8)
+	_check("local_pilot_input_bound", bound)
+	if not bound:
+		return
+	var pilot: Player = battle._players[slot]
+	_trace("input_bound", {"round": GameState.get_sync_round(), "slot": slot, "instance": pilot.get_instance_id()})
+	var origin := pilot.position
+	var moved := await _wait_until(func():
+		var motion := InputEventMouseMotion.new()
+		motion.relative = Vector2(20 if slot == 1 else -20, 0)
+		get_viewport().push_input(motion)
+		return pilot.position.distance_to(origin) > 8.0, 1.0)
+	_trace("pilot_moved", {"slot": slot, "distance": origin.distance_to(pilot.position)})
+	_check("local_input_moves_plane_before_first_wave", moved and Time.get_ticks_msec() - _battle_at <= 1000)
+
+func _verify_entry_replays(battle: Node) -> void:
+	var round_id := GameState.get_sync_round()
+	var slot := NetworkManager.local_player_id()
+	var pilot: Node = battle._players.get(slot)
+	if not is_instance_valid(pilot):
+		_check("replay_keeps_current_pilot", false)
+		return
+	await _wait_until(func(): return battle._player_entry_ready, 1.0)
+	NetworkManager.request_battle_players.rpc_id(1, round_id, false)
+	battle._rpc_spawn_networked_player(round_id - 1, 99, 300.0, 400.0)
+	await get_tree().create_timer(.12).timeout
+	_check("replay_keeps_current_pilot", battle._players.get(slot) == pilot and battle._players.size() == 2 and not battle._players.has(99))
+	_trace("replayed_roster", {"round": round_id, "slot": slot, "same_instance": pilot.get_instance_id()})
+
+func _verify_entry_timeout(battle: Node, host: bool) -> void:
+	if not host:
+		battle._next_player_entry_request = battle._player_entry_deadline + 1000
+	var timed_out := await _wait_until(func(): return battle._player_entry_deadline < 0, 4.0)
+	_check("entry_timeout_explained_and_wave_still_held", timed_out and not battle._player_entry_ready
+		and battle.trial_tick == 0 and battle._player_entry_message.text.contains("超时"))
+	var battle_id := battle.get_instance_id()
+	if host:
+		await get_tree().create_timer(.35).timeout
+		battle.get_node("TrialUI/Options/Buttons/Retry").pressed.emit()
+	var recovered := await _wait_until(func():
+		var current := get_tree().current_scene
+		return is_instance_valid(current) and current.get_instance_id() != battle_id and current._player_entry_ready, 4.0)
+	_check("host_retry_after_timeout_can_enter", recovered)
+	_trace("timeout_retry", {"recovered": recovered, "round": GameState.get_sync_round()})
+	if not host:
+		await get_tree().create_timer(.4).timeout
+
+func _trace(event: String, data: Dictionary) -> void:
+	data["ms"] = Time.get_ticks_msec() - _battle_at if _battle_at > 0 else -1
+	data["wall_ms"] = int(Time.get_unix_time_from_system() * 1000)
+	print("[ENTRY] ", event, " ", JSON.stringify(data))
 
 func _verify_remix_recovery_and_retry(host: bool) -> void:
 	var battle := get_tree().current_scene

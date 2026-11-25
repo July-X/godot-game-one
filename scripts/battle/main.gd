@@ -62,6 +62,12 @@ var _lan_frozen_frame := -1
 var _lan_frozen_msec := 0
 var _lan_mouse_mode := Input.MOUSE_MODE_VISIBLE
 var _lan_message: Label
+const PLAYER_ENTRY_RETRY_MS := 100
+const PLAYER_ENTRY_TIMEOUT_MS := 3000
+var _player_entry_deadline := 0
+var _next_player_entry_request := 0
+var _player_entry_ready := false
+var _player_entry_message: Label
 var _entity_sync_timer: float = 0.0
 var _health_sync_timer: float = 0.0
 var _player_report_timer: float = 0.0
@@ -226,24 +232,16 @@ func _ready() -> void:
 		NetworkManager.player_connected.connect(_on_multiplayer_player_connected)
 		NetworkManager.player_disconnected.connect(_on_multiplayer_player_disconnected)
 		NetworkManager.server_disconnected.connect(_on_multiplayer_server_disconnected)
-		## 服务器端：为自己和已连接的所有 peer 生成玩家
+		## 房主保留权威实例，等加入端确认战斗场景已就绪再发送名单。
 		if multiplayer.is_server():
-			_spawn_networked_player(1, true)  # Host 自己
+			_spawn_networked_player(1)
 			for wire in NetworkManager.connected_peers:
-				_spawn_networked_player(NetworkManager.slot_for_peer(wire), true)
-		## 客户端：向服务器请求一次完整玩家同步，避免错过早期生成 RPC
-		else:
-			await get_tree().process_frame
-			_request_player_sync.rpc_id(1)
-			var my_id := NetworkManager.local_player_id()
-			# 两端同时载入时帧率不同，按网络等待时间检查，避免补帧期间误报掉队。
-			await get_tree().create_timer(1.0, true, false, true).timeout
-			if NetworkManager.is_online() and not has_node(str(my_id)):
-				push_warning("[Main] 同步后未找到本地玩家节点，向 Host 请求补生成（peer_id=%d）" % my_id)
-				_request_spawn_self.rpc_id(1, my_id)
-				await get_tree().create_timer(2.0, true, false, true).timeout
-				if NetworkManager.is_online() and not has_node(str(my_id)):
-					push_error("[Main] 仍未找到本地玩家节点（peer_id=%d），本机将无法输入/开火" % my_id)
+				_spawn_networked_player(NetworkManager.slot_for_peer(wire))
+		if not multiplayer.is_server() or GameState.rift_remix:
+			_player_entry_deadline = Time.get_ticks_msec() + PLAYER_ENTRY_TIMEOUT_MS
+		if GameState.rift_remix:
+			_player_entry_message = _hud.show_lan_wait()
+			_player_entry_message.text = "正在同步两架飞机…"
 	else:
 		## 单机模式：原有逻辑
 		_spawn_player()
@@ -284,7 +282,7 @@ func _get_networked_player_spawn_position(p_peer_id: int) -> Vector2:
 	return Vector2(screen.x * 0.68, screen.y * 0.7)
 
 
-func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
+func _spawn_networked_player(p_peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
 	if _players.has(p_peer_id):
@@ -303,31 +301,24 @@ func _spawn_networked_player(p_peer_id: int, announce: bool) -> void:
 		_player = player
 	if player.has_method("on_level_up"):
 		player.on_level_up()
-	if announce:
-		_rpc_spawn_networked_player.rpc(p_peer_id, player.position.x, player.position.y)
 
 
 ## 多人模式：新 peer 连接时（只在服务器端触发）
 func _on_multiplayer_player_connected(p_peer_id: int) -> void:
 	if multiplayer.is_server():
-		_spawn_networked_player(NetworkManager.slot_for_peer(p_peer_id), true)
+		_spawn_networked_player(NetworkManager.slot_for_peer(p_peer_id))
 		NetworkManager.bind_battle(self)
-		## Host 自己的玩家节点是在 main._ready() 里 announce 的，那时新 peer 还没连上，
-		## 广播进了虚空。新加入端只能靠主动请求补齐，而请求可能在 Host 建好
-		## _players 之前就到达（Host 刚进战斗场景就有人 join），此时拿到空名单，
-		## 客户端会永久缺一个远端幽灵节点（画面上少一个人、也少一份同步）。
-		## 所以这里在 peer 连上的瞬间主动补发一次完整名单。
-		_send_player_snapshot_to(p_peer_id)
 
 
 ## Host → 指定 peer：补发当前全部玩家节点（生成 + 坐标）
 func _send_player_snapshot_to(peer_id: int) -> void:
 	if peer_id <= 0:
 		return
+	var round_id := GameState.get_sync_round()
 	for pid: int in _players:
 		var player_node: Node2D = _players[pid]
 		if is_instance_valid(player_node):
-			_rpc_spawn_networked_player.rpc_id(peer_id, pid, player_node.position.x, player_node.position.y)
+			_rpc_spawn_networked_player.rpc_id(peer_id, round_id, pid, player_node.position.x, player_node.position.y)
 
 
 ## 多人模式：peer 断线时清理其玩家节点
@@ -373,7 +364,10 @@ func set_lan_hold(held: bool) -> void:
 	if _lan_frozen_frame < 0:
 		return
 	var lost_ticks := int(Engine.get_physics_frames() - _lan_frozen_frame)
-	GameState.extend_graze_time(Time.get_ticks_msec() - _lan_frozen_msec)
+	var held_msec := Time.get_ticks_msec() - _lan_frozen_msec
+	GameState.extend_graze_time(held_msec)
+	if _player_entry_deadline > 0:
+		_player_entry_deadline += held_msec
 	_lan_frozen_frame = -1
 	if _rescue_expires_at > 0:
 		_rescue_expires_at += lost_ticks
@@ -693,6 +687,8 @@ func _spawn_mobile_controls() -> void:
 
 func _process(delta: float) -> void:
 	_tick_hitstop()
+	if _player_entry_deadline > 0 and NetworkManager.is_online():
+		_tick_player_entry()
 	if not GameState.game_running:
 		return
 	_update_boss_hud()
@@ -701,12 +697,12 @@ func _process(delta: float) -> void:
 	if NetworkManager.is_online():
 		if multiplayer.is_server():
 			_entity_sync_timer -= delta
-			if _entity_sync_timer <= 0.0:
+			if _entity_sync_timer <= 0.0 and _player_entry_ready:
 				_entity_sync_timer = ENTITY_SYNC_INTERVAL
 				_batch_sync_entity_positions()
 				_batch_sync_players()
 			_health_sync_timer -= delta
-			if _health_sync_timer <= 0.0:
+			if _health_sync_timer <= 0.0 and _player_entry_ready:
 				_health_sync_timer = 0.1
 				_batch_sync_entity_health()
 		else:
@@ -1609,38 +1605,56 @@ func _rpc_restart_game(round_id: int) -> void:
 
 ## ── 多人模式 RPC ──────────────────────────────────────────────
 
-## Client → Host：请求一次完整玩家同步
-@rpc("any_peer", "reliable", "call_remote")
-func _request_player_sync() -> void:
-	if not multiplayer.is_server():
+func _tick_player_entry() -> void:
+	var now := Time.get_ticks_msec()
+	if now >= _player_entry_deadline:
+		_player_entry_deadline = -1
+		if not is_instance_valid(_player_entry_message):
+			_player_entry_message = _hud.show_lan_wait()
+		_player_entry_message.text = "入局同步超时 · 重试或返回标题" if multiplayer.is_server() else "入局同步超时 · 请房主重试"
 		return
-	if NetworkManager.gameplay_sender() <= 1:
+	if multiplayer.is_server() or now < _next_player_entry_request:
 		return
-	var requester := multiplayer.get_remote_sender_id()
-	_send_player_snapshot_to(requester)
-	if requester > 1:
-		_rpc_set_boss_bg.rpc_id(requester, _boss_fight_active)
-		GameState.force_sync_to_peer(requester)
-		# 载入或补玩家时补齐仍在场的掉落。旧局和已退场的 ID 不重放。
-		for item in get_tree().get_nodes_in_group("powerups"):
-			if _entities.get(item.entity_id) == item:
-				_send_entity_spawn_to_peer(requester, item.entity_id, item)
+	var round_id: int = NetworkManager.recovery.round_id
+	if round_id <= 0 or round_id < GameState.get_sync_round():
+		return
+	var slot := NetworkManager.local_player_id()
+	var local: Node2D = _players.get(slot)
+	var ready: bool = is_instance_valid(local) and local == _player and local._is_locally_controlled_player() and _players.has(1)
+	_next_player_entry_request = now + PLAYER_ENTRY_RETRY_MS
+	NetworkManager.request_battle_players.rpc_id(1, round_id, ready)
 
-## Client -> Host：请求确保本机玩家节点存在（修复偶发漏生成）
-@rpc("any_peer", "reliable", "call_remote")
-func _request_spawn_self(expected_peer_id: int = -1) -> void:
-	if not multiplayer.is_server():
+## Called by the persistent LAN dispatcher after matching the request to this round and peer.
+func reply_battle_players(peer: int, ready: bool) -> void:
+	if _player_entry_deadline < 0 or not _players.has(1) or not _players.has(NetworkManager.slot_for_peer(peer)):
 		return
-	var sender := NetworkManager.gameplay_sender()
-	if sender <= 1 or (expected_peer_id > 0 and expected_peer_id != sender):
+	if ready:
+		_confirm_player_entry()
+		_rpc_confirm_player_entry.rpc_id(peer, GameState.get_sync_round())
 		return
-	_spawn_networked_player(sender, true)
+	GameState.force_sync_to_peer(peer)
+	_send_player_snapshot_to(peer)
+	_rpc_set_boss_bg.rpc_id(peer, _boss_fight_active)
+	for item in get_tree().get_nodes_in_group("powerups"):
+		if _entities.get(item.entity_id) == item:
+			_send_entity_spawn_to_peer(peer, item.entity_id, item)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_confirm_player_entry(round_id: int) -> void:
+	if is_inside_tree() and _player_entry_deadline > 0 and round_id == GameState.get_sync_round():
+		_confirm_player_entry()
+
+func _confirm_player_entry() -> void:
+	_player_entry_ready = true
+	_player_entry_deadline = 0
+	if is_instance_valid(_player_entry_message):
+		_player_entry_message.queue_free()
 
 
 ## Host → Client：生成玩家节点
 @rpc("authority", "reliable", "call_remote")
-func _rpc_spawn_networked_player(p_peer_id: int, pos_x: float, pos_y: float) -> void:
-	if not NetworkManager.is_online():
+func _rpc_spawn_networked_player(round_id: int, p_peer_id: int, pos_x: float, pos_y: float) -> void:
+	if not is_inside_tree() or not NetworkManager.is_online() or round_id != GameState.get_sync_round() or round_id != NetworkManager.recovery.round_id:
 		return
 	if _players.has(p_peer_id):
 		return

@@ -514,14 +514,7 @@ Invalid packet received. Requested node was not found.
 
 ### 11.9 玩家节点生成时序
 
-Host 自己在 `main._ready()` 里 announce 的玩家生成 RPC，早于任何客户端连接，
-广播进了虚空。因此：
-
-- `player_connected` 时调用 `_send_player_snapshot_to(peer_id)` 补发完整名单；
-- 客户端 `_ready()` 里的 `_request_player_sync()` 保留为兜底。
-
-两者都必要：只靠客户端请求时，请求可能早于 Host 建好 `_players` 到达并拿到
-空名单，客户端会永久缺一个远端幽灵节点。
+协议 8 的首次名单请求由常驻的 `NetworkManager` 收到。加入端每隔 100 毫秒带本局编号请求，直到两架飞机及本机输入绑定完成。房主只给当前连接的稳定槽位发送，先同步局号与属性，再补发同一份玩家名单。同局同槽位复用实例，旧局生成消息丢弃。房主确认后开始发送战斗位置同步，变奏模式此时才推进关段时钟。首次等待 3 秒后显示重试或返回提示，换线恢复仍走原局快照和既有时限。[入局证据和复跑](rift_duo_acceptance.md)
 
 ---
 

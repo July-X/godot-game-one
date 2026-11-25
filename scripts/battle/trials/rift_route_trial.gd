@@ -62,6 +62,8 @@ func _physics_process(delta: float) -> void:
 	_tick_rescue_window()
 	if finished or not GameState.game_running:
 		return
+	if remix and NetworkManager.is_online() and not _player_entry_ready:
+		return
 	while not _cut_cues.is_empty() and trial_tick >= int(_cut_cues[0].until):
 		_cut_cues.pop_front()
 		_cues.queue_redraw()
