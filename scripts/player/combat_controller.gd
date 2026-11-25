@@ -78,6 +78,10 @@ func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, lev
 ## ── 普攻 ────────────────────────────────────────────
 
 func _shoot() -> void:
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		var battle := _player.get_parent()
+		if battle.get("_entry_shot_trace"):
+			battle._trace_entry_shot("auto_fire", _player.peer_id, GameState.get_bullet_count(_player.peer_id))
 	_shoot_timer = GameState.get_shoot_cooldown(_player.peer_id)
 	SFX.play_shoot()
 

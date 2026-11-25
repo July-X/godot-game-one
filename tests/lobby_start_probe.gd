@@ -14,6 +14,7 @@ var _guest_shot_at := 0
 var _guest_followup_ms: Array[int] = []
 var _guest_move_at := 0
 var _guest_position := Vector2.INF
+var _local_visual_seen := false
 
 func _ready() -> void:
 	Engine.max_fps = 60
@@ -89,7 +90,6 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 			await _verify_entry_timeout(battle, host)
 			return
 		if host:
-			battle.child_entered_tree.connect(_schedule_bullet_check)
 			battle.guest_bullet_batch_spawned.connect(_observe_guest_batch)
 			_guest_position = battle._get_networked_player_spawn_position(2)
 		# Client position and shots still go through the game's input and ENet paths.
@@ -111,6 +111,7 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 			if remix:
 				_check("authority_has_both_pilots_before_practice_wave", await _wait_until(func():
 					return battle._player_entry_ready and battle.trial_tick < 78, .3))
+			if remix or not rift:
 				var continued := await _wait_until(func(): return _guest_followup_ms.size() >= 2, 1.3) if _guest_shot_at > 0 else false
 				_trace("followups", {"slot": NetworkManager.recovery.guest_slot, "after_first_ms": _guest_followup_ms})
 				_check("two_distinct_followup_batches_within_window", continued and _guest_followup_ms[1] <= 1300)
@@ -122,31 +123,41 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 				var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 				var link := transport.get_peer(1)
 				var saved: Vector3i = battle._remix_entry_throttle_settings
+				_trace("entry_throttle_saved", {"profile": [saved.x, saved.y, saved.z]})
+				_check("entry_throttle_is_temporary", _throttle_profile(link) == Vector3i(saved.x,
+					ENetPacketPeer.PACKET_THROTTLE_SCALE, saved.z))
 				var restored := await _wait_until(func(): return battle._remix_entry_peer == null, 1.8)
-				_check("entry_transport_parameters_restore_before_rewire", restored
-					and int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_INTERVAL)) == saved.x
-					and int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_ACCELERATION)) == saved.y
-					and int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)) == saved.z)
+				var profile := _throttle_profile(link)
+				_check("entry_transport_parameters_restore_before_rewire", restored and profile == saved)
+				_trace("entry_throttle_restored", {"profile": [profile.x, profile.y, profile.z]})
 			else:
 				# Keep shooting through the host's entire observation window on slow samples.
 				await _wait_until(func(): return not NetworkManager.is_online(), 6.0)
-		if remix and OS.get_cmdline_user_args().has("recover"):
-			await _verify_remix_recovery_and_retry(host)
+		if (remix or not rift) and OS.get_cmdline_user_args().has("recover"):
+			await _verify_lan_recovery_and_retry(host, expected, remix)
+
+func _throttle_profile(link: ENetPacketPeer) -> Vector3i:
+	return Vector3i(int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_INTERVAL)),
+		int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_ACCELERATION)),
+		int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)))
 
 func _trace_spawn(node: Node) -> void:
 	if node is Player:
 		_trace("pilot_spawned", {"node": str(node.name), "instance": node.get_instance_id()})
-
-func _schedule_bullet_check(node: Node) -> void:
-	if node is Bullet:
+	elif node is Bullet:
 		_observe_guest_bullet.call_deferred(node.get_instance_id())
 
 func _observe_guest_bullet(instance: int) -> void:
 	var bullet := instance_from_id(instance) as Bullet
-	if _guest_shot_at == 0 and is_instance_valid(bullet) and bullet._is_player_bullet \
-			and bullet.owner_peer_id == NetworkManager.recovery.guest_slot and not bullet._is_network_ghost:
+	if not is_instance_valid(bullet) or not bullet._is_player_bullet \
+			or bullet.owner_peer_id != NetworkManager.recovery.guest_slot:
+		return
+	if multiplayer.is_server() and _guest_shot_at == 0 and not bullet._is_network_ghost:
 		_guest_shot_at = Time.get_ticks_msec()
 		_trace("authority_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
+	elif not multiplayer.is_server() and not _local_visual_seen and bullet._is_network_ghost:
+		_local_visual_seen = true
+		_trace("guest_visual_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
 
 func _observe_guest_batch(slot: int, count: int, reliable: bool) -> void:
 	if slot != NetworkManager.recovery.guest_slot:
@@ -226,18 +237,25 @@ func _trace(event: String, data: Dictionary) -> void:
 	data["wall_ms"] = int(Time.get_unix_time_from_system() * 1000)
 	print("[ENTRY] ", event, " ", JSON.stringify(data))
 
-func _verify_remix_recovery_and_retry(host: bool) -> void:
+func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool) -> void:
 	var battle := get_tree().current_scene
 	var battle_id := battle.get_instance_id()
 	var old_round := GameState.get_sync_round()
 	var reserved := await _wait_until(func(): return NetworkManager.recovery.is_reserved(), 4.0)
-	_check("remix_recovery_reserved", reserved)
+	_check("lan_recovery_reserved", reserved)
 	if not reserved:
 		return
 	var original_wire: int = NetworkManager.recovery.guest_wire
 	var slot: int = NetworkManager.recovery.guest_slot
 	var old_pilot: Node = battle._players.get(slot)
-	if not host:
+	if host and not remix:
+		var link: ENetPacketPeer = (multiplayer.multiplayer_peer as ENetMultiplayerPeer).get_peer(original_wire)
+		_check("host_observes_temporary_acceleration", _throttle_profile(link).y == ENetPacketPeer.PACKET_THROTTLE_SCALE)
+		var restored_profile := await _wait_until(func():
+			return (is_instance_valid(link) and link.get_state() == ENetPacketPeer.STATE_CONNECTED
+				and _throttle_profile(link) == Vector3i(5000, 2, 2)), 2.0)
+		_check("host_entry_transport_defaults_restore_before_rewire", restored_profile)
+	elif not host:
 		NetworkManager.recovery.set_background(true)
 		await get_tree().create_timer(.2).timeout
 		NetworkManager.drop_lan_transport()
@@ -245,7 +263,8 @@ func _verify_remix_recovery_and_retry(host: bool) -> void:
 	var restored := await _wait_until(func():
 		return (NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != original_wire
 			and not get_tree().paused and NetworkManager.recovery.deadline == 0), 13.0)
-	_check("remix_reconnect_keeps_agreed_rule", restored and get_tree().current_scene == battle and battle.remix
+	_check("reconnect_keeps_agreed_rule", restored and get_tree().current_scene == battle
+		and battle.scene_file_path == expected and GameState.rift_remix == remix
 		and battle._players.get(slot) == old_pilot)
 	if not restored:
 		return
@@ -254,9 +273,9 @@ func _verify_remix_recovery_and_retry(host: bool) -> void:
 		battle._restart()
 	var restarted := await _wait_until(func():
 		var current := get_tree().current_scene
-		return (is_instance_valid(current) and current.get_instance_id() != battle_id and current.scene_file_path == RIFT
+		return (is_instance_valid(current) and current.get_instance_id() != battle_id and current.scene_file_path == expected
 			and current._player_entry_ready), 4.0)
-	_check("remix_host_retry_retains_rule", restarted and get_tree().current_scene.remix and GameState.get_sync_round() > old_round)
+	_check("host_retry_retains_rule", restarted and GameState.rift_remix == remix and GameState.get_sync_round() > old_round)
 	if not host and restarted:
 		var current := get_tree().current_scene
 		current._rpc_spawn_networked_player(old_round, 99, 300.0, 400.0)
