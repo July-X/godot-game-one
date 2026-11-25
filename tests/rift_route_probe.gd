@@ -113,6 +113,7 @@ func _test_hunter_reward() -> void:
 	_world._player._combat._spawn_bullet(Vector2(640, 421), -PI * .5, 4, true, 1, 700.0)
 	await _frames(15)
 	_check("main_cannon_defeats_hunter", not is_instance_valid(hunter))
+	_check("solo_hunter_hit_confirms_reward", _world._route_notice == Trial.HUNTER_NOTICE.earned)
 	_world.trial_tick = Trial.SETTLE_TICK - 1
 	await _frames(2)
 	_world.trial_tick = Trial.BOSS_LEG - 1
@@ -129,6 +130,7 @@ func _verify_exposure(label: String, expected: int) -> void:
 	boss._shoot_timer = 60.0
 	_world._player.set_physics_process(false)
 	boss.take_damage(boss.get_max_shield_hp(), 1)
+	_check(label + "_bonus_cue", (_world._route_notice == Trial.HUNTER_NOTICE.spent) == (expected == 330))
 	var elapsed := 0
 	while not boss.has_impact_shield() and elapsed <= expected + 3:
 		await get_tree().physics_frame

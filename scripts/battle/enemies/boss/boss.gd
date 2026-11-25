@@ -3,6 +3,7 @@ extends CharacterBody2D
 signal boss_died
 signal phase_changed(phase_name: String)
 signal shield_released
+signal first_exposure_bonus_used
 
 enum State { IDLE, CIRCLE, ATTACK, RETREAT, ENRAGED }
 enum AttackWindow { UNKNOWN, OPEN, CHARGING, SWEEP, HOLD }
@@ -547,6 +548,7 @@ func enable_route_inducement() -> void:
 	_route_inducement = true
 
 func _break_shield() -> void:
+	var rewarded := _first_exposure_bonus > 0.0
 	_exposure_left = BOSS_EXPOSURE_SECONDS + _first_exposure_bonus
 	_first_exposure_bonus = 0.0
 	_shield_stamp += 1
@@ -559,6 +561,8 @@ func _break_shield() -> void:
 		_finish_coop_pulse()
 	play_shield_release(global_position)
 	_publish_shield_state()
+	if rewarded:
+		first_exposure_bonus_used.emit()
 
 func _start_ultimate_laser() -> void:
 	if _pulse.phase != PulsePhase.OPEN:

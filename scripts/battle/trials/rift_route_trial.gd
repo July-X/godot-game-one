@@ -10,7 +10,9 @@ const HUNTER_EXPOSURE_BONUS := 1.0
 const PRACTICE_WAVES := {78: .28, 1110: .72}
 const BUILD_WAVES := [CARD_TICK + 90, CARD_TICK + 760, CARD_TICK + 1770, ELITE_LEG + 54, 138 * 60, 168 * 60]
 const LEG_NAMES := ["拦截齐射", "让卡牌改变航线", "裂隙猎手", "裂隙母舰"]
-const LEG_HINTS := ["", "从侧翼截断齐射，中路可绕行", "预警时换线，破盾后反打", "被标记先横移，侧翼打盾"]
+const LEG_HINTS := ["", "从侧翼截断齐射，中路可绕行", "可绕行 · 击破猎手，母舰首次破盾多 1 秒", "被标记先横移，侧翼打盾"]
+const HUNTER_NOTICE := {"earned": "猎手已击破 · 母舰首次破盾多 1 秒",
+	"spent": "猎手奖励兑现 · 这次破盾多 1 秒"}
 const LEG_HINT_SECONDS := 2.0
 const CUT_CUE_TICKS := 27
 var leg := Leg.INTERCEPT
@@ -21,6 +23,8 @@ var _draft_wait := false
 var _pending_slots: Dictionary[int, bool] = {}
 var _route_outcome := ""
 var _hunter_defeated := false
+var _hunter_reward_spent := false
+var _route_notice := ""
 var _remote_cues: Dictionary[int, int] = {}
 var _cut_cues: Array[Dictionary] = []
 
@@ -52,6 +56,7 @@ func _physics_process(delta: float) -> void:
 	if _route_hint_left > 0.0:
 		_route_hint_left = maxf(0.0, _route_hint_left - delta)
 		if _route_hint_left == 0.0:
+			_route_notice = ""
 			_update_countdown()
 	if not _authoritative():
 		trial_tick += 1
@@ -167,14 +172,32 @@ func _show_cut(at: Vector2) -> void:
 
 func _send_route_packet(event: Array) -> void:
 	if NetworkManager.is_online() and multiplayer.is_server():
-		(multiplayer as SceneMultiplayer).send_bytes(var_to_bytes(event), 0, MultiplayerPeer.TRANSFER_MODE_RELIABLE)
+		var packet := var_to_bytes([GameState.get_sync_round(), event])
+		(multiplayer as SceneMultiplayer).send_bytes(packet, 0, MultiplayerPeer.TRANSFER_MODE_RELIABLE)
 
 func _on_route_packet(peer: int, packet: PackedByteArray) -> void:
 	if peer != 1 or finished or _lan_frozen_frame >= 0:
 		return
-	var event: Variant = bytes_to_var(packet)
-	if event is Array and event.size() == 2 and event[0] == "cut" and event[1] is Vector2:
+	var envelope: Variant = bytes_to_var(packet)
+	if not envelope is Array or envelope.size() != 2 or envelope[0] != GameState.get_sync_round():
+		return
+	var event: Variant = envelope[1]
+	if not event is Array or event.size() != 2:
+		return
+	if event[0] == "cut" and event[1] is Vector2:
 		_show_cut(event[1])
+	elif event[0] == "hunter" and event[1] is String and HUNTER_NOTICE.has(event[1]):
+		_show_hunter_notice(event[1])
+
+func _show_hunter_notice(event: String) -> void:
+	_route_notice = HUNTER_NOTICE[event]
+	_route_hint_left = LEG_HINT_SECONDS
+	_update_countdown()
+	_log("hunter_notice", {"event": event})
+
+func _publish_hunter_notice(event: String) -> void:
+	_show_hunter_notice(event)
+	_send_route_packet(["hunter", event])
 
 func _open_route_drafts() -> void:
 	var slots: Array[int] = [1]
@@ -206,11 +229,14 @@ func _start_route_boss() -> void:
 		_boss.enable_route_inducement()
 		if _hunter_defeated:
 			_boss.extend_first_exposure(HUNTER_EXPOSURE_BONUS)
-			_hunter_defeated = false
+			_boss.first_exposure_bonus_used.connect(func():
+				_hunter_reward_spent = true
+				_publish_hunter_notice("spent"), CONNECT_ONE_SHOT)
 
 func _on_elite_died() -> void:
 	if _authoritative() and leg == Leg.ELITE and is_instance_valid(_elite) and _elite.route_evasion:
 		_hunter_defeated = true
+		_publish_hunter_notice("earned")
 	super._on_elite_died()
 
 func _on_boss_died() -> void:
@@ -251,7 +277,8 @@ func _set_leg(value: Leg) -> void:
 
 func _update_countdown() -> void:
 	var title: String = "裂隙航道 · " + ("整备，母舰将至" if _settling else LEG_NAMES[leg])
-	_hud.set_wave_phase(LEG_HINTS[leg] if _route_hint_left > 0.0 else title, Color.LIGHT_CYAN)
+	var hint: String = LEG_HINTS[leg] if _route_notice.is_empty() else _route_notice
+	_hud.set_wave_phase(hint if _route_hint_left > 0.0 else title, Color.LIGHT_CYAN)
 
 func _apply_route_leg(next_leg: int, settling: bool, announce := true) -> void:
 	if next_leg not in range(LEG_NAMES.size()):
@@ -259,9 +286,11 @@ func _apply_route_leg(next_leg: int, settling: bool, announce := true) -> void:
 	if settling or not announce:
 		_build_hint_pending = false
 		_route_hint_left = 0.0
+		_route_notice = ""
 		_cut_cues.clear()
 		_cues.queue_redraw()
 	elif next_leg != leg:
+		_route_notice = ""
 		# The build transition opens cards on the same tick. Show its hint after the local choice.
 		_build_hint_pending = next_leg == Leg.BUILD and not UpgradeDraft.get_draft(NetworkManager.local_player_id()).get("chosen", false)
 		_route_hint_left = LEG_HINT_SECONDS if not _build_hint_pending and not LEG_HINTS[next_leg].is_empty() else 0.0
@@ -322,6 +351,7 @@ func set_lan_hold(held: bool) -> void:
 	if held and (_route_hint_left > 0.0 or _build_hint_pending):
 		_build_hint_pending = false
 		_route_hint_left = 0.0
+		_route_notice = ""
 		_update_countdown()
 	super.set_lan_hold(held)
 
@@ -330,6 +360,7 @@ func _finish(outcome: String) -> void:
 		return
 	_build_hint_pending = false
 	_route_hint_left = 0.0
+	_route_notice = ""
 	_cut_cues.clear()
 	_cues.queue_redraw()
 	_update_countdown()

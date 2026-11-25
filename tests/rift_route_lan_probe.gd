@@ -122,9 +122,21 @@ func _run() -> void:
 	await _barrier("rewire_complete")
 	await _verify_card_impacts(trial, host_card)
 	await _verify_elite(trial)
+	var earned := not use_timeout
+	if earned:
+		await _finish_hunter_with_shot(trial, 1 if wide_host else _guest)
+		await _barrier("hunter_reward_observed")
+		var reward_wire: int = NetworkManager.recovery.guest_wire
+		if _role == "client":
+			NetworkManager.recovery.set_background(true)
+			await _wait_seconds(.2)
+			NetworkManager.drop_lan_transport()
+			NetworkManager.recovery.set_background(false)
+		_check("hunter_notice_not_replayed_after_recovery", await _wait_until(func():
+			return (NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != reward_wire
+				and not get_tree().paused and trial._route_notice.is_empty()), 13), "")
+		await _barrier("hunter_reward_recovered")
 	if _role == "host":
-		if wide_host and is_instance_valid(trial._elite):
-			trial._elite.take_damage(ceili(trial._elite.get_network_health()), 1)
 		trial.trial_tick = Trial.SETTLE_TICK - 1
 		await get_tree().physics_frame
 		await get_tree().physics_frame
@@ -140,8 +152,10 @@ func _run() -> void:
 			and _hint_fits(trial), str(trial._hud._phase_label.get_global_rect()))
 		await _capture("boss-hint")
 		await _barrier("boss_hint_checked")
-		await _verify_exposure(trial._boss, 5.5 if wide_host else 4.5)
+		await _verify_exposure(trial._boss, 5.5 if earned else 4.5, trial)
 		await _barrier("boss_first_exposure_observed")
+		await _verify_exposure(trial._boss, 4.5, trial)
+		await _barrier("boss_second_exposure_observed")
 	if _role == "host" and on_boss:
 		var boss := trial._boss
 		boss.take_damage(boss.get_max_shield_hp(), 1)
@@ -249,12 +263,14 @@ func _hint_fits(trial: Trial) -> bool:
 			return false
 	return true
 
-func _verify_exposure(boss: Node, expected: float) -> void:
+func _verify_exposure(boss: Node, expected: float, trial: Trial) -> void:
 	if _role == "host":
 		boss._shoot_timer = 60.0
 		boss.take_damage(boss.get_max_shield_hp(), 1)
 	var exposed := await _wait_until(func(): return not boss.has_impact_shield(), 2)
 	var start := Engine.get_physics_frames()
+	var noticed := await _wait_until(func(): return trial._route_notice == Trial.HUNTER_NOTICE.spent, .2)
+	_check("reward_cue_matches_actual_exposure", noticed == (expected == 5.5), trial._route_notice)
 	var recharged := await _wait_until(func(): return boss.has_impact_shield(), 6.5)
 	var frames := Engine.get_physics_frames() - start
 	_check("first_exposure_matches_hunter_outcome_on_both_ends",
@@ -354,3 +370,17 @@ func _verify_elite(trial: Trial) -> void:
 		and ids[1] > 0 and ids[0] != ids[1]
 		and drones.all(func(n: Node): return n.health == 2 and trial._entities.get(n.entity_id) == n), str(ids))
 	await _barrier("elite_minions_seen")
+
+func _finish_hunter_with_shot(trial: Trial, killer: int) -> void:
+	var target := Vector2(640, 320)
+	if _role == "host":
+		var hunter: Elite = trial._elite
+		hunter.set_physics_process(false)
+		hunter.global_position = target
+		hunter.take_damage(floori((hunter.get_network_health() - 1.0) / 1.25), 1)
+	await _barrier("hunter_final_shot_ready")
+	if NetworkManager.local_player_id() == killer:
+		trial._player._combat._spawn_bullet(target + Vector2(0, 58), -PI * .5, 7, true, 1, 700.0)
+	_check("hunter_final_shot_confirms_reward_on_both_ends", await _wait_until(func():
+		return not is_instance_valid(trial._elite) and trial._route_notice == Trial.HUNTER_NOTICE.earned, 2.0),
+		"killer_slot=%d notice=%s" % [killer, trial._route_notice])
