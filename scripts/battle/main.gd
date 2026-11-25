@@ -199,6 +199,7 @@ func emit_hit_feedback(intensity: float, hitstop_seconds: float = 0.0,
 
 func _ready() -> void:
 	_entry_shot_trace = OS.get_cmdline_user_args().has("--entry-shot-trace")
+	_trace_entry_load("battle_ready_begin", {})
 	_begin_remix_entry_throttle_recovery()
 	_hitstop_last_usec = Time.get_ticks_usec()
 	_wave_director = _wave_director_script.new()
@@ -256,6 +257,7 @@ func _ready() -> void:
 	else:
 		## 单机模式：原有逻辑
 		_spawn_player()
+	_trace_entry_load("battle_ready_done", {})
 
 func _debug_log_variant_assets() -> void:
 	var boss_count := 0
@@ -330,6 +332,7 @@ func _send_player_snapshot_to(peer_id: int) -> void:
 	for pid: int in _players:
 		var player_node: Node2D = _players[pid]
 		if is_instance_valid(player_node):
+			_trace_entry_load("roster_send", {"slot": pid, "round": round_id})
 			_rpc_spawn_networked_player.rpc_id(peer_id, round_id, pid, player_node.position.x, player_node.position.y)
 
 
@@ -1709,10 +1712,15 @@ func _rpc_spawn_networked_player(round_id: int, p_peer_id: int, pos_x: float, po
 		return
 	if _players.has(p_peer_id):
 		return
+	_trace_entry_load("roster_rpc", {"slot": p_peer_id, "round": round_id})
+	var instantiate_at := Time.get_ticks_usec()
 	var player := _player_scene.instantiate()
+	var instantiated_at := Time.get_ticks_usec()
 	player.name = str(p_peer_id)
 	player.position = Vector2(pos_x, pos_y)
+	var attach_at := Time.get_ticks_usec()
 	add_child(player)
+	var attached_at := Time.get_ticks_usec()
 	GameState.ensure_player_state(p_peer_id)
 	player.died.connect(_on_networked_player_died.bind(p_peer_id))
 	_players[p_peer_id] = player
@@ -1724,6 +1732,15 @@ func _rpc_spawn_networked_player(round_id: int, p_peer_id: int, pos_x: float, po
 	if player.has_method("on_level_up"):
 		player.on_level_up()
 	_refresh_primary_player_target()
+	_trace_entry_load("roster_spawned", {"slot": p_peer_id, "round": round_id,
+		"instantiate_us": instantiated_at - instantiate_at, "attach_us": attached_at - attach_at,
+		"after_attach_us": Time.get_ticks_usec() - attached_at})
+
+func _trace_entry_load(stage: String, details: Dictionary) -> void:
+	if not _entry_shot_trace:
+		return
+	details["wall_us"] = int(Time.get_unix_time_from_system() * 1000000)
+	print("[ENTRY_LOAD] ", stage, " ", JSON.stringify(details))
 
 func _refresh_primary_player_target() -> void:
 	var new_target: Node2D = null

@@ -51,6 +51,7 @@ def run_pair(output, name, port, mode, swap, *extra):
         return {"case": name, "timeout_and_retry": True}
     host, client = logs
     host_ready = trace(host, "scene")["wall_ms"]
+    start_pressed = trace(host, "start_pressed")["wall_ms"]
     guest_ready = trace(client, "scene")["wall_ms"]
     guest_moved = trace(client, "pilot_moved")["wall_ms"]
     first_bullet = trace(host, "authority_bullet")["wall_ms"]
@@ -86,6 +87,9 @@ def run_pair(output, name, port, mode, swap, *extra):
         followups = trace(host, "followups")["after_first_ms"][:2]
         assert len(followups) == 2 and followups[1] <= 1300, name
     return {"case": name, "host_device": "4:3" if swap else "20:9",
+            "start_to_authority_move_and_shot_ms": host_confirmed - start_pressed,
+            "remix_selected_to_authority_move_and_shot_ms": (
+                host_confirmed - trace(host, "remix_selected")["wall_ms"] if mode == "remix" else None),
             "scene_gap_ms": guest_ready - host_ready,
             "guest_move_ms": guest_moved - guest_ready,
             "first_authority_bullet_ms": first_bullet - guest_ready,

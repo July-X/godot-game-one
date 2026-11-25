@@ -17,6 +17,10 @@ const MAX_CLIENTS: int = 1
 const LAN_BATTLE_SIZE := Vector2i(1280, 720)
 const TRANSPORT_ENET := "enet"
 const TRANSPORT_HARMONY := "harmony"
+const REMIX_PILOT_SCRIPTS := [
+	"res://scripts/player/combat_controller.gd",
+	"res://scripts/player/feedback_controller.gd",
+]
 
 ## ── 信号 ──────────────────────────────────────────────────
 ## 有新 peer 连接时触发（服务器端接收到客户端连接，或客户端收到服务器确认）
@@ -48,6 +52,7 @@ var _quitting_after_lan := false
 var _owns_quit_settings := false
 var _auto_quit := true
 var _go_back_quits := true
+var _remix_pilot_scripts: Array[Resource] = []
 
 
 func _ready() -> void:
@@ -134,6 +139,7 @@ func disconnect_network() -> void:
 			departing.close()
 	is_host = false
 	_session_active = false
+	release_remix_pilot_scripts()
 	transport_mode = TRANSPORT_ENET
 	connected_peers.clear()
 	status_changed.emit("已断开")
@@ -148,6 +154,20 @@ func bind_battle(node: Node) -> void:
 		_go_back_quits = get_tree().quit_on_go_back
 		get_tree().auto_accept_quit = false
 		get_tree().quit_on_go_back = false
+
+## 从规则预览提前加载控制器，保留到第一架飞机接手脚本引用。
+func warm_remix_pilot_scripts() -> void:
+	if not _remix_pilot_scripts.is_empty():
+		return
+	var started_at := Time.get_ticks_usec()
+	for path: String in REMIX_PILOT_SCRIPTS:
+		_remix_pilot_scripts.append(load(path))
+	if OS.get_cmdline_user_args().has("--entry-shot-trace"):
+		print("[ENTRY_LOAD] lobby_warm ", JSON.stringify({"duration_us": Time.get_ticks_usec() - started_at,
+			"wall_us": int(Time.get_unix_time_from_system() * 1000000)}))
+
+func release_remix_pilot_scripts() -> void:
+	_remix_pilot_scripts.clear()
 
 func local_player_id() -> int:
 	if not is_host and is_instance_valid(recovery) and recovery.guest_slot > 0:
@@ -289,5 +309,6 @@ func _on_server_disconnected() -> void:
 	multiplayer.multiplayer_peer = null
 	is_host = false
 	_session_active = false
+	release_remix_pilot_scripts()
 	connected_peers.clear()
 	server_disconnected.emit()

@@ -92,6 +92,7 @@ func _init_multiplayer() -> void:
 
 
 func _init_components() -> void:
+	var loads := Time.get_ticks_usec()
 	_action_router = _add_component("ActionRouter", "res://scripts/player/action_router.gd")
 	_motion = _add_component("MotionController", "res://scripts/player/motion_controller.gd")
 	_motion.move_speed = move_speed
@@ -101,12 +102,18 @@ func _init_components() -> void:
 
 	_combat = _add_component("CombatController", "res://scripts/player/combat_controller.gd")
 	_feedback = _add_component("FeedbackController", "res://scripts/player/feedback_controller.gd")
+	NetworkManager.release_remix_pilot_scripts()
+	var appearance := Time.get_ticks_usec()
 	_feedback.update_appearance()
+	var configured := Time.get_ticks_usec()
 	_combat.update_pickup_radius()
 
 	_pickup_area = $PickupArea
 	_shield_container = $ShieldContainer
 	_init_graze()
+	if get_parent().has_method("_trace_entry_load"):
+		get_parent()._trace_entry_load("player_resources", {"slot": peer_id, "components_us": appearance - loads,
+			"appearance_us": configured - appearance, "configure_us": Time.get_ticks_usec() - configured})
 
 
 ## 擦弹判定：GrazeArea 是一个半径 34px 的检测环，

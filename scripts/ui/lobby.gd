@@ -204,6 +204,12 @@ func _publish_rift_rule() -> void:
 	_btn_rift.disabled = remix
 	_lbl_host_status.text = "等待加入端确认变奏航道…" if remix else "玩家已加入，可以开始游戏"
 	_rpc_preview_rift_rule.rpc_id(_compatible_peer, _rule_revision, remix)
+	if remix:
+		var revision := _rule_revision
+		# 先让预览发出去，两端可同时预载各自的控制器。
+		await get_tree().process_frame
+		if is_inside_tree() and _compatible_peer != 0 and _rule_revision == revision:
+			NetworkManager.warm_remix_pilot_scripts()
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_preview_rift_rule(revision: int, remix: bool) -> void:
@@ -212,6 +218,8 @@ func _rpc_preview_rift_rule(revision: int, remix: bool) -> void:
 	_preview_revision = revision
 	_lbl_join_status.text = RouteRules.description(remix)
 	_confirm_rift_rule.visible = remix
+	if remix:
+		NetworkManager.warm_remix_pilot_scripts()
 
 func _confirm_rift_preview() -> void:
 	if _compatible_peer != 1 or not _confirm_rift_rule.visible:

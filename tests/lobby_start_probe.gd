@@ -62,11 +62,13 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 		_check("start_available_after_version_check", enabled)
 		if enabled and remix:
 			lobby._rift_rule.select(1)
+			_trace("remix_selected", {})
 			lobby._rift_rule.item_selected.emit(1)
 			_check("remix_start_waits_for_joiner_confirmation", button.disabled)
 			enabled = await _wait_until(func(): return not button.disabled, 4.0)
 			_check("matching_confirmation_enables_remix", enabled)
 		if enabled:
+			_trace("start_pressed", {})
 			button.pressed.emit()
 	elif remix:
 		var shown := await _wait_until(func(): return lobby._confirm_rift_rule.is_visible_in_tree(), 4.0)
