@@ -27,6 +27,8 @@ var _pending_slots: Dictionary[int, bool] = {}
 var _route_outcome := ""
 var _hunter_defeated := false
 var _hunter_reward_spent := false
+var _flank_hits := 0
+var _route_review: Dictionary = {}
 var _route_notice := ""
 var _remote_cues: Dictionary[int, int] = {}
 var _cut_cues: Array[Dictionary] = []
@@ -37,6 +39,9 @@ func _ready() -> void:
 	remix = GameState.rift_remix
 	super._ready()
 	_spark_layer.draw.connect(_draw_flank_sparks)
+	# Ships and their end-of-run effects can still be visible behind the result.
+	_result.add_theme_color_override("font_outline_color", Color("#0b1424"))
+	_result.add_theme_constant_override("outline_size", 5)
 	$TrialUI/Options/Buttons/Retry.visible = _authoritative()
 	if _authoritative():
 		volley_interrupted.connect(func(role: String, _at: Vector2, deadline: int):
@@ -237,6 +242,7 @@ func _show_flank_hit(at: Vector2) -> void:
 	_spark_layer.queue_redraw()
 
 func _on_flank_hit(at: Vector2, slot: int, shield_before: float, shield_after: float) -> void:
+	_flank_hits += 1
 	_show_flank_hit(at)
 	_send_route_packet(["flank_hit", at])
 	_log("flank_hit", {"slot": slot, "position": str(at), "shield_before": shield_before, "shield_after": shield_after})
@@ -298,17 +304,23 @@ func _finish_multiplayer_game_over(_final_score: int, _final_level: int) -> void
 func _complete_route(outcome: String) -> void:
 	if not _authoritative() or finished:
 		return
-	_log("result", {"outcome": outcome, "interruptions": interruptions})
+	var round_id := GameState.get_sync_round() if NetworkManager.is_online() else 0
+	var review := {"hunter": _hunter_defeated, "reward_used": _hunter_reward_spent, "flank_hits": _flank_hits}
+	_log("result", {"outcome": outcome, "interruptions": interruptions, "review": review})
 	if NetworkManager.is_online():
-		_rpc_route_result.rpc(outcome, interruptions)
+		_rpc_route_result.rpc(round_id, outcome, interruptions, leg, review)
 	else:
-		_rpc_route_result(outcome, interruptions)
+		_rpc_route_result(round_id, outcome, interruptions, leg, review)
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_route_result(outcome: String, cuts: int) -> void:
-	if finished:
+func _rpc_route_result(round_id: int, outcome: String, cuts: int, reached_leg: int, review: Dictionary) -> void:
+	if finished or (NetworkManager.is_online() and round_id != GameState.get_sync_round()):
 		return
 	interruptions = cuts
+	if reached_leg in range(LEG_NAMES.size()):
+		leg = reached_leg
+	if review.get("hunter") is bool and review.get("reward_used") is bool and review.get("flank_hits") is int:
+		_route_review = review
 	_route_outcome = outcome
 	_finish(outcome)
 
@@ -373,7 +385,7 @@ func send_lan_resume_snapshot(wire: int) -> Dictionary:
 		if is_instance_valid(order.ship) and not order.ship.is_queued_for_deletion() and int(order.fire) > trial_tick:
 			cues[int(order.ship.entity_id)] = int(order.fire) - trial_tick
 	state.route = {"leg": leg, "settling": trial_tick >= SETTLE_TICK and trial_tick < BOSS_LEG,
-		"cues": cues, "outcome": _route_outcome, "cuts": interruptions, "remix": remix}
+		"cues": cues, "outcome": _route_outcome, "cuts": interruptions, "remix": remix, "review": _route_review}
 	state.result = false # Do not enter the ordinary leaderboard path.
 	return state
 
@@ -386,7 +398,7 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 		_rpc_route_cue(eid, state.route.cues[eid])
 	_apply_route_leg(state.route.leg, state.route.settling, false)
 	if not str(state.route.outcome).is_empty():
-		_rpc_route_result(state.route.outcome, state.route.cuts)
+		_rpc_route_result(state.round, state.route.outcome, state.route.cuts, state.route.leg, state.route.review)
 	return true
 
 func set_lan_hold(held: bool) -> void:
@@ -414,6 +426,11 @@ func _finish(outcome: String) -> void:
 	_cues.queue_redraw()
 	_update_countdown()
 	super._finish(outcome)
+	if not _route_review.is_empty():
+		var hunter := "猎手未击破"
+		if _route_review.hunter:
+			hunter = "猎手击破 · 奖励已兑现" if _route_review.reward_used else "猎手击破 · 奖励未用"
+		_result.text += "\n%s · 盾沿命中 %d 次" % [hunter, _route_review.flank_hits]
 	_result.text += "\n" + _next_attempt_tip(outcome)
 	_layout_options()
 
@@ -424,6 +441,8 @@ func _next_attempt_tip(outcome: String) -> String:
 		if interruptions == 0:
 			return "下局试着先切掉一股齐射"
 		if leg == Leg.BOSS:
+			if not _route_review.is_empty() and int(_route_review.flank_hits) > 0:
+				return "下局试着在第一次破盾时集中火力" if _route_review.hunter else "下局试着击破猎手，多争取 1 秒反打"
 			return "下局试着横移，再从侧翼打盾"
 	return "下局试着换一条拦截路线"
 

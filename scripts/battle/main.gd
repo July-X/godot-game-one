@@ -2225,7 +2225,8 @@ func _rpc_sync_player_states(data: PackedFloat32Array) -> void:
 ## Client → Host：上报本机坐标，驱动 Host 上的幽灵节点
 @rpc("any_peer", "unreliable", "call_remote")
 func _rpc_report_player_state(p_peer_id: int, pos_x: float, pos_y: float, rot: float) -> void:
-	if not multiplayer.is_server():
+	# A position report already in flight can arrive as the old battle leaves the tree.
+	if not is_inside_tree() or not multiplayer.is_server():
 		return
 	_player_report_received += 1
 	var sender := NetworkManager.gameplay_sender()

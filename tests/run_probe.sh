@@ -55,6 +55,7 @@ elif [[ $# -ge 3 ]]; then
     host_size=1600x720
     client_size=1280x720
   elif [[ "$CASE" == rift-review ]]; then
+    host_size=1600x720
     client_size=960x720
   elif [[ "$CASE" == wide-tablet-host || "$CASE" == pickup-tablet-host || "$CASE" == hunter-wide-client || "$CASE" == rift-induce-client || "$CASE" == rift-flank-client ]]; then
     host_size=960x720

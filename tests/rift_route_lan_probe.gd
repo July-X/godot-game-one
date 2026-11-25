@@ -19,11 +19,12 @@ func _run() -> void:
 	var wide := (_role == "host") == wide_host
 	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
-	var viewport_width: int = (1280 if _role == "host" else 960) if review else (1600 if wide else 960)
+	var viewport_width: int = (1600 if _role == "host" else 960) if review else (1600 if wide else 960)
 	get_window().content_scale_size = Vector2i(viewport_width, 720)
 	var err := NetworkManager.create_host(_port) if _role == "host" else NetworkManager.join_host("127.0.0.1", _port)
 	if not _require("real_enet", err == OK and await _wait_until(func(): return NetworkManager.is_online() and not NetworkManager.connected_peers.is_empty(), 8)):
 		return
+	GameState.rift_remix = review
 	var trial := Route.instantiate() as Trial
 	var stick := Mobile.instantiate()
 	trial.add_child(stick)
@@ -169,10 +170,16 @@ func _run() -> void:
 
 func _verify_route_reviews(trial: Trial) -> void:
 	var cases := [
-		{"name": "zero", "leg": Trial.Leg.INTERCEPT, "cuts": 0, "outcome": "被击落", "tip": "下局试着先切掉一股齐射"},
-		{"name": "early", "leg": Trial.Leg.BUILD, "cuts": 1, "outcome": "被击落", "tip": "下局试着换一条拦截路线"},
-		{"name": "boss", "leg": Trial.Leg.BOSS, "cuts": 2, "outcome": "被击落", "tip": "下局试着横移，再从侧翼打盾"},
-		{"name": "win", "leg": Trial.Leg.BOSS, "cuts": 3, "outcome": "通关", "tip": "下局试试另一张首卡或另一条拦截路线"},
+		{"name": "zero", "leg": Trial.Leg.INTERCEPT, "cuts": 0, "hunter": false, "outcome": "被击落",
+			"facts": "猎手未击破 · 盾沿命中 0 次", "tip": "下局试着先切掉一股齐射"},
+		{"name": "early", "leg": Trial.Leg.BUILD, "cuts": 1, "hunter": false, "outcome": "被击落",
+			"facts": "猎手未击破 · 盾沿命中 0 次", "tip": "下局试着换一条拦截路线"},
+		{"name": "earned", "leg": Trial.Leg.ELITE, "cuts": 1, "hunter": true, "outcome": "被击落",
+			"facts": "猎手击破 · 奖励未用 · 盾沿命中 0 次", "tip": "下局试着换一条拦截路线"},
+		{"name": "boss", "leg": Trial.Leg.BOSS, "cuts": 2, "hunter": false, "outcome": "被击落",
+			"facts": "猎手未击破 · 盾沿命中 0 次", "tip": "下局试着横移，再从侧翼打盾"},
+		{"name": "win", "leg": Trial.Leg.BOSS, "cuts": 3, "hunter": true, "outcome": "通关",
+			"facts": "猎手击破 · 奖励已兑现 · 盾沿命中 1 次", "tip": "下局试试另一张首卡或另一条拦截路线"},
 	]
 	var scores := Leaderboard.get_entries().duplicate(true)
 	for sample: Dictionary in cases:
@@ -182,14 +189,28 @@ func _verify_route_reviews(trial: Trial) -> void:
 		trial._player.set_physics_process(false)
 		await _barrier("review_ready_" + label)
 		if _role == "host":
-			trial._set_leg(sample.leg)
+			trial.trial_tick = 4500
+			trial._set_leg(Trial.Leg.ELITE if sample.hunter else sample.leg)
 			await _review_intercept_shots(trial, int(sample.cuts))
+			if sample.hunter:
+				trial.trial_tick = Trial.ELITE_LEG + 154
+		if sample.hunter:
+			if not _require(label + "_hunter_present", await _wait_until(func(): return is_instance_valid(trial._elite), 2.0)):
+				return
+			await _finish_hunter_with_shot(trial, 1)
+			await _barrier(label + "_hunter_complete")
+		if _role == "host":
 			if sample.leg == Trial.Leg.BOSS:
+				trial._set_leg(Trial.Leg.BOSS)
 				trial._start_route_boss()
-			if sample.outcome == "通关":
-				trial._boss.take_damage(trial._boss.get_shield_hp(), 1)
-				trial._boss.take_damage(trial._boss.get_network_max_health(), 1)
-			else:
+		if label == "win":
+			await _review_flank_shot(trial)
+		if _role == "host":
+			if sample.outcome == "通关" and is_instance_valid(trial._boss):
+				var boss := trial._boss
+				boss.take_damage(boss.get_shield_hp(), 1)
+				boss.take_damage(boss.get_network_max_health(), 1)
+			elif sample.outcome != "通关":
 				for pilot in trial._players.values():
 					pilot.force_kill()
 				GameState.force_sync_to_peer(-1)
@@ -197,18 +218,23 @@ func _verify_route_reviews(trial: Trial) -> void:
 		if sample.outcome == "被击落":
 			_check(label + "_defeat_is_authoritative", await _wait_until(func():
 				return not GameState.is_player_alive(1) and not GameState.is_player_alive(_guest), .8), "")
-		var expected := "%s · 截断 %d 次\n%s" % [sample.outcome, sample.cuts, sample.tip]
+		var expected := "%s · 截断 %d 次\n%s\n%s" % [sample.outcome, sample.cuts, sample.facts, sample.tip]
 		_check(label + "_same_review_and_actual_intercepts", settled and trial.leg == sample.leg
 			and trial.interruptions == sample.cuts and trial._result.text == expected,
 			"leg=%d %s" % [trial.leg, trial._result.text.replace("\n", " | ")])
 		_check(label + "_review_fits_and_clears_stage_hint", Trial.SafeArea.for_viewport(get_viewport()).encloses(trial._options.get_global_rect())
 			and trial._route_hint_left == 0.0 and not trial._build_hint_pending and not trial._hud._game_over_panel.visible, "")
-		trial._rpc_route_result("被击落", 99)
+		_check(label + "_review_stays_off_skill_buttons", trial._hud._skill_slots.all(func(slot: Dictionary):
+			return not trial._options.get_global_rect().intersects(slot.button.get_global_rect())), "")
+		var settled_round := GameState.get_sync_round()
+		trial._rpc_route_result(settled_round, "被击落", 99, Trial.Leg.BOSS, {})
 		_check(label + "_old_result_cannot_rewrite_review", trial.interruptions == sample.cuts and trial._result.text == expected, "")
 		var retry: Button = trial.get_node("TrialUI/Options/Buttons/Retry")
 		var back: Button = trial.get_node("TrialUI/Options/Buttons/Back")
 		_check(label + "_existing_buttons_respect_authority", retry.is_visible_in_tree() == (_role == "host")
 			and back.is_visible_in_tree(), "")
+		if label == "win":
+			await _review_recovery(trial, expected)
 		if _role == "host" and label == "boss":
 			await _capture("review-phone")
 		elif _role == "client" and label == "win":
@@ -228,10 +254,12 @@ func _verify_route_reviews(trial: Trial) -> void:
 			return
 		trial = get_tree().current_scene as Trial
 		_main = trial
-		_check(label + "_retry_has_no_result_or_hint", not trial.finished and trial.interruptions == 0 and not trial._result.visible
-			and not trial._result.text.contains("下局") and trial.leg == Trial.Leg.INTERCEPT and trial._route_hint_left == 0.0, "")
 		if not _require(label + "_pilots_ready_after_retry", await _wait_until(_cond_both_players, 5.0)):
 			return
+		trial._rpc_route_result(settled_round, "被击落", 99, Trial.Leg.BOSS, {"hunter": true, "reward_used": true, "flank_hits": 99})
+		_check(label + "_remix_retry_rejects_old_round_review", trial.remix and not trial.finished and trial.interruptions == 0
+			and trial._route_review.is_empty() and not trial._result.visible and trial.leg == Trial.Leg.INTERCEPT
+			and trial._route_hint_left == 0.0, "")
 	_check("all_reviews_leave_ordinary_leaderboard_unchanged", Leaderboard.get_entries() == scores, "")
 	await _barrier("all_reviews_checked")
 	await _wait_seconds(.22)
@@ -247,6 +275,43 @@ func _review_intercept_shots(trial: Trial, count: int) -> void:
 		trial._player._combat._spawn_bullet(ship.global_position + Vector2(0, 50), -PI * .5, 4, true, 1, 760.0)
 	_check("host_count_comes_from_bullet_collisions_%d" % count, await _wait_until(func(): return trial.interruptions == count, .8),
 		"actual=%d" % trial.interruptions)
+
+func _review_flank_shot(trial: Trial) -> void:
+	if not _require("review_boss_present", await _wait_until(func(): return is_instance_valid(trial._boss), 2.0)):
+		return
+	var boss := trial._boss
+	await _arrange("review_flank")
+	if _role == "host":
+		boss._stop_entry_motion()
+		boss.global_position = AT
+		boss._shoot_timer = 60.0
+		boss._try_coop_pulse()
+	var open := await _wait_until(boss.has_flank_window, 1.7)
+	_check("review_flank_opened_by_real_pulse", open, "")
+	if _role == "host" and open:
+		var aim: Vector2 = AT + boss._flank_side * 24.0 + Vector2(0, 22)
+		trial._player._combat._spawn_bullet(aim + Vector2(0, 58), -PI * .5, 4, true, 1, 760.0)
+	_check("review_counts_actual_flank_shot_once", await _wait_until(func():
+		return not trial._flank_sparks.is_empty() and (_role == "client" or trial._flank_hits == 1), .6), "")
+	await _barrier("review_flank_observed")
+
+func _review_recovery(trial: Trial, expected: String) -> void:
+	var wire: int = NetworkManager.recovery.guest_wire
+	await _barrier("review_result_before_recovery")
+	if _role == "client":
+		NetworkManager.recovery.set_background(true)
+		await _wait_seconds(.2)
+		# Drop only the displayed replica to exercise the terminal snapshot path.
+		trial.finished = false
+		trial._route_review.clear()
+		trial._result.hide()
+		NetworkManager.drop_lan_transport()
+		NetworkManager.recovery.set_background(false)
+	var restored := await _wait_until(func():
+		return (NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != wire
+			and NetworkManager.recovery.deadline == 0 and trial.finished), 13.0)
+	_check("real_recovery_restores_same_terminal_review", restored and trial._result.text == expected, trial._result.text)
+	await _barrier("review_result_restored")
 
 func _hint_fits(trial: Trial) -> bool:
 	var hud := trial._hud
@@ -377,6 +442,8 @@ func _finish_hunter_with_shot(trial: Trial, killer: int) -> void:
 		var hunter: Elite = trial._elite
 		hunter.set_physics_process(false)
 		hunter.global_position = target
+		if hunter.get_network_shield() > 0:
+			hunter.take_damage(int(hunter.get_network_shield()), 1)
 		hunter.take_damage(floori((hunter.get_network_health() - 1.0) / 1.25), 1)
 	await _barrier("hunter_final_shot_ready")
 	if NetworkManager.local_player_id() == killer:
