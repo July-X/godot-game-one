@@ -22,3 +22,12 @@
 - 临时源码副本干净导入。运行 `godot --headless --fixed-fps 60 --path . res://tests/rift_route_probe.tscn`，标题入口和后续重试共 32 项通过。绕行、击毁后的首破盾、第二次破盾、重试分别为 270、330、270、270 帧。
 - `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19821 rift-wide-host`，再跑 `rift-wide-client`。每次房主 30 项、加入端 27 项。两端分别用实弹完成最后一击，交换 20:9 和 4:3，并在击毁后重连。提示未重播，首破盾仍为约 330 帧。
 - 同端口 `rift-timeout-host` 跑绕行，房主 28 项、加入端 25 项。两次约 270 帧，均无奖励提示。首跑探针脚本有语法和类型错误，修正后结果如上。
+
+## 第 3 轮 · 母舰的锁向与侧翼
+
+标记者附近保留暖色提示，锁向后在实体脉冲末端增加方向箭头。可打的盾沿使用分段薄荷色弧和缺口，弱点实弹命中沿边缘弹出短菱形。只从房主的实际扣盾产生短反馈。光束时序、危险区、作用范围和倍率沿用原值。
+
+- `godot --headless --path . res://tests/rift_inducement_probe.tscn -- solo 19831 rift-flank-solo --rift-log`，21 项通过。普通实弹扣盾 4，命中侧翼扣 6。站在锁线上受击 10，横移样本无伤。首跑还复现了弱点弹破盾后同一发溅射扣本体，修正后本体保持 886.7。
+- `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19832 rift-flank-host /已有截图目录` 和 `PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 19833 rift-flank-client`。图形组房主 37 项、加入端 34 项；交换画幅组房主 32 项、加入端 29 项。旧断言在重连恰为 1.10 秒时误判，复跑直接比较恢复前余时及原始 1.2 秒上限。两端验证无补播、过期不重开、取消及死亡清理。
+- `bash tests/run_probe.sh 19835 rift-induce-host` 房主 28 项、加入端 21 项；`bash tests/run_probe.sh 19834 boss` 房主 64 项、加入端 60 项；`godot --headless --fixed-fps 60 --path . res://tests/combat_feedback_probe.tscn` 14 项。另做干净导入和主战场运行。
+- 图形证据为 Godot 桌面脚本操控。在同机位保留锁向、脉冲发射前后图，以及新版弱点实弹命中后画面。

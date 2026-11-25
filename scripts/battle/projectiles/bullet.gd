@@ -68,14 +68,14 @@ func apply_owner_cards(pid: int) -> void:
 ## 贯穿不依赖 Area2D 的 monitoring 开关：area_entered 只在"进入"时触发一次，
 ## 子弹停在敌人身上不会重复上报，靠 _pierced 去重就够了。
 ## 额外去重 monitoring 反而有风险（关了忘开 / 开了忘关）。
-func _resolve_hit(target: Node) -> bool:
+func _resolve_hit(target: Node, skip_primary_splash := false) -> bool:
 	if _pierced.has(target):
 		return false
 	_pierced.append(target)
 	if _pierced.size() == 2 and card_effect.has_connections():
 		card_effect.emit("pierce", target)
 	if _splash_radius > 0.0:
-		_splash_damage(get_tree().get_nodes_in_group("enemies"))
+		_splash_damage(get_tree().get_nodes_in_group("enemies"), target if skip_primary_splash else null)
 	if _pierce_left > 0:
 		_pierce_left -= 1
 		return false
@@ -83,10 +83,10 @@ func _resolve_hit(target: Node) -> bool:
 
 
 ## 溅射：对半径内的其他敌人造成一半伤害。直接伤害已在调用方结算过。
-func _splash_damage(enemies: Array) -> void:
+func _splash_damage(enemies: Array, excluded: Node = null) -> void:
 	var origin: Vector2 = global_position
 	for e: Node in enemies:
-		if not is_instance_valid(e) or not e.has_method("take_damage"):
+		if e == excluded or not is_instance_valid(e) or not e.has_method("take_damage"):
 			continue
 		if e is Node2D and (e as Node2D).global_position.distance_to(origin) <= _splash_radius:
 			var impact := _impact_for(e)
@@ -228,9 +228,9 @@ func _on_body_entered(body: Node2D) -> void:
 				_spawn_hit(impact, steady)
 				_recycle()
 			else:
-				_apply_direct_damage(body)
+				var broke_flank := _apply_direct_damage(body)
 				_spawn_hit(impact, steady)
-				if _resolve_hit(body):
+				if _resolve_hit(body, broke_flank):
 					_recycle()
 	else:
 		if body.is_in_group("player") and body.has_method("take_damage"):
@@ -270,17 +270,19 @@ func _on_area_entered(area: Area2D) -> void:
 				_spawn_hit(impact, steady)
 				_recycle()
 			else:
-				_apply_direct_damage(enemy)
+				var broke_flank := _apply_direct_damage(enemy)
 				_spawn_hit(impact, steady)
-				if _resolve_hit(enemy):
+				if _resolve_hit(enemy, broke_flank):
 					_recycle()
 
-func _apply_direct_damage(target: Node2D) -> void:
+func _apply_direct_damage(target: Node2D) -> bool:
 	if target.has_method("take_projectile_damage") and target.has_flank_window():
 		if not _pierced.has(target):
-			target.take_projectile_damage(_damage, owner_peer_id, global_position)
+			# A splash card can still hit neighbors. Don't send the same round through the opened hull.
+			return target.take_projectile_damage(_damage, owner_peer_id, global_position)
 	else:
 		target.take_damage(_damage, owner_peer_id)
+	return false
 
 func _impact_for(target: Node) -> Pool.Impact:
 	if not target.is_in_group("boss") and target.has_method("has_impact_shield") and target.has_impact_shield():

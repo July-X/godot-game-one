@@ -15,6 +15,7 @@ const HUNTER_NOTICE := {"earned": "猎手已击破 · 母舰首次破盾多 1 �
 	"spent": "猎手奖励兑现 · 这次破盾多 1 秒"}
 const LEG_HINT_SECONDS := 2.0
 const CUT_CUE_TICKS := 27
+const FLANK_SPARK_TICKS := 19
 var leg := Leg.INTERCEPT
 var _settling := false
 var _route_hint_left := 0.0
@@ -27,9 +28,12 @@ var _hunter_reward_spent := false
 var _route_notice := ""
 var _remote_cues: Dictionary[int, int] = {}
 var _cut_cues: Array[Dictionary] = []
+var _flank_sparks: Array[Dictionary] = []
+@onready var _spark_layer: Node2D = $FlankSparks
 
 func _ready() -> void:
 	super._ready()
+	_spark_layer.draw.connect(_draw_flank_sparks)
 	$TrialUI/Options/Buttons/Retry.visible = _authoritative()
 	if _authoritative():
 		volley_interrupted.connect(func(role: String, _at: Vector2, deadline: int):
@@ -53,6 +57,11 @@ func _physics_process(delta: float) -> void:
 	while not _cut_cues.is_empty() and trial_tick >= int(_cut_cues[0].until):
 		_cut_cues.pop_front()
 		_cues.queue_redraw()
+	while not _flank_sparks.is_empty() and trial_tick >= int(_flank_sparks[0].until):
+		_flank_sparks.pop_front()
+		_spark_layer.queue_redraw()
+	if not _flank_sparks.is_empty():
+		_spark_layer.queue_redraw()
 	if _route_hint_left > 0.0:
 		_route_hint_left = maxf(0.0, _route_hint_left - delta)
 		if _route_hint_left == 0.0:
@@ -152,6 +161,18 @@ func _draw_cues() -> void:
 			var at: Vector2 = cue.at + Vector2((index - 1) * 13, 37 - (1.0 - alpha) * 14)
 			_cues.draw_line(at + Vector2(-4, 5), at + Vector2(4, -5),
 				Color(.66, 1.0, .88, alpha), 2.5, true)
+func _draw_flank_sparks() -> void:
+	for spark: Dictionary in _flank_sparks:
+		var life := float(int(spark.until) - trial_tick) / FLANK_SPARK_TICKS
+		var center: Vector2 = spark.at
+		for index: int in 3:
+			var outward: Vector2 = spark.outward
+			var d := outward.rotated(float(index - 1) * .65)
+			var at := center + d * lerpf(32.0, 14.0, life)
+			var tip := d * 7.0
+			var edge := d.orthogonal() * 4.0
+			_spark_layer.draw_polyline(PackedVector2Array([at - tip, at + edge, at + tip, at - edge, at - tip]),
+				Color(.60, 1.0, .78, life), 2.5, true)
 
 func _on_emitter_died(role: String) -> void:
 	var cuts_before := interruptions
@@ -186,6 +207,8 @@ func _on_route_packet(peer: int, packet: PackedByteArray) -> void:
 		return
 	if event[0] == "cut" and event[1] is Vector2:
 		_show_cut(event[1])
+	elif event[0] == "flank_hit" and event[1] is Vector2:
+		_show_flank_hit(event[1])
 	elif event[0] == "hunter" and event[1] is String and HUNTER_NOTICE.has(event[1]):
 		_show_hunter_notice(event[1])
 
@@ -198,6 +221,16 @@ func _show_hunter_notice(event: String) -> void:
 func _publish_hunter_notice(event: String) -> void:
 	_show_hunter_notice(event)
 	_send_route_packet(["hunter", event])
+
+func _show_flank_hit(at: Vector2) -> void:
+	var outward := _boss.global_position.direction_to(at) if is_instance_valid(_boss) else Vector2.UP
+	_flank_sparks.append({"at": _spark_layer.to_local(at), "outward": outward, "until": trial_tick + FLANK_SPARK_TICKS})
+	_spark_layer.queue_redraw()
+
+func _on_flank_hit(at: Vector2, slot: int, shield_before: float, shield_after: float) -> void:
+	_show_flank_hit(at)
+	_send_route_packet(["flank_hit", at])
+	_log("flank_hit", {"slot": slot, "position": str(at), "shield_before": shield_before, "shield_after": shield_after})
 
 func _open_route_drafts() -> void:
 	var slots: Array[int] = [1]
@@ -227,6 +260,7 @@ func _start_route_boss() -> void:
 	_spawn_boss(5)
 	if is_instance_valid(_boss):
 		_boss.enable_route_inducement()
+		_boss.route_flank_hit.connect(_on_flank_hit)
 		if _hunter_defeated:
 			_boss.extend_first_exposure(HUNTER_EXPOSURE_BONUS)
 			_boss.first_exposure_bonus_used.connect(func():
@@ -347,6 +381,8 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 func set_lan_hold(held: bool) -> void:
 	if held:
 		_cut_cues.clear()
+		_flank_sparks.clear()
+		_spark_layer.queue_redraw()
 		_cues.queue_redraw()
 	if held and (_route_hint_left > 0.0 or _build_hint_pending):
 		_build_hint_pending = false
@@ -362,6 +398,8 @@ func _finish(outcome: String) -> void:
 	_route_hint_left = 0.0
 	_route_notice = ""
 	_cut_cues.clear()
+	_flank_sparks.clear()
+	_spark_layer.queue_redraw()
 	_cues.queue_redraw()
 	_update_countdown()
 	super._finish(outcome)

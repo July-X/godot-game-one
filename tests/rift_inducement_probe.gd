@@ -205,7 +205,7 @@ func _flank_matrix(solo: bool, target: int, baseline: bool) -> void:
 		var hull := boss.get_network_health()
 		if _role != "client":
 			boss._shield_hp = 5.0
-			_fire_flank_round(Vector2(stand.flank.side) * 24.0 + Vector2(0, 22), 4)
+			_fire_flank_round(Vector2(stand.flank.side) * 24.0 + Vector2(0, 22), 4, true)
 		var broken := await _wait_until(func(): return not boss.has_impact_shield(), .56)
 		if _role == "client":
 			boss.apply_network_coop_pulse(stand)
@@ -331,6 +331,12 @@ func _flank_case(label: String, solo: bool, target: int, move: bool, baseline: b
 	await _capture(label + "-fire")
 	var expected := 6.0 if move and not baseline else 4.0
 	var hit := await _wait_until(func(): return boss.get_shield_hp() <= shield - expected + 0.005, .6)
+	var trial := _main as Trial
+	if not baseline:
+		var spark := await _wait_until(func(): return not trial._flank_sparks.is_empty(), .16)
+		_check(label + "_only_qualified_impact_has_flank_spark", spark == move, "")
+		if spark:
+			await _capture(label + "-hit")
 	var health_settled := await _wait_until(func(): return GameState.get_current_health(target) == hp - (0 if move else 10), .45)
 	_check(label + "_one_real_shot_and_pilot_hp", hit and health_settled
 		and is_equal_approx(shield - boss.get_shield_hp(), expected) and is_equal_approx(hull, boss.get_network_health())
@@ -341,12 +347,16 @@ func _flank_case(label: String, solo: bool, target: int, move: bool, baseline: b
 		await _barrier(label + "_shot_checked")
 	return pulse
 
-func _fire_flank_round(offset: Vector2, damage: int) -> void:
+func _fire_flank_round(offset: Vector2, damage: int, splash := false) -> void:
 	var pilot: Node2D = _main._player
 	var aim: Vector2 = _main._boss.global_position + offset
 	var axis := pilot.global_position.direction_to(aim)
 	_flank_impact = Vector2.INF
 	pilot._combat._spawn_bullet(aim - axis * 58.0, axis.angle(), damage, true, 1, 760.0)
+	if splash:
+		# Give only the shield-breaking round the same splash radius as the card.
+		var shot := get_tree().get_nodes_in_group("player_bullets").back() as Bullet
+		shot._splash_radius = 78.0
 
 func _flank_recharge(solo: bool) -> void:
 	if not solo:
@@ -371,8 +381,9 @@ func _check_flank_recovery(old_pulse: Dictionary) -> void:
 	var state: Dictionary = boss.coop_pulse_snapshot().get("flank", {})
 	_check("reconnect_restores_current_edge_and_remaining_time", resumed and _flank_active()
 		and state.stamp == pre.stamp and state.side == pre.side and float(state.left) <= float(pre.left)
-		and float(state.left) < 1.1 and is_equal_approx(shield, boss.get_shield_hp()),
+		and float(state.left) < 1.18 and is_equal_approx(shield, boss.get_shield_hp()),
 		"before=%s resumed=%s shield=%.1f" % [pre, state, boss.get_shield_hp()])
+	_check("reconnect_does_not_replay_flank_hit", (_main as Trial)._flank_sparks.is_empty(), "")
 	if _role == "client":
 		for repeat in 2:
 			_main._rpc_spawn_boss(boss.entity_id, 5, boss.get_sprite_variant_id(), old_snapshot)

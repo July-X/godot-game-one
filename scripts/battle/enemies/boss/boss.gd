@@ -4,6 +4,7 @@ signal boss_died
 signal phase_changed(phase_name: String)
 signal shield_released
 signal first_exposure_bonus_used
+signal route_flank_hit(at: Vector2, slot: int, shield_before: float, shield_after: float)
 
 enum State { IDLE, CIRCLE, ATTACK, RETREAT, ENRAGED }
 enum AttackWindow { UNKNOWN, OPEN, CHARGING, SWEEP, HOLD }
@@ -1038,12 +1039,14 @@ func _draw_flank_window() -> void:
 	var shield_radius: float = $CollisionShape2D.shape.radius
 	var half_arc := acos(ROUTE_FLANK_MIN_OFFSET / shield_radius)
 	var tone := Color("#9effca")
-	_flank_cue.draw_arc(Vector2.ZERO, shield_radius + 3.0, angle - half_arc, angle + half_arc, 18, Color("#153a32"), 6.0, true)
-	_flank_cue.draw_arc(Vector2.ZERO, shield_radius + 3.0, angle - half_arc, angle + half_arc, 18, tone, 3.0, true)
-	var at := direction * (shield_radius + 11.0)
-	var edge := direction.orthogonal() * 5.0
-	var cap := direction * 6.0
-	_flank_cue.draw_polyline(PackedVector2Array([at - cap, at + edge, at + cap, at - edge, at - cap]), tone, 2.0, true)
+	for side: float in [-1.0, 1.0]:
+		var limits := Vector2(angle + side * .20, angle + side * half_arc)
+		_flank_cue.draw_arc(Vector2.ZERO, shield_radius + 4.0, limits.x, limits.y, 10, Color("#153a32"), 8.0, true)
+		_flank_cue.draw_arc(Vector2.ZERO, shield_radius + 4.0, limits.x, limits.y, 10, tone, 4.0, true)
+	var point := direction * (shield_radius + 7.0)
+	var back := direction * 11.0
+	var edge := direction.orthogonal() * 8.0
+	_flank_cue.draw_polyline(PackedVector2Array([point + back - edge, point, point + back + edge]), tone, 3.0, true)
 
 func _finish_coop_pulse() -> void:
 	_pulse_left = 0.0
@@ -1059,12 +1062,12 @@ func _draw_coop_pulse() -> void:
 		if is_instance_valid(pilot):
 			for side in [-1.0, 1.0]:
 				var at := pilot.global_position
-				var outer := at + Vector2(32.0 * side, 0.0)
+				var outer := at + Vector2(38.0 * side, 0.0)
 				draw_polyline(PackedVector2Array([
-					to_local(outer + Vector2(-8.0 * side, -12.0)),
+					to_local(outer + Vector2(-11.0 * side, -13.0)),
 					to_local(outer),
-					to_local(outer + Vector2(-8.0 * side, 12.0)),
-				]), tone, 2.0, true)
+					to_local(outer + Vector2(-11.0 * side, 13.0)),
+				]), tone, 3.0, true)
 	if _pulse.phase == PulsePhase.TRACK:
 		return
 	var start := to_local(_pulse.from)
@@ -1076,6 +1079,10 @@ func _draw_coop_pulse() -> void:
 		for edge in [side, -side]:
 			draw_dashed_line(start + edge, end + edge, tone, width, 14.0)
 		draw_dashed_line(start, end, Color(tone, 0.34), width, 7.0)
+		if _pulse.get("marked", false):
+			var tip := end - direction * 12.0
+			var tail := tip - direction * 17.0
+			draw_polyline(PackedVector2Array([tail + side * .38, tip, tail - side * .38]), tone, 2.5, true)
 	else:
 		var heat := Color("#f16c365c")
 		draw_line(start, end, heat, COOP_PULSE_RADIUS * 2.0)
@@ -1242,10 +1249,16 @@ func _score_dodge_position(pos: Vector2, drift: Vector2) -> float:
 	return shift.length() + minf(margin_x, margin_y) * 0.5 - shift.dot(drift) / BOSS_DODGE_SHIFT
 
 ## Called only by a direct projectile collision on the authority. Splash and hull damage use the base path.
-func take_projectile_damage(amount: float, killer_peer_id: int, at: Vector2) -> void:
+func take_projectile_damage(amount: float, killer_peer_id: int, at: Vector2) -> bool:
+	if _is_network_ghost or amount <= 0.0:
+		return false
 	if has_flank_window() and (at - global_position).dot(_flank_side) >= ROUTE_FLANK_MIN_OFFSET:
-		amount *= ROUTE_FLANK_SHIELD_MULTIPLIER
+		var shield_before := _shield_hp
+		take_damage(amount * ROUTE_FLANK_SHIELD_MULTIPLIER, killer_peer_id)
+		route_flank_hit.emit(at, killer_peer_id, shield_before, _shield_hp)
+		return _shield_hp == 0.0
 	take_damage(amount, killer_peer_id)
+	return false
 
 func take_damage(amount: float = 1.0, killer_peer_id: int = -1) -> void:
 	if _dead or _health <= 0.0 or _is_network_ghost:
