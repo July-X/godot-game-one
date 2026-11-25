@@ -45,6 +45,8 @@ def run_pair(output, name, port, mode, swap, *extra):
         assert code == 0 and "failed=0" in log, name
         assert not any(word in log for word in ("SCRIPT ERROR", "Node not found",
                                                "未找到本地玩家", "仍未找到")), name
+        assert not any(line.startswith("ERROR:") and "resources still in use at exit" not in line
+                       for line in log.splitlines()), name
     if "entry-timeout" in extra:
         return {"case": name, "timeout_and_retry": True}
     host, client = logs
@@ -52,8 +54,20 @@ def run_pair(output, name, port, mode, swap, *extra):
     guest_ready = trace(client, "scene")["wall_ms"]
     guest_moved = trace(client, "pilot_moved")["wall_ms"]
     first_bullet = trace(host, "authority_bullet")["wall_ms"]
+    authoritative_move = trace(host, "authority_move")
     host_confirmed = trace(host, "active_on_host")["wall_ms"]
+    guest_movement = trace(client, "pilot_moved")
+    assert authoritative_move["slot"] == guest_movement["slot"] == trace(host, "authority_bullet")["slot"], name
+    pos = [row for row in traces(host, "position_applied", "ENTRY_SHOT")
+           if row["slot"] == authoritative_move["slot"] and
+           abs(row["x"] - authoritative_move["spawn_x"]) > 8 and row["wall_ms"] <= authoritative_move["wall_ms"]]
+    assert pos, name
+    for stage_log, event in ((client, "position_sent"), (host, "position_rpc")):
+        assert any(row["slot"] == pos[0]["slot"] and row["status"] == 0 and
+                   (row["x"], row["y"]) == (pos[0]["x"], pos[0]["y"])
+                   for row in traces(stage_log, event, "ENTRY_SHOT")), name
     assert max(guest_moved, first_bullet, host_confirmed) - min(host_ready, guest_ready) <= 1000, name
+    followups = []
     if mode == "remix":
         initial_round = trace(host, "scene")["round"]
         first = [row for row in traces(client, "flush_initial_reliable", "ENTRY_SHOT") if row["round"] == initial_round]
@@ -62,12 +76,22 @@ def run_pair(output, name, port, mode, swap, *extra):
         assert len(received) == 1 and received[0]["slot"] == first[0]["slot"], name
         assert first[0]["wall_ms"] <= received[0]["wall_ms"] <= first_bullet, name
         ordered = traces(host, "rpc_ordered", "ENTRY_SHOT")
-        assert any(row["round"] == initial_round and row["wall_ms"] > first_bullet for row in ordered), name
+        spawned = [row for row in traces(host, "authority_batch", "ENTRY_SHOT") if row["round"] == initial_round]
+        assert spawned[0]["batch"] == first[0]["batch"] == received[0]["batch"] and spawned[0]["reliable"], name
+        following = [row for row in spawned if not row["reliable"]]
+        sent = traces(client, "flush_ordered", "ENTRY_SHOT")
+        assert len(following) >= 2 and len({row["batch"] for row in following[:2]}) == 2, name
+        assert all(any(row["batch"] == batch["batch"] for row in sent) and
+                   any(row["batch"] == batch["batch"] for row in ordered) for batch in following[:2]), name
+        followups = trace(host, "followups")["after_first_ms"][:2]
+        assert len(followups) == 2 and followups[1] <= 1300, name
     return {"case": name, "host_device": "4:3" if swap else "20:9",
             "scene_gap_ms": guest_ready - host_ready,
             "guest_move_ms": guest_moved - guest_ready,
             "first_authority_bullet_ms": first_bullet - guest_ready,
-            "authority_move_and_shot_ms": host_confirmed - host_ready}
+            "authority_move_ms": authoritative_move["wall_ms"] - guest_ready,
+            "authority_move_and_shot_ms": host_confirmed - min(host_ready, guest_ready),
+            "followups_after_first_ms": followups}
 
 
 def main():

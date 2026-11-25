@@ -6,6 +6,8 @@
 ## 单机兼容：NetworkManager.is_online() 为 false 时走原有单人逻辑。
 extends Node2D
 
+signal guest_bullet_batch_spawned(slot: int, count: int, reliable: bool)
+
 const MotionController = preload("res://scripts/player/motion_controller.gd")
 const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
 
@@ -64,10 +66,14 @@ var _lan_mouse_mode := Input.MOUSE_MODE_VISIBLE
 var _lan_message: Label
 const PLAYER_ENTRY_RETRY_MS := 100
 const PLAYER_ENTRY_TIMEOUT_MS := 3000
+const REMIX_ENTRY_THROTTLE_AFTER_READY_MS := 1500
 var _player_entry_deadline := 0
 var _next_player_entry_request := 0
 var _player_entry_ready := false
 var _player_entry_message: Label
+var _remix_entry_peer: ENetPacketPeer
+var _remix_entry_throttle_settings := Vector3i.ZERO
+var _remix_entry_throttle_until := 0
 var _initial_guest_volley_sent := false
 var _entry_shot_trace := false
 var _entry_shot_trace_counts: Dictionary = {}
@@ -193,6 +199,7 @@ func emit_hit_feedback(intensity: float, hitstop_seconds: float = 0.0,
 
 func _ready() -> void:
 	_entry_shot_trace = OS.get_cmdline_user_args().has("--entry-shot-trace")
+	_begin_remix_entry_throttle_recovery()
 	_hitstop_last_usec = Time.get_ticks_usec()
 	_wave_director = _wave_director_script.new()
 	_wave_director.name = "WaveDirector"
@@ -268,6 +275,7 @@ func _debug_log_variant_assets() -> void:
 	print("[variants] boss=", boss_count, " player=", player_count)
 
 func _exit_tree() -> void:
+	_restore_remix_entry_throttle()
 	BGM.stop_bgm()
 
 func _spawn_player() -> void:
@@ -349,6 +357,7 @@ func _on_multiplayer_server_disconnected() -> void:
 
 func set_lan_hold(held: bool) -> void:
 	if held:
+		_restore_remix_entry_throttle()
 		_lan_frozen_frame = Engine.get_physics_frames()
 		_lan_frozen_msec = Time.get_ticks_msec()
 		_lan_mouse_mode = Input.mouse_mode
@@ -372,6 +381,7 @@ func set_lan_hold(held: bool) -> void:
 	GameState.extend_graze_time(held_msec)
 	if _player_entry_deadline > 0:
 		_player_entry_deadline += held_msec
+		_begin_remix_entry_throttle_recovery()
 	_lan_frozen_frame = -1
 	if _rescue_expires_at > 0:
 		_rescue_expires_at += lost_ticks
@@ -691,6 +701,8 @@ func _spawn_mobile_controls() -> void:
 
 func _process(delta: float) -> void:
 	_tick_hitstop()
+	if _remix_entry_throttle_until > 0 and Time.get_ticks_msec() >= _remix_entry_throttle_until:
+		_restore_remix_entry_throttle()
 	if _player_entry_deadline > 0 and NetworkManager.is_online():
 		_tick_player_entry()
 	if not GameState.game_running:
@@ -718,8 +730,12 @@ func _process(delta: float) -> void:
 				if _player_report_timer <= 0.0:
 					_player_report_timer = ENTITY_SYNC_INTERVAL
 					_player_report_sent += 1
-					_rpc_report_player_state.rpc_id(1, local_id,
-						local_pilot.global_position.x, local_pilot.global_position.y, local_pilot.rotation)
+					var at: Vector2 = local_pilot.global_position
+					if _entry_shot_trace:
+						var sent := rpc_id(1, "_rpc_report_player_state", local_id, at.x, at.y, local_pilot.rotation)
+						_trace_entry_shot("position_sent", local_id, 1, sent, {"x": at.x, "y": at.y})
+					else:
+						_rpc_report_player_state.rpc_id(1, local_id, at.x, at.y, local_pilot.rotation)
 		## 客户端玩家的幽灵节点在 Host 侧也要插值
 		_apply_player_interpolation(delta)
 		_flush_bullet_spawns()
@@ -1612,6 +1628,7 @@ func _rpc_restart_game(round_id: int) -> void:
 func _tick_player_entry() -> void:
 	var now := Time.get_ticks_msec()
 	if now >= _player_entry_deadline:
+		_restore_remix_entry_throttle()
 		_player_entry_deadline = -1
 		if not is_instance_valid(_player_entry_message):
 			_player_entry_message = _hud.show_lan_wait()
@@ -1651,8 +1668,38 @@ func _rpc_confirm_player_entry(round_id: int) -> void:
 func _confirm_player_entry() -> void:
 	_player_entry_ready = true
 	_player_entry_deadline = 0
+	if _remix_entry_throttle_until > 0:
+		_remix_entry_throttle_until = Time.get_ticks_msec() + REMIX_ENTRY_THROTTLE_AFTER_READY_MS
 	if is_instance_valid(_player_entry_message):
 		_player_entry_message.queue_free()
+
+func _begin_remix_entry_throttle_recovery() -> void:
+	if not GameState.rift_remix or NetworkManager.is_host or not NetworkManager.is_online() or _remix_entry_peer:
+		return
+	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	var peer := transport.get_peer(1) if transport else null
+	if not peer or peer.get_state() != ENetPacketPeer.STATE_CONNECTED:
+		return
+	_remix_entry_peer = peer
+	_remix_entry_throttle_settings = Vector3i(
+		int(peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_INTERVAL)),
+		int(peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_ACCELERATION)),
+		int(peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)))
+	_remix_entry_throttle_until = Time.get_ticks_msec() + PLAYER_ENTRY_TIMEOUT_MS
+	# A good acknowledgement can recover the LAN link after scene-loading RTT spikes; ENet still backs off on bad samples.
+	peer.throttle_configure(_remix_entry_throttle_settings.x, ENetPacketPeer.PACKET_THROTTLE_SCALE,
+		_remix_entry_throttle_settings.z)
+
+func _restore_remix_entry_throttle() -> void:
+	if not _remix_entry_peer:
+		return
+	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer if multiplayer else null
+	if (_remix_entry_peer.get_state() == ENetPacketPeer.STATE_CONNECTED
+			and transport and NetworkManager.is_online() and transport.get_peer(1) == _remix_entry_peer):
+		_remix_entry_peer.throttle_configure(_remix_entry_throttle_settings.x,
+			_remix_entry_throttle_settings.y, _remix_entry_throttle_settings.z)
+	_remix_entry_peer = null
+	_remix_entry_throttle_until = 0
 
 
 ## Host → Client：生成玩家节点
@@ -2248,6 +2295,8 @@ func _rpc_report_player_state(p_peer_id: int, pos_x: float, pos_y: float, rot: f
 		return
 	_player_report_received += 1
 	var sender := NetworkManager.gameplay_sender()
+	if _entry_shot_trace:
+		_trace_entry_shot("position_rpc", sender, 1, OK, {"x": pos_x, "y": pos_y, "claimed": p_peer_id})
 	if sender <= 1 or p_peer_id != sender:
 		_player_report_rejected += 1
 		if _player_report_rejected <= 3:
@@ -2284,6 +2333,8 @@ func _apply_remote_player_state(p_peer_id: int, pos: Vector2, rot: float) -> voi
 		node.set_meta("player_sync_inited", true)
 	_player_target_positions[p_peer_id] = pos
 	node.rotation = rot
+	if _entry_shot_trace and multiplayer.is_server():
+		_trace_entry_shot("position_applied", p_peer_id, 1, OK, {"x": pos.x, "y": pos.y})
 
 ## 子弹同步 ──────────────────────────────────────────────────
 
@@ -2311,7 +2362,8 @@ func _flush_bullet_spawns() -> void:
 			if opening and sent == OK:
 				_initial_guest_volley_sent = true
 			if _entry_shot_trace:
-				_trace_entry_shot("flush_initial_reliable" if opening else "flush_ordered", NetworkManager.local_player_id(), data.size(), sent)
+				_trace_entry_shot("flush_initial_reliable" if opening else "flush_ordered",
+					NetworkManager.local_player_id(), data.size(), sent, {"batch": hash(data)})
 	# 技能散射与航道猎手的固定齐射共用可靠队列，加入端能看到实际判定的整轮弹体。
 	if not _pending_scatter_spawns.is_empty():
 		var data := _pending_scatter_spawns.duplicate()
@@ -2440,7 +2492,7 @@ func _flush_laser_spawns() -> void:
 @rpc("any_peer", "unreliable_ordered", "call_remote")
 func _rpc_spawn_bullets(data: Array) -> void:
 	if _entry_shot_trace and is_inside_tree() and multiplayer.is_server():
-		_trace_entry_shot("rpc_ordered", multiplayer.get_remote_sender_id(), data.size())
+		_trace_entry_shot("rpc_ordered", multiplayer.get_remote_sender_id(), data.size(), OK, {"batch": hash(data)})
 	if not NetworkManager.is_online():
 		return
 	## Client → Host：Host 接收后需要再广播一次，确保加入端能看到自己的子弹。
@@ -2458,13 +2510,13 @@ func _rpc_request_scatter(data: Array) -> void:
 		return
 	var sender := NetworkManager.gameplay_sender()
 	if _entry_shot_trace:
-		_trace_entry_shot("rpc_reliable", sender, data.size())
+		_trace_entry_shot("rpc_reliable", sender, data.size(), OK, {"batch": hash(data)})
 	if not NetworkManager.is_online() or not GameState.game_running or not _alive_players.has(sender):
 		return
 	# The guest's acknowledgement and its reliable shots are ordered on the same reliable stream.
 	if GameState.rift_remix and not _player_entry_ready:
 		return
-	_spawn_network_bullets(data, sender)
+	_spawn_network_bullets(data, sender, true)
 	_rpc_spawn_scatter.rpc(data)
 
 @rpc("authority", "reliable", "call_remote")
@@ -2473,7 +2525,8 @@ func _rpc_spawn_scatter(data: Array) -> void:
 		return
 	_spawn_network_bullets(data)
 
-func _spawn_network_bullets(data: Array, sender := -1) -> void:
+func _spawn_network_bullets(data: Array, sender := -1, reliable := false) -> void:
+	var guest_bullets := 0
 	for entry in data:
 		var bullet := Pool.acquire("bullet", _bullet_scene)
 		if bullet == null:
@@ -2497,17 +2550,30 @@ func _spawn_network_bullets(data: Array, sender := -1) -> void:
 			bullet.apply_owner_cards(owner_slot)
 		if not multiplayer.is_server() and bullet.has_method("set_network_ghost"):
 			bullet.set_network_ghost(true)
-		elif _entry_shot_trace and is_player and sender > 1:
-			_trace_entry_shot("authority_setup", sender, 1)
+		elif is_player and sender > 1:
+			guest_bullets += 1
+	if guest_bullets > 0:
+		guest_bullet_batch_spawned.emit(sender, guest_bullets, reliable)
+		if _entry_shot_trace:
+			_trace_entry_shot("authority_batch", sender, guest_bullets, OK, {"batch": hash(data), "reliable": reliable})
 
-func _trace_entry_shot(stage: String, slot: int, count: int, status := OK) -> void:
+func _trace_entry_shot(stage: String, slot: int, count: int, status := OK, extra := {}) -> void:
 	var seen := int(_entry_shot_trace_counts.get(stage, 0))
-	if seen >= 8:
+	if seen >= (44 if stage.begins_with("position_") else 12):
 		return
 	_entry_shot_trace_counts[stage] = seen + 1
-	print("[ENTRY_SHOT] ", stage, " ", JSON.stringify({"round": GameState.get_sync_round(), "slot": slot,
+	var row := {"round": GameState.get_sync_round(), "slot": slot,
 		"count": count, "status": status, "ready": _player_entry_ready, "held": _lan_frozen_frame >= 0,
-		"wall_ms": int(Time.get_unix_time_from_system() * 1000)}))
+		"wall_ms": int(Time.get_unix_time_from_system() * 1000)}
+	row.merge(extra)
+	if not multiplayer.is_server():
+		var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+		var peer := transport.get_peer(1) if transport else null
+		if peer and peer.get_state() == ENetPacketPeer.STATE_CONNECTED:
+			row["throttle"] = peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE)
+			row["counter"] = peer.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_COUNTER)
+			row["rtt_ms"] = peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)
+	print("[ENTRY_SHOT] ", stage, " ", JSON.stringify(row))
 
 ## 激光同步：
 @rpc("authority", "reliable", "call_remote")

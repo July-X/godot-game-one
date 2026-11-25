@@ -11,7 +11,8 @@ var _passed := 0
 var _failed := 0
 var _battle_at := 0
 var _guest_shot_at := 0
-var _guest_shot_count := 0
+var _guest_followup_ms: Array[int] = []
+var _guest_move_at := 0
 var _guest_position := Vector2.INF
 
 func _ready() -> void:
@@ -87,6 +88,7 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 			return
 		if host:
 			battle.child_entered_tree.connect(_schedule_bullet_check)
+			battle.guest_bullet_batch_spawned.connect(_observe_guest_batch)
 			_guest_position = battle._get_networked_player_spawn_position(2)
 		# Client position and shots still go through the game's input and ENet paths.
 		_drive_pilot_once_bound(battle)
@@ -96,20 +98,33 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 		if host:
 			var active := await _wait_until(func():
 				var guest: Node2D = battle._players.get(NetworkManager.recovery.guest_slot)
-				return is_instance_valid(guest) and guest.position.distance_to(_guest_position) > 8.0 and _guest_shot_at > 0, 4.0)
+				if _guest_move_at == 0 and is_instance_valid(guest) and guest.position.distance_to(_guest_position) > 8.0:
+					_guest_move_at = Time.get_ticks_msec()
+					_trace("authority_move", {"slot": guest.peer_id, "x": guest.position.x, "y": guest.position.y,
+						"spawn_x": _guest_position.x, "spawn_y": _guest_position.y})
+				return _guest_move_at > 0 and _guest_shot_at > 0, 4.0)
 			var ready_ms := Time.get_ticks_msec() - _battle_at
 			_trace("active_on_host", {"move_and_shot_ms": ready_ms, "first_shot_ms": _guest_shot_at - _battle_at})
 			_check("guest_can_move_and_shoot_within_one_second", active and ready_ms <= 1000)
 			if remix:
 				_check("authority_has_both_pilots_before_practice_wave", await _wait_until(func():
 					return battle._player_entry_ready and battle.trial_tick < 78, .3))
-				_check("authority_keeps_receiving_guest_projectiles", await _wait_until(func(): return _guest_shot_count >= 3, 1.3))
+				var continued := await _wait_until(func(): return _guest_followup_ms.size() >= 2, 1.3) if _guest_shot_at > 0 else false
+				_trace("followups", {"slot": NetworkManager.recovery.guest_slot, "after_first_ms": _guest_followup_ms})
+				_check("two_distinct_followup_batches_within_window", continued and _guest_followup_ms[1] <= 1300)
 		else:
 			await _verify_entry_replays(battle)
 			if remix:
 				_check("guest_has_both_pilots_before_practice_wave", battle._player_entry_ready and battle.trial_tick < 78)
 			if OS.get_cmdline_user_args().has("recover"):
-				await get_tree().create_timer(1.0).timeout
+				var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+				var link := transport.get_peer(1)
+				var saved: Vector3i = battle._remix_entry_throttle_settings
+				var restored := await _wait_until(func(): return battle._remix_entry_peer == null, 1.8)
+				_check("entry_transport_parameters_restore_before_rewire", restored
+					and int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_INTERVAL)) == saved.x
+					and int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_ACCELERATION)) == saved.y
+					and int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_DECELERATION)) == saved.z)
 			else:
 				# Keep shooting through the host's entire observation window on slow samples.
 				await _wait_until(func(): return not NetworkManager.is_online(), 6.0)
@@ -126,11 +141,17 @@ func _schedule_bullet_check(node: Node) -> void:
 
 func _observe_guest_bullet(instance: int) -> void:
 	var bullet := instance_from_id(instance) as Bullet
-	if is_instance_valid(bullet) and bullet._is_player_bullet and bullet.owner_peer_id > 1 and not bullet._is_network_ghost:
-		_guest_shot_count += 1
-		if _guest_shot_at == 0:
-			_guest_shot_at = Time.get_ticks_msec()
-			_trace("authority_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
+	if _guest_shot_at == 0 and is_instance_valid(bullet) and bullet._is_player_bullet \
+			and bullet.owner_peer_id == NetworkManager.recovery.guest_slot and not bullet._is_network_ghost:
+		_guest_shot_at = Time.get_ticks_msec()
+		_trace("authority_bullet", {"slot": bullet.owner_peer_id, "instance": instance})
+
+func _observe_guest_batch(slot: int, count: int, reliable: bool) -> void:
+	if slot != NetworkManager.recovery.guest_slot:
+		return
+	if not reliable and _guest_shot_at > 0:
+		_guest_followup_ms.append(Time.get_ticks_msec() - _guest_shot_at)
+	_trace("authority_volley", {"slot": slot, "count": count, "reliable": reliable})
 
 func _drive_pilot_once_bound(battle: Node) -> void:
 	var slot := NetworkManager.local_player_id()
@@ -149,8 +170,22 @@ func _drive_pilot_once_bound(battle: Node) -> void:
 		motion.relative = Vector2(20 if slot == 1 else -20, 0)
 		get_viewport().push_input(motion)
 		return pilot.position.distance_to(origin) > 8.0, 1.0)
-	_trace("pilot_moved", {"slot": slot, "distance": origin.distance_to(pilot.position)})
+	_trace("pilot_moved", {"slot": slot, "distance": origin.distance_to(pilot.position), "x": pilot.position.x, "y": pilot.position.y})
 	_check("local_input_moves_plane_before_first_wave", moved and Time.get_ticks_msec() - _battle_at <= 1000)
+	# Exercise successive position reports while the host observes distinct projectile batches.
+	if slot != 1 and moved:
+		var until := Time.get_ticks_msec() + 2000
+		var direction := -1.0
+		while Time.get_ticks_msec() < until and is_instance_valid(pilot) and NetworkManager.is_online():
+			var x := pilot.position.x - origin.x
+			if x < -115.0:
+				direction = 1.0
+			elif x > 70.0:
+				direction = -1.0
+			var motion := InputEventMouseMotion.new()
+			motion.relative = Vector2(direction * 16.0, 0)
+			get_viewport().push_input(motion)
+			await get_tree().process_frame
 
 func _verify_entry_replays(battle: Node) -> void:
 	var round_id := GameState.get_sync_round()
@@ -192,11 +227,14 @@ func _trace(event: String, data: Dictionary) -> void:
 func _verify_remix_recovery_and_retry(host: bool) -> void:
 	var battle := get_tree().current_scene
 	var battle_id := battle.get_instance_id()
+	var old_round := GameState.get_sync_round()
 	var reserved := await _wait_until(func(): return NetworkManager.recovery.is_reserved(), 4.0)
 	_check("remix_recovery_reserved", reserved)
 	if not reserved:
 		return
 	var original_wire: int = NetworkManager.recovery.guest_wire
+	var slot: int = NetworkManager.recovery.guest_slot
+	var old_pilot: Node = battle._players.get(slot)
 	if not host:
 		NetworkManager.recovery.set_background(true)
 		await get_tree().create_timer(.2).timeout
@@ -205,7 +243,8 @@ func _verify_remix_recovery_and_retry(host: bool) -> void:
 	var restored := await _wait_until(func():
 		return (NetworkManager.recovery.guest_wire > 1 and NetworkManager.recovery.guest_wire != original_wire
 			and not get_tree().paused and NetworkManager.recovery.deadline == 0), 13.0)
-	_check("remix_reconnect_keeps_agreed_rule", restored and get_tree().current_scene == battle and battle.remix)
+	_check("remix_reconnect_keeps_agreed_rule", restored and get_tree().current_scene == battle and battle.remix
+		and battle._players.get(slot) == old_pilot)
 	if not restored:
 		return
 	if host:
@@ -213,8 +252,14 @@ func _verify_remix_recovery_and_retry(host: bool) -> void:
 		battle._restart()
 	var restarted := await _wait_until(func():
 		var current := get_tree().current_scene
-		return is_instance_valid(current) and current.get_instance_id() != battle_id and current.scene_file_path == RIFT, 4.0)
-	_check("remix_host_retry_retains_rule", restarted and get_tree().current_scene.remix)
+		return (is_instance_valid(current) and current.get_instance_id() != battle_id and current.scene_file_path == RIFT
+			and current._player_entry_ready), 4.0)
+	_check("remix_host_retry_retains_rule", restarted and get_tree().current_scene.remix and GameState.get_sync_round() > old_round)
+	if not host and restarted:
+		var current := get_tree().current_scene
+		current._rpc_spawn_networked_player(old_round, 99, 300.0, 400.0)
+		_check("retry_rejects_old_round_player", current._players.size() == 2 and not current._players.has(99))
+		await get_tree().create_timer(.3).timeout
 
 func _verify_rejection(lobby: Node, host: bool) -> void:
 	var status: Label = lobby._lbl_host_status if host else lobby._lbl_join_status
