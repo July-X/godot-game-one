@@ -28,6 +28,8 @@ func _run() -> void:
 	await get_tree().process_frame
 	_check("title_exposes_trial", is_instance_valid(title.get_node("Menu/BtnRiftRoute")))
 	title.get_node("Menu/BtnRiftRoute").pressed.emit()
+	_check("title_shows_both_rules_with_original_default", title.get_node("RiftChoices").visible and not GameState.rift_remix)
+	title.get_node("RiftChoices/Original").pressed.emit()
 	await get_tree().scene_changed
 	_world = get_tree().current_scene
 	_check("starts_clean", _world is Trial and GameState.get_card_stacks(1).is_empty())
@@ -42,6 +44,7 @@ func _run() -> void:
 	await _frames(121)
 	_check("hint_expires_while_stage_clock_advances", _world._route_hint_left == 0.0
 		and _world._hud._phase_label.text.ends_with(Trial.LEG_NAMES[Trial.Leg.BUILD]) and _world.trial_tick > Trial.CARD_TICK + 110)
+	await _verify_second_wave(false)
 	_world.trial_tick = Trial.ELITE_LEG - 1
 	await _frames(2)
 	_check("hunter_leg_replaces_build_hint", _world._hud._phase_label.text == Trial.LEG_HINTS[Trial.Leg.ELITE])
@@ -86,12 +89,57 @@ func _run() -> void:
 		and _world._result.text.ends_with("下局试着先切掉一股齐射"))
 	_world._return_to_title.call_deferred()
 	await get_tree().scene_changed
+	title = get_tree().current_scene
+	title.get_node("Menu/BtnRiftRoute").pressed.emit()
+	title.get_node("RiftChoices/Remix").pressed.emit()
+	await get_tree().scene_changed
+	_world = get_tree().current_scene
+	_check("title_starts_selected_remix", _world.remix)
+	_world.trial_tick = Trial.CARD_TICK - 1
+	await _frames(2)
+	UpgradeDraft.choose_card(1, 0)
+	_check("remix_hint_precedes_second_wave", _world._hud._phase_label.text == Trial.RouteRules.REMIX_BUILD_HINT)
+	await _verify_second_wave(true)
+	_world._restart.call_deferred()
+	await get_tree().scene_changed
+	_world = get_tree().current_scene
+	_check("solo_retry_retains_only_selected_rule", _world.remix and _world.interruptions == 0 and _world._fighters.is_empty())
+	_world._return_to_title.call_deferred()
+	await get_tree().scene_changed
+	_check("returning_to_title_restores_original", not GameState.rift_remix)
 	get_tree().current_scene._on_single_pressed()
 	await get_tree().scene_changed
 	_check("ordinary_run_keeps_original_rank_and_state", get_tree().current_scene.scene_file_path == Main.resource_path
 		and Leaderboard.get_entries() == baseline and GameState.get_card_stacks(1).is_empty()
 		and GameState.boss_encounter_count == 0 and GameState.kills_for_next_level < 100)
 	get_tree().quit(int(_failed != 0))
+
+func _verify_second_wave(remix: bool) -> void:
+	_world._clear_non_boss_entities()
+	_world._fighters.clear()
+	_world._player.set_physics_process(false)
+	_world._player.global_position = _world.field * Vector2(.5, .78)
+	var hp := GameState.get_current_health(1)
+	var shield := GameState.get_shield_layers(1)
+	var start: int = Trial.BUILD_WAVES[1]
+	_world.trial_tick = start - 1
+	await _frames(2)
+	var emitters := ["column-rear", "cluster-rear", "wing"]
+	var schedule: Array[int] = []
+	for name: String in emitters:
+		schedule.append(int(_world._fighters[name].fire) - start)
+	var column_x: float = _world._fighters["column-rear"].target.x
+	var label := "remix" if remix else "original"
+	print("[RIFT_QA] wave ", label, " column_x=", column_x, " release_frames=", schedule)
+	_check(label + "_second_wave_has_expected_side_and_order", is_equal_approx(column_x / _world.field.x, .26 if remix else .74)
+		and schedule == ([194, 208, 225] if remix else [225, 194, 208]))
+	await _frames(226)
+	var shots := get_tree().get_nodes_in_group("enemy_bullets")
+	_check(label + "_nine_real_projectiles_at_original_speed", shots.size() == 9
+		and shots.all(func(shot: Node): return shot._speed == Trial.Enemy.SPEED_SLOW))
+	await _frames(70)
+	_check(label + "_center_clear_of_actual_projectiles", GameState.get_current_health(1) == hp
+		and GameState.get_shield_layers(1) == shield)
 
 func _test_hunter_reward() -> void:
 	_world.trial_tick = Trial.ELITE_LEG - 1

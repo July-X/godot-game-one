@@ -2,6 +2,7 @@ extends "res://scripts/battle/trials/opening_trial.gd"
 ## Authored encounter clock; player and projectile physics remain in Main.
 enum Leg { INTERCEPT, BUILD, ELITE, BOSS }
 const HUNTER_ENTRY_SECONDS := 0.26
+const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 const CARD_TICK := 35 * 60
 const ELITE_LEG := 90 * 60
 const SETTLE_TICK := 197 * 60
@@ -18,6 +19,7 @@ const CUT_CUE_TICKS := 27
 const FLANK_SPARK_TICKS := 19
 var leg := Leg.INTERCEPT
 var _settling := false
+var remix := false
 var _route_hint_left := 0.0
 var _build_hint_pending := false
 var _draft_wait := false
@@ -32,6 +34,7 @@ var _flank_sparks: Array[Dictionary] = []
 @onready var _spark_layer: Node2D = $FlankSparks
 
 func _ready() -> void:
+	remix = GameState.rift_remix
 	super._ready()
 	_spark_layer.draw.connect(_draw_flank_sparks)
 	$TrialUI/Options/Buttons/Retry.visible = _authoritative()
@@ -91,11 +94,14 @@ func _physics_process(delta: float) -> void:
 		_log("wave", {"id": trial_tick, "type": "intercept"})
 	if trial_tick in BUILD_WAVES:
 		var slot := BUILD_WAVES.find(trial_tick)
+		var mirrored := slot % 2 == 1
 		if slot < 2:
-			_add_intercept_wave(slot == 1)
+			var remix_second := remix and slot == 1
+			mirrored = mirrored and not remix_second
+			_add_intercept_wave(mirrored, remix_second)
 		else:
-			_add_build(.025, slot % 2 == 1)
-		_log("wave", {"id": slot, "type": "build", "mirrored": slot % 2 == 1})
+			_add_build(.025, mirrored)
+		_log("wave", {"id": slot, "type": "build", "mirrored": mirrored, "remix": remix})
 	if trial_tick == ELITE_LEG:
 		_set_leg(Leg.ELITE)
 	if trial_tick == ELITE_LEG + 155:
@@ -123,18 +129,21 @@ func _physics_process(delta: float) -> void:
 	if trial_tick % 60 == 0 and (trial_tick < SETTLE_TICK or trial_tick >= BOSS_LEG):
 		_update_countdown()
 
-func _add_intercept_wave(mirrored: bool) -> void:
+func _add_intercept_wave(mirrored: bool, remix_second := false) -> void:
 	var column := .74 if mirrored else .26
 	var cluster := .35 if mirrored else .65
 	var wing := .14 if mirrored else .86
 	var side := -1.0 if mirrored else 1.0
+	var releases := [225, 194, 208] if mirrored else [201, 220, 193]
+	if remix_second:
+		releases = [194, 208, 225]
 	_add_fighter("column-front", 0, Vector2(column, .54), 0, 0, -15.0 * side)
 	_add_fighter("column-middle", 0, Vector2(column, .405), 0, 0, 19.0 * side)
-	_add_fighter("column-rear", 1, Vector2(column, .27), 225 if mirrored else 201)
+	_add_fighter("column-rear", 1, Vector2(column, .27), releases[0])
 	_add_fighter("cluster-front", 0, Vector2(cluster, .42))
 	_add_fighter("cluster-neighbor", 0, Vector2(cluster, .39), 0, 0, -47.0 * side)
-	_add_fighter("cluster-rear", 1, Vector2(cluster, .39), 194 if mirrored else 220, 0, 47.0 * side)
-	_add_fighter("wing", 1, Vector2(wing, .38), 208 if mirrored else 193, ARMOR_HP)
+	_add_fighter("cluster-rear", 1, Vector2(cluster, .39), releases[1], 0, 47.0 * side)
+	_add_fighter("wing", 1, Vector2(wing, .38), releases[2], ARMOR_HP)
 
 func _draw_fan_heading(center: Vector2, at: Vector2, progress: float) -> void:
 	var ink := Color(1.0, .60, .40, lerpf(.3, .82, progress))
@@ -312,6 +321,8 @@ func _set_leg(value: Leg) -> void:
 func _update_countdown() -> void:
 	var title: String = "裂隙航道 · " + ("整备，母舰将至" if _settling else LEG_NAMES[leg])
 	var hint: String = LEG_HINTS[leg] if _route_notice.is_empty() else _route_notice
+	if remix and leg == Leg.BUILD:
+		hint = RouteRules.REMIX_BUILD_HINT
 	_hud.set_wave_phase(hint if _route_hint_left > 0.0 else title, Color.LIGHT_CYAN)
 
 func _apply_route_leg(next_leg: int, settling: bool, announce := true) -> void:
@@ -362,12 +373,12 @@ func send_lan_resume_snapshot(wire: int) -> Dictionary:
 		if is_instance_valid(order.ship) and not order.ship.is_queued_for_deletion() and int(order.fire) > trial_tick:
 			cues[int(order.ship.entity_id)] = int(order.fire) - trial_tick
 	state.route = {"leg": leg, "settling": trial_tick >= SETTLE_TICK and trial_tick < BOSS_LEG,
-		"cues": cues, "outcome": _route_outcome, "cuts": interruptions}
+		"cues": cues, "outcome": _route_outcome, "cuts": interruptions, "remix": remix}
 	state.result = false # Do not enter the ordinary leaderboard path.
 	return state
 
 func apply_lan_resume_snapshot(state: Dictionary) -> bool:
-	if not super.apply_lan_resume_snapshot(state) or not state.has("route"):
+	if not state.has("route") or state.route.get("remix") != remix or not super.apply_lan_resume_snapshot(state):
 		return false
 	_remote_cues.clear()
 	_fighters.clear()

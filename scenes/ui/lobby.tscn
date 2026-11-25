@@ -124,6 +124,12 @@ theme_override_font_sizes/font_size = 24
 theme_override_colors/font_color = Color(0.2, 1, 0.4, 1)
 visible = false
 
+[node name="RiftRule" type="OptionButton" parent="VBox/PanelHost"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 42)
+theme_override_font_sizes/font_size = 16
+visible = false
+
 [node name="BtnRiftRoute" type="Button" parent="VBox/PanelHost"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 48)
@@ -150,6 +156,12 @@ theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 horizontal_alignment = 1
 autowrap_mode = 2
+
+[node name="ConfirmRiftRule" type="Button" parent="VBox/PanelJoin"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 42)
+text = "确认变奏航道"
+visible = false
 
 [node name="BtnQuickJoin" type="Button" parent="VBox/PanelJoin"]
 layout_mode = 2

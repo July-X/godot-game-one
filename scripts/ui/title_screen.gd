@@ -1,6 +1,7 @@
 extends CanvasLayer
 
 const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
+const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 
 @export var show_opening_choices_on_entry := false
 
@@ -11,8 +12,10 @@ const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 @onready var _btn_first_card: Button = $Menu/BtnFirstCard
 @onready var _trial_choices: VBoxContainer = $TrialChoices
 @onready var _opening_choices: VBoxContainer = $OpeningChoices
+@onready var _rift_choices: VBoxContainer = $RiftChoices
 
 func _ready() -> void:
+	GameState.rift_remix = false
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_start_blink()
@@ -24,7 +27,12 @@ func _ready() -> void:
 	$Menu/BtnOpeningTrial.pressed.connect(_show_menu.bind(_opening_choices))
 	var rift := _menu.get_node_or_null("BtnRiftRoute") as Button
 	if rift:
-		rift.pressed.connect(_start_game.bind("res://scenes/rift_route_trial.tscn"), CONNECT_DEFERRED)
+		rift.pressed.connect(_show_menu.bind(_rift_choices))
+	$RiftChoices/Original.text = RouteRules.ORIGINAL
+	$RiftChoices/Remix.text = RouteRules.REMIX
+	$RiftChoices/Original.pressed.connect(_start_rift.bind(false), CONNECT_DEFERRED)
+	$RiftChoices/Remix.pressed.connect(_start_rift.bind(true), CONNECT_DEFERRED)
+	$RiftChoices/Back.pressed.connect(_show_menu.bind(_menu))
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/Back.pressed.connect(_show_menu.bind(_menu))
@@ -41,7 +49,7 @@ func _notification(what: int) -> void:
 		_layout_title.call_deferred()
 
 func _show_menu(active: VBoxContainer) -> void:
-	for menu: VBoxContainer in [_menu, _trial_choices, _opening_choices]:
+	for menu: VBoxContainer in [_menu, _trial_choices, _opening_choices, _rift_choices]:
 		menu.visible = menu == active
 	_layout_title()
 
@@ -52,7 +60,7 @@ func _layout_title() -> void:
 
 func _layout_in_safe_area(safe: Rect2) -> void:
 	var content := safe.grow(-SafeArea.MENU_MARGIN)
-	for menu: VBoxContainer in [_menu, _trial_choices, _opening_choices]:
+	for menu: VBoxContainer in [_menu, _trial_choices, _opening_choices, _rift_choices]:
 		menu.size = Vector2(minf(336.0, content.size.x), 0)
 		menu.position = (content.get_center() - menu.size * 0.5).round()
 	$VersionLabel.position = content.end - $VersionLabel.size
@@ -85,6 +93,10 @@ func _start_game(scene_path := "res://scenes/main.tscn") -> void:
 	HarmonyBridge.stop_all()
 	NetworkManager.disconnect_network()
 	get_tree().change_scene_to_file(scene_path)
+
+func _start_rift(remix: bool) -> void:
+	GameState.rift_remix = remix
+	_start_game("res://scenes/rift_route_trial.tscn")
 
 
 func _on_multiplayer_pressed() -> void:

@@ -5,8 +5,9 @@ extends Control
 signal game_start_requested
 
 const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
+const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 ## 开局或战斗消息不兼容时更新此版本。检查先于任何开局远程调用。
-const LAN_PROTOCOL := "space-bullet-hell-lan:5"
+const LAN_PROTOCOL := "space-bullet-hell-lan:6"
 const VERSION_WAIT_MS := 3000
 const VERSION_ERROR := "联机版本不兼容，请将两台设备更新到同一版本后重试"
 
@@ -22,6 +23,7 @@ var _mode: LobbyMode = LobbyMode.NONE
 @onready var _lbl_password: Label = $VBox/PanelHost/LblPassword
 @onready var _btn_start: Button = $VBox/PanelHost/BtnStart
 @onready var _btn_rift: Button = $VBox/PanelHost/BtnRiftRoute
+@onready var _rift_rule: OptionButton = $VBox/PanelHost/RiftRule
 @onready var _lbl_host_status: Label = $VBox/PanelHost/LblHostStatus
 
 @onready var _panel_join: VBoxContainer = $VBox/PanelJoin
@@ -29,6 +31,7 @@ var _mode: LobbyMode = LobbyMode.NONE
 @onready var _host_list: VBoxContainer = $VBox/PanelJoin/HostListScroll/HostList
 @onready var _lbl_join_status: Label = $VBox/PanelJoin/LblJoinStatus
 @onready var _btn_quick_join: Button = $VBox/PanelJoin/BtnQuickJoin
+@onready var _confirm_rift_rule: Button = $VBox/PanelJoin/ConfirmRiftRule
 
 @onready var _btn_back: Button = $VBox/BtnBack
 @onready var _status_label: Label = $VBox/StatusLabel
@@ -38,9 +41,14 @@ var _host_buttons: Dictionary = {}
 var _debug_tick: float = 0.0
 var _compatible_peer := 0
 var _version_deadline := 0
+var _rule_revision := 0
+var _preview_revision := -1
 
 
 func _ready() -> void:
+	_rift_rule.add_item(RouteRules.ORIGINAL)
+	_rift_rule.add_item(RouteRules.REMIX)
+	_rift_rule.select(0)
 	_connect_signals()
 	_show_mode_select()
 	## 隐藏联机调试信息（DebugTitle + DebugInfo），保留内部刷新逻辑供后续排查
@@ -84,6 +92,8 @@ func _connect_signals() -> void:
 	_btn_back.pressed.connect(_on_back_pressed, CONNECT_DEFERRED)
 	_btn_start.pressed.connect(_on_start_pressed)
 	_btn_rift.pressed.connect(_on_start_pressed.bind(true))
+	_rift_rule.item_selected.connect(_publish_rift_rule.unbind(1))
+	_confirm_rift_rule.pressed.connect(_confirm_rift_preview)
 	_btn_quick_join.pressed.connect(_on_quick_join_pressed)
 
 	NetworkManager.player_connected.connect(_on_player_connected)
@@ -121,6 +131,8 @@ func _show_host_panel() -> void:
 	_panel_join.visible = false
 	_btn_start.visible = false
 	_btn_rift.visible = false
+	_rift_rule.hide()
+	_rift_rule.select(0)
 	_btn_start.disabled = true
 	_btn_rift.disabled = true
 	_set_legacy_controls_visible(false)
@@ -154,6 +166,8 @@ func _show_join_panel() -> void:
 	_clear_host_list()
 	_btn_quick_join.visible = false
 	_btn_quick_join.disabled = true
+	_confirm_rift_rule.hide()
+	_preview_revision = -1
 	_lbl_scan_hint.text = "🔍 正在扫描附近鸿蒙设备…"
 	_lbl_join_status.text = "无需手动连热点，等待房间出现后点击加入"
 	var scan_err := HarmonyBridge.start_scan()
@@ -177,10 +191,43 @@ func _on_join_mode_selected() -> void:
 
 
 func _on_start_pressed(rift_route := false) -> void:
-	if not NetworkManager.is_host or not _compatible_peer in NetworkManager.connected_peers:
+	if not NetworkManager.is_host or not _compatible_peer in NetworkManager.connected_peers or (rift_route and _btn_rift.disabled):
 		return
 	_stop_discovery_services()
-	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE, rift_route)
+	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE, rift_route, rift_route and _rift_rule.selected == 1)
+
+func _publish_rift_rule() -> void:
+	if not multiplayer.is_server() or _compatible_peer == 0:
+		return
+	_rule_revision += 1
+	var remix := _rift_rule.selected == 1
+	_btn_rift.disabled = remix
+	_lbl_host_status.text = "等待加入端确认变奏航道…" if remix else "玩家已加入，可以开始游戏"
+	_rpc_preview_rift_rule.rpc_id(_compatible_peer, _rule_revision, remix)
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_preview_rift_rule(revision: int, remix: bool) -> void:
+	if _compatible_peer != 1 or revision <= _preview_revision:
+		return
+	_preview_revision = revision
+	_lbl_join_status.text = RouteRules.description(remix)
+	_confirm_rift_rule.visible = remix
+
+func _confirm_rift_preview() -> void:
+	if _compatible_peer != 1 or not _confirm_rift_rule.visible:
+		return
+	_confirm_rift_rule.hide()
+	_lbl_join_status.text = RouteRules.REMIX + "\n已确认，等待房主开始"
+	_rpc_confirm_rift_rule.rpc_id(1, _preview_revision)
+
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_confirm_rift_rule(revision: int) -> void:
+	if not multiplayer.is_server():
+		return
+	if multiplayer.get_remote_sender_id() != _compatible_peer or revision != _rule_revision or _rift_rule.selected != 1:
+		return
+	_btn_rift.disabled = false
+	_lbl_host_status.text = "加入端已确认变奏航道"
 
 
 func _on_back_pressed() -> void:
@@ -191,7 +238,7 @@ func _on_back_pressed() -> void:
 
 
 @rpc("authority", "reliable", "call_local")
-func _rpc_start_game(battle_size: Vector2i, rift_route := false) -> void:
+func _rpc_start_game(battle_size: Vector2i, rift_route := false, remix := false) -> void:
 	if not NetworkManager.is_online() or _compatible_peer == 0:
 		_show_version_error()
 		return
@@ -202,6 +249,7 @@ func _rpc_start_game(battle_size: Vector2i, rift_route := false) -> void:
 		_status_label.text = "战场尺寸不兼容，请确认双方的游戏版本"
 		return
 	game_start_requested.emit()
+	GameState.rift_remix = rift_route and remix
 	get_tree().change_scene_to_file("res://scenes/rift_route_trial.tscn" if rift_route else "res://scenes/main.tscn")
 
 
@@ -303,6 +351,7 @@ func _on_player_disconnected(_peer_id: int) -> void:
 		_btn_rift.disabled = true
 		_btn_start.visible = false
 		_btn_rift.visible = false
+		_rift_rule.hide()
 		_lbl_host_status.text = "玩家已离开，等待重新加入…"
 
 
@@ -332,8 +381,8 @@ func _on_lobby_packet(peer_id: int, packet: PackedByteArray) -> void:
 	_version_deadline = 0
 	if NetworkManager.is_host:
 		_btn_start.disabled = false
-		_btn_rift.disabled = false
-		_lbl_host_status.text = "玩家已加入，可以开始游戏"
+		_rift_rule.show()
+		_publish_rift_rule()
 	else:
 		_lbl_join_status.text = "联机版本一致，等待房主开始…"
 
@@ -345,12 +394,16 @@ func _show_version_error() -> void:
 	_version_deadline = 0
 	_btn_start.disabled = true
 	_btn_rift.disabled = true
+	_rift_rule.hide()
+	_confirm_rift_rule.hide()
 	_version_label().text = VERSION_ERROR
 
 
 func _on_connection_failed() -> void:
 	_compatible_peer = 0
 	_version_deadline = 0
+	_confirm_rift_rule.hide()
+	_preview_revision = -1
 	_lbl_join_status.text = "❌ 连接失败，请重试"
 	for key: String in _host_buttons:
 		var btn: Button = _host_buttons[key]
@@ -361,6 +414,8 @@ func _on_connection_failed() -> void:
 func _on_server_disconnected() -> void:
 	_compatible_peer = 0
 	_version_deadline = 0
+	_confirm_rift_rule.hide()
+	_preview_revision = -1
 	_lbl_join_status.text = "服务器断开，请返回重试"
 	_refresh_debug_info()
 

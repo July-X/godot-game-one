@@ -65,6 +65,26 @@ custom_minimum_size = Vector2(0, 48)
 text = "裂隙航道 · 试玩"
 theme_override_font_sizes/font_size = 20
 
+[node name="RiftChoices" type="VBoxContainer" parent="."]
+visible = false
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="RiftChoices"]
+text = "裂隙航道 · 选择本局路线"
+horizontal_alignment = 1
+
+[node name="Original" type="Button" parent="RiftChoices"]
+custom_minimum_size = Vector2(0, 56)
+theme_override_font_sizes/font_size = 20
+
+[node name="Remix" type="Button" parent="RiftChoices"]
+custom_minimum_size = Vector2(0, 56)
+theme_override_font_sizes/font_size = 20
+
+[node name="Back" type="Button" parent="RiftChoices"]
+custom_minimum_size = Vector2(0, 48)
+text = "返回"
+
 [node name="TrialChoices" type="VBoxContainer" parent="."]
 visible = false
 theme_override_constants/separation = 8
