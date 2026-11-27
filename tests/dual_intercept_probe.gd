@@ -25,12 +25,16 @@ var _volleys: Array[Dictionary] = []
 var _cuts: Array[String] = []
 var _leaderboard: Array = []
 var _entry_wire := 0
+var _legacy_host := false
+var _legacy_self := false
 
 func _run() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var args := OS.get_cmdline_user_args()
 	_host = args[0] == "host"
 	_mode = args[1]
+	_legacy_host = args.has("review-legacy-host")
+	_legacy_self = (_legacy_host and _host) or (args.has("review-legacy-client") and not _host)
 	_evidence = args[3] if args.size() > 3 else ""
 	var wide := args[2] == "wide"
 	get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
@@ -88,20 +92,30 @@ func _run() -> void:
 	if not await _attach_battle(0):
 		_done()
 		return
-	await _fly_trial(_mode)
+	var flights := [_mode]
 	if _mode == "both":
-		var old_round := GameState.get_sync_round()
-		if _host:
-			await get_tree().create_timer(.35).timeout
-			_trial.get_node("TrialUI/Options/Buttons/Retry").pressed.emit()
-		if await _attach_battle(old_round):
-			_check("retry_clears_old_cuts", _trial.interruptions == 0 and _trial.leg == Trial.Leg.INTERCEPT)
-			if not _host:
-				_trial._rpc_route_result(old_round, "完成", 2, Trial.Leg.BOSS, {})
-			_check("retry_ignores_old_result", not _trial.finished and _trial.interruptions == 0)
-			await _fly_trial("retry-center")
+		flights = ["both", "retry-center"]
+	elif _mode == "sequence":
+		flights = ["center", "both", "retry-center"]
+	for index in flights.size():
+		if index > 0 and not await _retry_trial():
+			break
+		await _fly_trial(flights[index])
 	await get_tree().create_timer(.35).timeout
 	_done()
+
+func _retry_trial() -> bool:
+	var old_round := GameState.get_sync_round()
+	if _host:
+		await get_tree().create_timer(.35).timeout
+		_trial.get_node("TrialUI/Options/Buttons/Retry").pressed.emit()
+	if not await _attach_battle(old_round):
+		return false
+	_check("retry_clears_old_cuts", _trial.interruptions == 0 and _trial.leg == Trial.Leg.INTERCEPT)
+	_trial._rpc_route_result(old_round, "完成", 1, Trial.Leg.BOSS, {"cut_side": "left"})
+	_check("retry_ignores_old_result", not _trial.finished and not _trial._result.visible
+		and _trial.interruptions == 0 and _trial._route_review.is_empty())
+	return true
 
 func _attach_battle(old_round: int) -> bool:
 	var ready := await _wait_until(func():
@@ -130,8 +144,10 @@ func _attach_battle(old_round: int) -> bool:
 	return true
 
 func _fly_trial(mode: String) -> void:
-	var left := mode in ["left", "both"]
-	var right := mode in ["right", "both"]
+	var left := mode in ["left", "both", "both-no-pulse"]
+	var right := mode in ["right", "both", "both-no-pulse"]
+	var expected := int(left) + int(right)
+	var outcome := "被击落" if mode == "both-no-pulse" else "完成"
 	var starting_health := GameState.get_current_health(NetworkManager.local_player_id())
 	var center := P1_MIDDLE if _host else P2_MIDDLE
 	var lane := center
@@ -163,27 +179,75 @@ func _fly_trial(mode: String) -> void:
 		await _test_late_cut()
 	_drive_to(center, false)
 	if mode == "both":
-		await _test_rewire()
+		await _test_rewire(expected)
 	if mode == "downed" and _host:
 		_trial._players[NetworkManager.recovery.guest_slot].force_kill()
 	if mode == "downed":
 		_check("downed_state_reaches_both_peers", await _wait_until(func():
 			return GameState.is_player_downed(NetworkManager.recovery.guest_slot), 1.5))
+	elif mode == "both-no-pulse":
+		await _finish_before_first_pulse()
 	else:
 		await _test_pulse(mode, 1, left and right)
 		_drive_to(center, false)
 		await _test_pulse(mode, 2, false)
 	var completed := await _wait_until(func(): return _trial.finished, 28.0)
-	var expected := int(left) + int(right)
-	if completed and not _host:
-		_trial._rpc_route_result(GameState.get_sync_round(), "被击落", expected + 1, Trial.Leg.BOSS, {})
+	var side := "left" if left else "right"
+	var review := {"cut_side": side} if expected == 1 and not _legacy_self and not _legacy_host else {}
+	var text := _expected_result(outcome, expected, side)
 	_check("ordinary_rank_and_growth_stay_out", GameState.level == 1 and GameState.get_bullet_damage(NetworkManager.local_player_id()) == 4
-		and _trial._route_review.is_empty() and not _trial._draft_wait and Leaderboard.get_entries() == _leaderboard)
+		and not _trial._draft_wait and Leaderboard.get_entries() == _leaderboard)
 	_check("both_peers_reach_matching_summary", completed and _trial.leg == Trial.Leg.BOSS
-		and _trial._route_outcome == "完成" and _trial.interruptions == expected and _trial._result.text == "完成 · 截断 %d 次" % expected
-		and (not _host or _trial.trial_tick == Trial.DUAL_END_TICK))
-	_trace("result", {"mode": mode, "tick": _trial.trial_tick, "cuts": _trial.interruptions, "text": _trial._result.text})
+		and _trial._route_outcome == outcome and _trial.interruptions == expected and _trial._result.text == text
+		and _trial._route_review == review
+		and (not _host or mode == "both-no-pulse" or _trial.trial_tick == Trial.DUAL_END_TICK))
+	if completed:
+		_trial._rpc_route_result(GameState.get_sync_round(), "重复回执", 1, Trial.Leg.INTERCEPT,
+			{"cut_side": "right" if side == "left" else "left"})
+		_check("duplicate_result_cannot_rewrite_summary", _trial._route_outcome == outcome and _trial.interruptions == expected
+			and _trial.leg == Trial.Leg.BOSS and _trial._result.text == text and _trial._route_review == review)
+	if mode == "left":
+		await _test_rewire(expected, text)
+		_check("terminal_snapshot_restores_authoritative_review", _trial._route_review == review)
+	await get_tree().process_frame
+	_check_result_layout()
+	_trace("result", {"mode": mode, "tick": _trial.trial_tick, "cuts": _trial.interruptions,
+		"review": _trial._route_review, "text": _trial._result.text})
 	_capture(mode + "-result")
+
+func _expected_result(outcome: String, count: int, side: String) -> String:
+	if _legacy_self:
+		return "%s · 截断 %d 次" % [outcome, count]
+	if count == 0:
+		return outcome + " · 未截断\n下局分飞，抢在亮弧收紧前击破"
+	if count == 2:
+		return outcome + " · 双侧截断\n解锁母舰首轮宽缺口"
+	var cut := "截断 1 侧" if _legacy_host else ("已截断左侧" if side == "left" else "已截断右侧")
+	return "%s · %s\n下局试着各守一侧" % [outcome, cut]
+
+func _finish_before_first_pulse() -> void:
+	var present := await _wait_until(func(): return is_instance_valid(_trial._boss), 9.0)
+	_check("mothership_present_but_no_pulse_yet", present and _trial.trial_tick < Trial.DUAL_PULSE_TICKS[0]
+		and _trial._boss.coop_pulse_snapshot().phase == Mothership.PulsePhase.OPEN)
+	if _host and present:
+		# Give the client time to see the boss before the real defeat path removes it.
+		await get_tree().create_timer(.35).timeout
+		_trial._players[NetworkManager.recovery.guest_slot].force_kill()
+		_trial._players[1].force_kill()
+		_check("authority_finishes_before_first_pulse", _trial.finished and _trial.trial_tick < Trial.DUAL_PULSE_TICKS[0])
+
+func _check_result_layout() -> void:
+	var viewport := get_viewport()
+	var inset := viewport.get_visible_rect().grow_individual(-64, -26, -44, -46)
+	var safe := Trial.SafeArea.from_display(viewport, viewport.get_screen_transform() * inset)
+	var result := _trial._result.get_global_rect()
+	var retry: Button = _trial.get_node("TrialUI/Options/Buttons/Retry")
+	var back: Button = _trial.get_node("TrialUI/Options/Buttons/Back")
+	_check("summary_and_buttons_fit_simulated_phone_insets", safe.encloses(_trial._options.get_global_rect())
+		and safe.encloses(result) and not result.intersects(back.get_global_rect())
+		and (not _host or not result.intersects(retry.get_global_rect()))
+		and _trial._result.get_minimum_size().x <= result.size.x)
+	_check("summary_keeps_existing_button_permissions", back.is_visible_in_tree() and retry.is_visible_in_tree() == _host)
 
 func _test_late_cut() -> void:
 	if _host:
@@ -199,26 +263,49 @@ func _live_emitter(left: bool) -> bool:
 	return _trial._entities.values().any(func(entity: Node):
 		return entity is Ship and not entity.is_queued_for_deletion() and (entity.global_position.x < 640.0) == left)
 
-func _test_rewire() -> void:
+func _test_rewire(expected_cuts: int, result := "") -> void:
 	var guest_slot: int = NetworkManager.recovery.guest_slot
 	if not _host:
 		NetworkManager.recovery.set_background(true)
 		await get_tree().create_timer(.12).timeout
+		if not result.is_empty():
+			# Discard only the visible replica so the real snapshot must rebuild the terminal review.
+			_trial.finished = false
+			_trial.interruptions = 0
+			_trial._route_review.clear()
+			_trial._result.hide()
 		NetworkManager.drop_lan_transport()
 		NetworkManager.recovery.set_background(false)
 	var resumed := await _wait_until(func():
 		var wire: int = NetworkManager.recovery.guest_wire
 		return wire > 1 and wire != _entry_wire and NetworkManager.recovery.deadline == 0 and not get_tree().paused, 10.0)
-	_check("rewire_restores_same_trial_and_two_cuts", resumed and get_tree().current_scene == _trial
-		and NetworkManager.recovery.guest_slot == guest_slot and _trial.interruptions == 2)
-	_touch(true)
+	_check("rewire_restores_same_trial_and_cuts", resumed and get_tree().current_scene == _trial
+		and NetworkManager.recovery.guest_slot == guest_slot and _trial.interruptions == expected_cuts)
+	_entry_wire = NetworkManager.recovery.guest_wire
+	if result.is_empty():
+		_touch(true)
+	else:
+		_check("rewire_restores_visible_terminal_summary", resumed and _trial.finished and _trial._result.visible
+			and _trial._result.text == result)
 
 func _test_pulse(mode: String, index: int, wide_gap: bool) -> void:
 	var boss: Mothership = null
+	var attempt := {}
 	var locked := await _wait_until(func():
-		return is_instance_valid(_trial._boss) and _trial._boss.coop_pulse_snapshot().phase == Mothership.PulsePhase.LOCK, 21.0)
+		var current: Mothership = _trial._boss
+		if not is_instance_valid(current):
+			return false
+		var pulse := current.coop_pulse_snapshot()
+		if attempt.is_empty() and _trial.trial_tick >= Trial.DUAL_PULSE_TICKS[index - 1]:
+			attempt.merge({"tick": _trial.trial_tick, "phase": pulse.phase, "shield": current.get_shield_hp(),
+				"alive": GameState.get_alive_player_ids()})
+			if _host:
+				attempt["safe_slots"] = GameState.get_alive_player_ids().filter(func(slot: int):
+					return not current._pulse_path(slot).is_empty())
+		return pulse.phase == Mothership.PulsePhase.LOCK, 21.0)
 	_check("pulse_%d_locks" % index, locked)
 	if not locked:
+		_trace("pulse_lock_missing", {"index": index, "tick": _trial.trial_tick, "attempt": attempt})
 		return
 	boss = _trial._boss
 	var lock := boss.coop_pulse_snapshot()
@@ -323,8 +410,9 @@ func _capture_opening(mode: String) -> void:
 
 func _done() -> void:
 	if not _evidence.is_empty():
-		_check("viewport_produced_result_and_keyframes", _frames.has(_mode + "-result") and (_mode == "downed"
-			or (_frames.has(_mode + "-pulse-1-lock") and _frames.has(_mode + "-pulse-2-fire"))))
+		var label := "retry-center" if _mode == "sequence" else _mode
+		_check("viewport_produced_result_and_keyframes", _frames.has(label + "-result") and (_mode in ["downed", "both-no-pulse"]
+			or (_frames.has(label + "-pulse-1-lock") and _frames.has(label + "-pulse-2-fire"))))
 		if _mode == "center":
 			_check("viewport_captured_both_telegraphs_and_volley", _frames.has("center-telegraph") and _frames.has("center-volley"))
 	for label: String in _frames:

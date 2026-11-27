@@ -36,6 +36,7 @@ var _hunter_reward_spent := false
 var _flank_hits := 0
 var _last_duo_success_stamp := 0
 var _route_review: Dictionary = {}
+var _dual_cut_side := ""
 var _route_notice := ""
 var _remote_cues: Dictionary[int, int] = {}
 var _cut_cues: Array[Dictionary] = []
@@ -224,6 +225,8 @@ func _on_emitter_died(role: String) -> void:
 	var order: Dictionary = _fighters[role]
 	# Cancel the queued release explicitly before showing a confirmed cut.
 	order.fire = -1
+	if dual_intercept and role in DUAL_SIDES:
+		_dual_cut_side = role
 	if leg == Leg.BUILD or dual_intercept:
 		var at: Vector2 = order.ship.global_position
 		_show_cut(at)
@@ -365,7 +368,9 @@ func _complete_route(outcome: String) -> void:
 	if not _authoritative() or finished:
 		return
 	var round_id := GameState.get_sync_round() if NetworkManager.is_online() else 0
-	var review := {} if dual_intercept else {"hunter": _hunter_defeated, "reward_used": _hunter_reward_spent, "flank_hits": _flank_hits}
+	var review := {"hunter": _hunter_defeated, "reward_used": _hunter_reward_spent, "flank_hits": _flank_hits}
+	if dual_intercept:
+		review = {"cut_side": _dual_cut_side} if interruptions == 1 and not _dual_cut_side.is_empty() else {}
 	_log("result", {"outcome": outcome, "interruptions": interruptions, "review": review})
 	if NetworkManager.is_online():
 		_rpc_route_result.rpc(round_id, outcome, interruptions, leg, review)
@@ -379,7 +384,11 @@ func _rpc_route_result(round_id: int, outcome: String, cuts: int, reached_leg: i
 	interruptions = cuts
 	if reached_leg in range(LEG_NAMES.size()):
 		leg = reached_leg
-	if review.get("hunter") is bool and review.get("reward_used") is bool and review.get("flank_hits") is int:
+	if dual_intercept:
+		var side: Variant = review.get("cut_side")
+		if cuts == 1 and side is String and side in DUAL_SIDES:
+			_route_review = {"cut_side": side}
+	elif review.get("hunter") is bool and review.get("reward_used") is bool and review.get("flank_hits") is int:
 		_route_review = review
 	_route_outcome = outcome
 	_finish(outcome)
@@ -456,6 +465,8 @@ func send_lan_resume_snapshot(wire: int) -> Dictionary:
 func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 	if not state.has("route") or state.route.get("remix") != remix or not super.apply_lan_resume_snapshot(state):
 		return false
+	if dual_intercept and finished:
+		return true
 	_remote_cues.clear()
 	_fighters.clear()
 	for eid: int in state.route.cues:
@@ -464,7 +475,7 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 		interruptions = state.route.cuts
 	_apply_route_leg(state.route.leg, state.route.settling, false)
 	if not str(state.route.outcome).is_empty():
-		_rpc_route_result(state.round, state.route.outcome, state.route.cuts, state.route.leg, state.route.review)
+		_rpc_route_result(state.round, state.route.outcome, state.route.cuts, state.route.leg, state.route.get("review", {}))
 	return true
 
 func set_lan_hold(held: bool) -> void:
@@ -495,6 +506,8 @@ func _finish(outcome: String) -> void:
 	_update_countdown()
 	super._finish(outcome)
 	if dual_intercept:
+		_result.text = _dual_result_text(outcome)
+		_layout_options()
 		return
 	if not _route_review.is_empty():
 		var hunter := "猎手未击破"
@@ -503,6 +516,21 @@ func _finish(outcome: String) -> void:
 		_result.text += "\n%s · 盾沿命中 %d 次" % [hunter, _route_review.flank_hits]
 	_result.text += "\n" + _next_attempt_tip(outcome)
 	_layout_options()
+
+func _dual_result_text(outcome: String) -> String:
+	match interruptions:
+		0:
+			return "%s · 未截断\n下局分飞，抢在亮弧收紧前击破" % outcome
+		1:
+			var side := "截断 1 侧"
+			match _route_review.get("cut_side", ""):
+				"left": side = "已截断左侧"
+				"right": side = "已截断右侧"
+			return "%s · %s\n下局试着各守一侧" % [outcome, side]
+		2:
+			return "%s · 双侧截断\n解锁母舰首轮宽缺口" % outcome
+		_:
+			return "%s · 截断 %d 次" % [outcome, interruptions]
 
 func _next_attempt_tip(outcome: String) -> String:
 	if outcome == "通关":
