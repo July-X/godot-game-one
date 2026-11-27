@@ -20,12 +20,13 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 	companion object {
 		private const val TAG = "HarmonyNearbyGame"
 		private const val SERVICE_TYPE = "_spacebullet._tcp"
-		private val STATUS_SIGNAL = SignalInfo("status", String::class.java)
+		private val STATUS_SIGNAL = SignalInfo("status", String::class.java, Int::class.javaObjectType)
 		private val HOST_DISCOVERED_SIGNAL = SignalInfo(
 			"host_discovered",
 			String::class.java,
 			String::class.java,
-			Int::class.java
+			Int::class.javaObjectType,
+			Int::class.javaObjectType
 		)
 	}
 
@@ -38,6 +39,7 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 	private var resolveListener: NsdManager.ResolveListener? = null
 	private var multicastLock: WifiManager.MulticastLock? = null
 	private var isResolving: Boolean = false
+	private var discoveryGeneration: Int = 0
 
 	override fun getPluginName(): String = "HarmonyNearbyGame"
 
@@ -45,6 +47,9 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 		STATUS_SIGNAL,
 		HOST_DISCOVERED_SIGNAL
 	)
+
+	@UsedByGodot
+	fun getDiscoveryGeneration(): Int = discoveryGeneration
 
 	// The engine's immersive safe area accounts for cutouts, but omits gesture navigation.
 	@UsedByGodot
@@ -83,6 +88,7 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 
 	@UsedByGodot
 	fun startHostAdvertise(roomName: String, gamePort: Int) {
+		val generation = ++discoveryGeneration
 		try {
 		val manager = nsdManager
 		if (manager == null) {
@@ -97,20 +103,20 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 			port = gamePort
 		}
 		registrationListener = object : NsdManager.RegistrationListener {
-			override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
+			override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = dispatchNsdCallback(generation) {
 				val publishedName = safeServiceName(serviceInfo.serviceName, advertisedName)
 				emitStatus("房间已发布：$publishedName")
 			}
 
-			override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+			override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = dispatchNsdCallback(generation) {
 				emitStatus("发布失败，错误码=$errorCode")
 			}
 
-			override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
+			override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = dispatchNsdCallback(generation) {
 				emitStatus("房间已取消发布")
 			}
 
-			override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+			override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = dispatchNsdCallback(generation) {
 				emitStatus("取消发布失败，错误码=$errorCode")
 			}
 		}
@@ -138,6 +144,7 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 
 	@UsedByGodot
 	fun startScan() {
+		val generation = ++discoveryGeneration
 		try {
 		val manager = nsdManager
 		if (manager == null) {
@@ -149,13 +156,13 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 
 		acquireMulticastLock()
 		resolveListener = object : NsdManager.ResolveListener {
-			override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+			override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = dispatchNsdCallback(generation) {
 				Log.w(TAG, "resolve failed: $errorCode ${serviceInfo.serviceName}")
 				isResolving = false
 				emitStatus("解析失败：${safeServiceName(serviceInfo.serviceName, "UnknownRoom")}($errorCode)")
 			}
 
-			override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+			override fun onServiceResolved(serviceInfo: NsdServiceInfo) = dispatchNsdCallback(generation) {
 				try {
 					val host: InetAddress? = serviceInfo.host
 					val ip = extractPreferredIp(host)
@@ -163,7 +170,7 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 					val roomName = safeServiceName(serviceInfo.serviceName, "HarmonyHost")
 					if (ip.isBlank() || port <= 0) {
 						emitStatus("解析到无效房间：$roomName（仅支持 IPv4）")
-						return
+						return@dispatchNsdCallback
 					}
 					emitHostDiscovered(roomName, ip, port)
 					emitStatus("发现房间：$roomName @ $ip:$port")
@@ -177,37 +184,37 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 		}
 
 		discoveryListener = object : NsdManager.DiscoveryListener {
-			override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+			override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = dispatchNsdCallback(generation) {
 				emitStatus("扫描启动失败，错误码=$errorCode")
 				stopDiscovery()
 			}
 
+			// Stop failures are reported for a retired listener; don't stop the new scan.
 			override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-				emitStatus("停止扫描失败，错误码=$errorCode")
-				stopDiscovery()
+				Log.w(TAG, "stopServiceDiscovery failed: $errorCode")
 			}
 
-			override fun onDiscoveryStarted(serviceType: String) {
+			override fun onDiscoveryStarted(serviceType: String) = dispatchNsdCallback(generation) {
 				emitStatus("正在扫描附近房间… type=$serviceType")
 			}
 
-			override fun onDiscoveryStopped(serviceType: String) {
+			override fun onDiscoveryStopped(serviceType: String) = dispatchNsdCallback(generation) {
 				emitStatus("已停止扫描")
 			}
 
-			override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+			override fun onServiceFound(serviceInfo: NsdServiceInfo) = dispatchNsdCallback(generation) {
 				try {
 					val resolver = resolveListener
 					if (resolver == null) {
-						return
+						return@dispatchNsdCallback
 					}
 					if (!isTargetServiceType(serviceInfo.serviceType)) {
 						Log.d(TAG, "ignore service: ${serviceInfo.serviceName}, type=${serviceInfo.serviceType}")
-						return
+						return@dispatchNsdCallback
 					}
 					if (isResolving) {
 						Log.d(TAG, "skip resolve while busy: ${serviceInfo.serviceName}")
-						return
+						return@dispatchNsdCallback
 					}
 					val roomName = safeServiceName(serviceInfo.serviceName, "UnknownRoom")
 					emitStatus("发现候选房间：$roomName")
@@ -224,7 +231,7 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 				}
 			}
 
-			override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+			override fun onServiceLost(serviceInfo: NsdServiceInfo) = dispatchNsdCallback(generation) {
 				emitStatus("房间离线：${safeServiceName(serviceInfo.serviceName, "UnknownRoom")}")
 			}
 		}
@@ -252,6 +259,7 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 
 	@UsedByGodot
 	fun stopAll() {
+		discoveryGeneration++
 		try {
 			stopDiscovery()
 			stopRegistration()
@@ -290,24 +298,26 @@ class HarmonyNearbyGamePlugin(godot: Godot) : GodotPlugin(godot) {
 	}
 
 	private fun emitStatus(message: String) {
-		emitSignalSafely(STATUS_SIGNAL.name, message)
+		emitSignalSafely(STATUS_SIGNAL.name, message, discoveryGeneration)
 	}
 
 	private fun emitHostDiscovered(name: String, ip: String, port: Int) {
-		emitSignalSafely(HOST_DISCOVERED_SIGNAL.name, name, ip, port)
+		emitSignalSafely(HOST_DISCOVERED_SIGNAL.name, name, ip, port, discoveryGeneration)
+	}
+
+	// NSD callbacks run off-thread. Check ownership on the same thread as start and stop.
+	private fun dispatchNsdCallback(generation: Int, callback: () -> Unit) {
+		runOnRenderThread {
+			if (generation == discoveryGeneration) callback()
+		}
 	}
 
 	private fun emitSignalSafely(signalName: String, vararg args: Any) {
 		try {
-			runOnRenderThread {
-				try {
-					emitSignal(signalName, *args)
-				} catch (t: Throwable) {
-					Log.e(TAG, "emitSignal failed in render thread: $signalName", t)
-				}
-			}
+			// Godot queues delivery again, so the bridge checks the generation on receipt.
+			emitSignal(signalName, *args)
 		} catch (t: Throwable) {
-			Log.e(TAG, "runOnRenderThread failed for signal: $signalName", t)
+			Log.e(TAG, "emitSignal failed: $signalName", t)
 		}
 	}
 

@@ -214,12 +214,19 @@ func _detach_plugin_signals() -> void:
 		_plugin.disconnect("status", status_cb)
 
 
-func _on_plugin_host_discovered(host_name: String, host_ip: String, host_port: int) -> void:
-	report_discovered_host(host_name, host_ip, host_port)
+func _on_plugin_host_discovered(host_name: String, host_ip: String, host_port: int, generation := -1) -> void:
+	if _is_scanning and _is_current_plugin_generation(generation):
+		report_discovered_host(host_name, host_ip, host_port)
 
 
-func _on_plugin_status(message: String) -> void:
-	report_status(message)
+func _on_plugin_status(message: String, generation := -1) -> void:
+	if (_is_hosting or _is_scanning) and _is_current_plugin_generation(generation):
+		report_status(message)
+
+
+func _is_current_plugin_generation(generation: int) -> bool:
+	# Older plugin implementations send the original signal without a generation.
+	return generation == -1 or (_plugin != null and generation == _plugin.call("getDiscoveryGeneration"))
 
 
 func _on_fallback_host_list_updated(hosts: Array) -> void:

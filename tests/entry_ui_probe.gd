@@ -7,10 +7,18 @@ const UNREACHABLE_PORT := 22213
 const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 const Rules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 
+class DiscoveryFixture extends RefCounted:
+	signal status(message: String, generation: int)
+	signal host_discovered(room_name: String, ip: String, port: int, generation: int)
+
+	func getDiscoveryGeneration() -> int:
+		return 2
+
 var _passed := 0
 var _failed := 0
 var _format := "wide"
 var _output := ""
+var _use_system_back := false
 
 func _ready() -> void:
 	Engine.max_fps = 60
@@ -21,6 +29,7 @@ func _run() -> void:
 	var role := args[0] if not args.is_empty() else "walk"
 	_format = args[1] if args.size() > 1 else "wide"
 	_output = args[2] if args.size() > 2 else ""
+	_use_system_back = args.has("system-back")
 	var window := get_window()
 	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
@@ -32,6 +41,12 @@ func _run() -> void:
 			await _live_host()
 		"join":
 			await _live_join()
+		"back":
+			await _back_walkthrough()
+		"title-back":
+			await _title_back()
+		"battle-host", "battle-join":
+			await _battle_back(role == "battle-host")
 		_:
 			await _walkthrough()
 	HarmonyBridge.stop_all()
@@ -146,6 +161,132 @@ func _walkthrough() -> void:
 	await _tap(lobby._btn_back)
 	_check("roles_back_returns_title", await _wait_for(func(): return get_tree().current_scene != null and get_tree().current_scene.scene_file_path == TITLE, 2.0))
 
+func _system_back() -> void:
+	# Window::_event_callback emits the notification before the SceneTree signal.
+	get_tree().root.propagate_notification(NOTIFICATION_WM_GO_BACK_REQUEST)
+	get_tree().root.go_back_requested.emit()
+
+func _keyboard_back() -> void:
+	var event := InputEventKey.new()
+	event.keycode = KEY_ESCAPE
+	event.pressed = true
+	get_viewport().push_input(event)
+
+func _return_from_panel(lobby: Node) -> void:
+	if _use_system_back:
+		_system_back()
+		await _frames()
+	else:
+		await _tap(lobby._btn_back)
+
+func _back_walkthrough() -> void:
+	var lobby := await _open_lobby()
+	if not is_instance_valid(lobby):
+		return
+	_check("lobby_owns_system_back", not get_tree().quit_on_go_back and get_tree().auto_accept_quit)
+	await _tap(lobby._btn_be_client)
+	_check("search_reaches_empty", await _wait_for(func(): return lobby._lbl_scan_hint.text == "暂无可用房间", 2.5))
+	_system_back()
+	await _frames()
+	_check("system_back_cancels_empty_search", lobby._panel_mode_select.visible and not HarmonyBridge.get_debug_snapshot().is_scanning)
+	await _tap(lobby._btn_be_client)
+	NetworkManager.connection_failed.emit()
+	NetworkManager.server_disconnected.emit()
+	_check("retired_enet_outcomes_do_not_end_new_search", lobby._scan_active and lobby._lbl_scan_hint.text == "正在搜索附近房间")
+	var discovery := DiscoveryFixture.new()
+	var previous_plugin := HarmonyBridge._plugin
+	HarmonyBridge._plugin = discovery
+	HarmonyBridge._attach_plugin_signals()
+	discovery.status.emit("扫描启动失败，错误码=1", 1)
+	discovery.host_discovered.emit("旧房间", "127.0.0.1", UNREACHABLE_PORT, 1)
+	_check("old_plugin_callbacks_do_not_pollute_rescan", lobby._scan_active and lobby._host_buttons.is_empty())
+	discovery.host_discovered.emit("当前房间", "127.0.0.1", UNREACHABLE_PORT, 2)
+	_check("current_plugin_callback_lists_room", lobby._host_buttons.size() == 1)
+	HarmonyBridge._detach_plugin_signals()
+	HarmonyBridge._plugin = previous_plugin
+	var room: Button = lobby._host_buttons.get("127.0.0.1:%d" % UNREACHABLE_PORT)
+	if not is_instance_valid(room):
+		return
+	await _tap(room)
+	var peer := multiplayer.multiplayer_peer
+	_check("connection_in_progress_is_real", peer is ENetMultiplayerPeer and peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTING)
+	_system_back()
+	await _frames()
+	_check("system_back_disposes_connecting_enet_peer", lobby._panel_mode_select.visible and not multiplayer.multiplayer_peer is ENetMultiplayerPeer)
+	await _tap(lobby._btn_be_client)
+	_keyboard_back()
+	await _frames()
+	_check("keyboard_cancel_stops_rescan", lobby._panel_mode_select.visible and not lobby._scan_active)
+	await _tap(lobby._btn_be_host)
+	_check("host_opens_at_one_of_two", lobby._occupancy.text == "1 / 2" and NetworkManager.is_host)
+	_system_back()
+	await _frames()
+	_check("system_back_frees_waiting_room", lobby._panel_mode_select.visible and not NetworkManager.is_online()
+		and not HarmonyBridge.get_debug_snapshot().is_hosting)
+	await _tap(lobby._btn_be_host)
+	_check("room_can_be_recreated", lobby._occupancy.text == "1 / 2" and NetworkManager.is_host)
+	lobby._btn_back.pressed.emit()
+	_keyboard_back()
+	_system_back()
+	# Also enqueue a duplicate after the deferred cleanup, in the same frame.
+	_system_back.call_deferred()
+	await _frames()
+	_check("same_frame_routes_consume_once", get_tree().current_scene == lobby and lobby._panel_mode_select.visible
+		and not NetworkManager.is_online())
+	lobby._btn_back.pressed.emit()
+	_system_back.call_deferred()
+	_check("role_back_and_same_frame_system_back_restore_title", await _wait_for(func():
+		return get_tree().current_scene != null and get_tree().current_scene.scene_file_path == TITLE, 2.0)
+		and get_tree().quit_on_go_back)
+
+func _title_back() -> void:
+	await _open_title()
+	_check("title_retains_engine_exit", get_tree().quit_on_go_back)
+	print("[ENTRY_UI] TITLE_BACK")
+	_system_back()
+	# A zero exit without this marker verifies the actual SceneTree quit path.
+	await _frames()
+	_check("title_exit_did_not_run", false)
+
+func _battle_back(host: bool) -> void:
+	var lobby := await _open_lobby()
+	if not is_instance_valid(lobby):
+		return
+	if host:
+		await _tap(lobby._btn_be_host)
+		NetworkDiscovery.stop_all()
+		print("[ENTRY_UI] BATTLE_HOST_READY")
+		var ready := await _wait_for(func(): return lobby._btn_start.is_visible_in_tree() and not lobby._btn_start.disabled, 5.0)
+		_check("normal_start_after_handshake", ready)
+		if not ready:
+			return
+		lobby._btn_start.pressed.emit()
+	else:
+		await _tap(lobby._btn_be_client)
+		HarmonyBridge.report_discovered_host("战斗返回探针", "127.0.0.1", NetworkManager.DEFAULT_PORT)
+		await _frames()
+		await _tap(lobby._host_buttons["127.0.0.1:%d" % NetworkManager.DEFAULT_PORT])
+	var in_battle := await _wait_for(func():
+		return (get_tree().current_scene != null and get_tree().current_scene.scene_file_path == "res://scenes/main.tscn"
+			and NetworkManager.recovery.is_reserved()), 5.0)
+	_check("battle_owns_system_back_after_lobby", in_battle and not get_tree().quit_on_go_back and NetworkManager._go_back_quits)
+	if not in_battle:
+		return
+	if host:
+		var synced := await _wait_for(func(): return get_tree().current_scene._player_entry_ready, 4.0)
+		_check("battle_guest_acknowledges_both_pilots", synced)
+		if not synced:
+			return
+		print("[ENTRY_UI] BATTLE_BACK")
+		_system_back()
+		await get_tree().create_timer(1.0).timeout
+		_check("battle_exit_did_not_run", false)
+	else:
+		var battle := get_tree().current_scene
+		_check("battle_departure_reaches_guest", await _wait_for(func():
+			return is_instance_valid(battle) and battle._fallback_in_progress, 4.0)
+			and not NetworkManager.is_online() and get_tree().quit_on_go_back)
+
 func _live_host() -> void:
 	var lobby := await _open_lobby()
 	if not is_instance_valid(lobby):
@@ -155,6 +296,15 @@ func _live_host() -> void:
 	# Loopback peers share a UDP discovery port. The joined session itself uses real ENet.
 	NetworkDiscovery.stop_all()
 	print("[ENTRY_UI] HOST_READY")
+	if _use_system_back:
+		var ready := await _wait_for(func(): return lobby._compatible_peer > 1, 10.0)
+		_check("host_can_preview_rule_for_cancel", ready)
+		if not ready:
+			return
+		lobby._rift_rule.select(1)
+		lobby._rift_rule.item_selected.emit(1)
+		_check("host_recovers_from_cancel_at_rule_preview", await _wait_for(func():
+			return lobby._occupancy.text == "1 / 2" and lobby._lbl_host_status.text.begins_with("搭档已离开"), 5.0))
 	for index in 2:
 		var connected := await _wait_for(func(): return lobby._compatible_peer > 1 and lobby._btn_start.visible, 10.0)
 		_check("host_two_of_two_round_%d" % index, connected and lobby._occupancy.text == "2 / 2" and not lobby._btn_start.disabled)
@@ -173,7 +323,7 @@ func _live_host() -> void:
 				and not lobby._btn_rift.visible)
 		else:
 			await get_tree().create_timer(1.0).timeout
-			await _tap(lobby._btn_back)
+			await _return_from_panel(lobby)
 			_check("host_can_leave_before_start", lobby._panel_mode_select.visible and not NetworkManager.is_online())
 
 func _live_join() -> void:
@@ -181,6 +331,24 @@ func _live_join() -> void:
 	if not is_instance_valid(lobby):
 		return
 	_simulate_insets(lobby)
+	if _use_system_back:
+		await _tap(lobby._btn_be_client)
+		HarmonyBridge.report_discovered_host("待确认的变奏房间", "127.0.0.1", LEGACY_PORT)
+		await _frames()
+		await _tap(lobby._host_buttons["127.0.0.1:%d" % LEGACY_PORT])
+		_check("waiting_for_peer_version", await _wait_for(func(): return lobby._lbl_scan_hint.text == "正在检查联机版本", 3.0))
+		await _return_from_panel(lobby)
+		_check("system_back_cancels_version_check", lobby._panel_mode_select.visible and not NetworkManager.is_online()
+			and lobby._version_deadline == 0)
+		await _tap(lobby._btn_be_client)
+		HarmonyBridge.report_discovered_host("搭档的飞行队", "127.0.0.1", NetworkManager.DEFAULT_PORT)
+		await _frames()
+		await _tap(lobby._host_buttons["127.0.0.1:%d" % NetworkManager.DEFAULT_PORT])
+		_check("join_waits_at_rule_preview", await _wait_for(func(): return lobby._confirm_rift_rule.visible, 6.0))
+		await _return_from_panel(lobby)
+		_check("system_back_cancels_unconfirmed_rule", lobby._panel_mode_select.visible and not NetworkManager.is_online()
+			and lobby._preview_revision == -1)
+		await get_tree().create_timer(.25).timeout
 	for index in 2:
 		await _tap(lobby._btn_be_client)
 		HarmonyBridge.report_discovered_host("搭档的飞行队", "127.0.0.1", NetworkManager.DEFAULT_PORT)
@@ -196,12 +364,14 @@ func _live_join() -> void:
 			and not lobby._confirm_rift_rule.visible)
 		if index == 0:
 			await get_tree().create_timer(.45).timeout
-			await _tap(lobby._btn_back)
+			await _return_from_panel(lobby)
 			_check("guest_cancel_returns_roles", lobby._panel_mode_select.visible and not NetworkManager.is_online())
 	_check("host_departure_has_retry", await _wait_for(func(): return lobby._lbl_scan_hint.text == "与房主的连接已断开", 7.0)
 		and lobby._retry_search.visible and not NetworkManager.is_online())
 	await _capture("host-left")
 	await _tap(lobby._retry_search)
+	if _use_system_back:
+		_check("guest_rescans_after_connected_host_backs_out", lobby._scan_active and not NetworkManager.is_online())
 	HarmonyBridge.report_discovered_host("旧版飞行队", "127.0.0.1", LEGACY_PORT)
 	await _frames()
 	await _tap(lobby._host_buttons["127.0.0.1:%d" % LEGACY_PORT])
@@ -216,6 +386,9 @@ func _live_join() -> void:
 func _legacy_fixture() -> void:
 	_check("legacy_peer_listens", NetworkManager.create_host(LEGACY_PORT) == OK)
 	print("[ENTRY_UI] OLD_READY")
+	if _use_system_back:
+		_check("handshake_fixture_receives_first_connection", await _wait_for(func(): return not NetworkManager.connected_peers.is_empty(), 10.0))
+		_check("handshake_fixture_observes_cancel", await _wait_for(func(): return NetworkManager.connected_peers.is_empty(), 5.0))
 	if await _wait_for(func(): return not NetworkManager.connected_peers.is_empty(), 30.0):
 		await get_tree().create_timer(.75).timeout
 		var wire: int = NetworkManager.connected_peers[0]

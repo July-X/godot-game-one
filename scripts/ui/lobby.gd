@@ -23,6 +23,8 @@ var _search_deadline := 0
 var _joining := false
 var _join_generation := 0
 var _launching := false
+var _saved_quit_on_go_back := true
+var _back_pending := false
 var _safe: Rect2
 
 @onready var _column: VBoxContainer = $VBox
@@ -49,6 +51,13 @@ var _safe: Rect2
 @onready var _retry_search: Button = $VBox/PanelJoin/RetrySearch
 @onready var _btn_back: Button = $VBox/BtnBack
 
+func _enter_tree() -> void:
+	_saved_quit_on_go_back = get_tree().quit_on_go_back
+	get_tree().quit_on_go_back = false
+
+func _exit_tree() -> void:
+	get_tree().quit_on_go_back = _saved_quit_on_go_back
+
 func _ready() -> void:
 	_dual_intercept = GameState.rift_dual_intercept
 	_rift_rule.add_item(RouteRules.ORIGINAL)
@@ -66,13 +75,17 @@ func _ready() -> void:
 	_layout_lobby()
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_RESUMED and is_node_ready():
+	if not is_node_ready():
+		return
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_request_back()
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
 		_layout_lobby.call_deferred()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
-		_on_back_pressed.call_deferred()
+		_request_back()
 
 func _layout_lobby() -> void:
 	_layout_in_safe_area(SafeArea.for_viewport(get_viewport()))
@@ -92,6 +105,8 @@ func _resize_column() -> void:
 	_column.position = (content.get_center() - _column.size * 0.5).round()
 
 func _process(_delta: float) -> void:
+	if _back_pending:
+		return
 	var now := Time.get_ticks_msec()
 	if _version_deadline > 0 and now >= _version_deadline:
 		_show_version_error()
@@ -102,7 +117,7 @@ func _process(_delta: float) -> void:
 func _connect_signals() -> void:
 	_btn_be_host.pressed.connect(_on_host_mode_selected)
 	_btn_be_client.pressed.connect(_on_join_mode_selected)
-	_btn_back.pressed.connect(_on_back_pressed, CONNECT_DEFERRED)
+	_btn_back.pressed.connect(_request_back)
 	_btn_start.pressed.connect(_on_start_pressed)
 	_btn_rift.pressed.connect(_on_start_pressed.bind(true))
 	_rift_rule.item_selected.connect(_publish_rift_rule.unbind(1))
@@ -134,7 +149,7 @@ func _show_mode_select() -> void:
 	_btn_be_host.grab_focus()
 
 func _on_host_mode_selected() -> void:
-	if _mode == LobbyMode.HOST and not _retry_host.visible:
+	if _back_pending or (_mode == LobbyMode.HOST and not _retry_host.visible):
 		return
 	var returning := _mode == LobbyMode.HOST
 	_leave_panel()
@@ -164,7 +179,7 @@ func _show_host_panel() -> void:
 		_show_host_waiting(false)
 
 func _on_join_mode_selected() -> void:
-	if _mode == LobbyMode.JOIN and not _retry_search.visible:
+	if _back_pending or (_mode == LobbyMode.JOIN and not _retry_search.visible):
 		return
 	_leave_panel()
 	_show_join_panel()
@@ -197,18 +212,29 @@ func _leave_panel() -> void:
 	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
 		NetworkManager.disconnect_network()
 
+func _request_back() -> void:
+	if _back_pending or _launching:
+		return
+	# The window, keyboard and button can report the same back action in one frame.
+	_back_pending = true
+	_on_back_pressed.call_deferred()
+
 func _on_back_pressed() -> void:
 	var previous := _mode
 	_leave_panel()
 	if previous == LobbyMode.NONE:
+		# Keep the window policy until all back inputs from this frame are consumed.
+		await get_tree().process_frame
 		get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn")
 	else:
 		_show_mode_select()
 		if previous == LobbyMode.JOIN:
 			_btn_be_client.grab_focus()
+		await get_tree().process_frame
+		_back_pending = false
 
 func _on_start_pressed(rift_route := false) -> void:
-	if _launching or not NetworkManager.is_host or not _compatible_peer in NetworkManager.connected_peers or (rift_route and _btn_rift.disabled):
+	if _back_pending or _launching or not NetworkManager.is_host or not _compatible_peer in NetworkManager.connected_peers or (rift_route and _btn_rift.disabled):
 		return
 	if _dual_intercept and not rift_route:
 		return
@@ -244,7 +270,7 @@ func _rpc_preview_rift_rule(revision: int, remix: bool) -> void:
 		NetworkManager.warm_remix_pilot_scripts()
 
 func _confirm_rift_preview() -> void:
-	if _compatible_peer != 1 or not _confirm_rift_rule.visible:
+	if _back_pending or _compatible_peer != 1 or not _confirm_rift_rule.visible:
 		return
 	_confirm_rift_rule.hide()
 	_lbl_scan_hint.text = "等待房主开始"
@@ -263,7 +289,7 @@ func _rpc_confirm_rift_rule(revision: int) -> void:
 
 @rpc("authority", "reliable", "call_local")
 func _rpc_start_game(battle_size: Vector2i, rift_route := false, remix := false) -> void:
-	if _launching:
+	if _back_pending or _launching:
 		return
 	if not NetworkManager.is_online() or _compatible_peer == 0:
 		_show_version_error()
@@ -331,7 +357,7 @@ func _room_matches_mode(entry: Dictionary) -> bool:
 	return (entry.get("name") == RouteRules.DUAL_INTERCEPT) == _dual_intercept
 
 func _on_host_button_pressed(ip: String, port: int) -> void:
-	if _mode != LobbyMode.JOIN or not _scan_active or _joining or NetworkManager.is_online():
+	if _back_pending or _mode != LobbyMode.JOIN or not _scan_active or _joining or NetworkManager.is_online():
 		return
 	_joining = true
 	_room_scroll.hide()
@@ -342,7 +368,7 @@ func _on_host_button_pressed(ip: String, port: int) -> void:
 	_deferred_join_host.call_deferred(ip, port, _join_generation)
 
 func _deferred_join_host(ip: String, port: int, generation := -1) -> void:
-	if _mode != LobbyMode.JOIN or multiplayer.multiplayer_peer is ENetMultiplayerPeer or (generation >= 0 and generation != _join_generation):
+	if _back_pending or _mode != LobbyMode.JOIN or multiplayer.multiplayer_peer is ENetMultiplayerPeer or (generation >= 0 and generation != _join_generation):
 		return
 	if not _is_valid_ipv4(ip) or port <= 0 or port > 65535:
 		_show_join_failure("房间信息已失效", "请重新搜索搭档的房间。")
@@ -387,6 +413,8 @@ func _reset_host_actions() -> void:
 	_rift_rule.hide()
 
 func _on_connection_succeeded() -> void:
+	if _back_pending or not NetworkManager.is_online() or NetworkManager.is_host:
+		return
 	_joining = true
 	_room_scroll.hide()
 	_retry_search.hide()
@@ -411,7 +439,7 @@ func _lobby_identity() -> PackedByteArray:
 	return identity.to_utf8_buffer()
 
 func _on_lobby_packet(peer_id: int, packet: PackedByteArray) -> void:
-	if not NetworkManager.is_online():
+	if _back_pending or not NetworkManager.is_online():
 		return
 	if peer_id not in NetworkManager.connected_peers and (NetworkManager.is_host or peer_id != 1):
 		return
@@ -445,10 +473,12 @@ func _show_version_error() -> void:
 		_show_join_failure("无法一起开局", message)
 
 func _on_connection_failed() -> void:
-	_show_join_failure("未能连接房间", "请确认房间仍然开放、双方在同一网络，再重新搜索。")
+	if not _back_pending and _mode == LobbyMode.JOIN and _joining:
+		_show_join_failure("未能连接房间", "请确认房间仍然开放、双方在同一网络，再重新搜索。")
 
 func _on_server_disconnected() -> void:
-	_show_join_failure("与房主的连接已断开", "请等搭档重新创建房间，再重新搜索。")
+	if not _back_pending and _mode == LobbyMode.JOIN and _joining:
+		_show_join_failure("与房主的连接已断开", "请等搭档重新创建房间，再重新搜索。")
 
 func _show_join_failure(title: String, detail: String) -> void:
 	_compatible_peer = 0
@@ -476,6 +506,8 @@ func _show_host_failure(title: String, detail: String) -> void:
 	_retry_host.grab_focus()
 
 func _on_harmony_status_changed(message: String) -> void:
+	if _back_pending:
+		return
 	var denied := message.contains("权限") or message.contains("SecurityException") or "permission denial" in message.to_lower()
 	if _mode == LobbyMode.HOST and NetworkManager.is_online() and NetworkManager.connected_peers.is_empty():
 		if denied or message.begins_with("发布失败") or message.begins_with("发布异常") or message.begins_with("发布房间异常") or message.contains("无法发布房间"):

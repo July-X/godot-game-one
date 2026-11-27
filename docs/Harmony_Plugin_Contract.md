@@ -40,6 +40,8 @@
 
 - `HarmonyBridge.report_status(message: String)`
 
+仓库内的 Android 插件通过 `status(message, generation)` 和 `host_discovered(name, ip, port, generation)` 发送信号。每次发布、搜索或停止都会更新 `getDiscoveryGeneration()` 返回的本地编号。桥接层在收到信号时核对编号，防止已取消会话的事件影响新房间。其他插件仍可使用原有回调参数。
+
 ## 4. 数据约束
 
 - `host_ip` 必须是可被 ENet `create_client` 直连的 IP（例如局域网地址）。
