@@ -34,6 +34,7 @@ var _heartbeat_timer: Timer
 
 ## 当前广播的游戏端口
 var _game_port: int = 7777
+var _room_name := ""
 
 ## 已发现的主机缓存: { "ip:port": { name, ip, port, last_seen } }
 var _discovered_hosts: Dictionary = {}
@@ -42,10 +43,11 @@ var _discovered_hosts: Dictionary = {}
 ## ── Host 端 API ────────────────────────────────────────────
 
 ## 启动广播：作为 Host 每 1.5s 广播一次本机存在
-func start_broadcasting(game_port: int = 7777) -> void:
+func start_broadcasting(game_port: int = 7777, room_name := "") -> void:
 	if _is_hosting:
 		return
 	_is_hosting = true
+	_room_name = room_name
 
 	_udp_socket = PacketPeerUDP.new()
 	var result := _udp_socket.bind(DISCOVERY_PORT)
@@ -69,7 +71,7 @@ func start_broadcasting(game_port: int = 7777) -> void:
 func _broadcast_presence(game_port: int) -> void:
 	if _udp_socket == null or not _is_hosting:
 		return
-	var device_name := OS.get_model_name()
+	var device_name := OS.get_model_name() if _room_name.is_empty() else _room_name
 	if device_name == "" or device_name == "Godot":
 		device_name = "太空战机"
 	# 格式：SBHOST|name|port

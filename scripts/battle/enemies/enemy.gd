@@ -212,7 +212,7 @@ func _shoot() -> void:
 		1: _shoot_spread(angle)
 		2: _shoot_circle()
 
-func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float, color: Color) -> void:
+func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float, color: Color, reliable := false) -> void:
 	## 章节主题在这里生效：三档速度分层是"可读性"的基线，
 	## 主题只在这个基线上做整体微调，不改变快慢对比关系（对比才是玩家判威胁的依据）。
 	var bullet := Pool.acquire("bullet", _bullet_scene)
@@ -223,7 +223,7 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 	if NetworkManager.is_online():
 		var scene := get_tree().current_scene
 		if scene and scene.has_method("register_bullet_spawn"):
-			scene.register_bullet_spawn(pos, angle, damage, false, 1, final_speed, color)
+			scene.register_bullet_spawn(pos, angle, damage, false, 1, final_speed, color, -1, reliable)
 
 ## 敌弹速度分层。原来的三种攻击全部固定 780 px/s，等于只有一种速度——
 ## 玩家无法通过"躲得开/躲不开"来区分威胁，只能靠颜色猜。

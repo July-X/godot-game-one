@@ -43,12 +43,16 @@ var _compatible_peer := 0
 var _version_deadline := 0
 var _rule_revision := 0
 var _preview_revision := -1
+var _dual_intercept := false
 
 
 func _ready() -> void:
+	_dual_intercept = GameState.rift_dual_intercept
 	_rift_rule.add_item(RouteRules.ORIGINAL)
 	_rift_rule.add_item(RouteRules.REMIX)
-	_rift_rule.select(0)
+	_rift_rule.select(1 if _dual_intercept else 0)
+	if _dual_intercept:
+		_btn_rift.text = "开始双线截击"
 	_connect_signals()
 	_show_mode_select()
 	## 隐藏联机调试信息（DebugTitle + DebugInfo），保留内部刷新逻辑供后续排查
@@ -132,7 +136,7 @@ func _show_host_panel() -> void:
 	_btn_start.visible = false
 	_btn_rift.visible = false
 	_rift_rule.hide()
-	_rift_rule.select(0)
+	_rift_rule.select(1 if _dual_intercept else 0)
 	_btn_start.disabled = true
 	_btn_rift.disabled = true
 	_set_legacy_controls_visible(false)
@@ -145,7 +149,8 @@ func _show_host_panel() -> void:
 	_lbl_ssid_hint.text = "🤝 鸿蒙万物互联：附近设备可直接发现"
 	_lbl_password.text = "无需手动配置热点名和密码"
 	_lbl_host_status.text = "正在发布鸿蒙近场房间…"
-	var publish_err := HarmonyBridge.start_host_advertise("Space Bullet Hell", NetworkManager.DEFAULT_PORT)
+	var room := RouteRules.DUAL_INTERCEPT if _dual_intercept else "Space Bullet Hell"
+	var publish_err := HarmonyBridge.start_host_advertise(room, NetworkManager.DEFAULT_PORT, _dual_intercept)
 	if publish_err != OK:
 		_lbl_host_status.text = "❌ 房间发布失败：%s" % error_string(publish_err)
 		return
@@ -193,6 +198,8 @@ func _on_join_mode_selected() -> void:
 func _on_start_pressed(rift_route := false) -> void:
 	if not NetworkManager.is_host or not _compatible_peer in NetworkManager.connected_peers or (rift_route and _btn_rift.disabled):
 		return
+	if _dual_intercept and not rift_route:
+		return
 	_stop_discovery_services()
 	_rpc_start_game.rpc(NetworkManager.LAN_BATTLE_SIZE, rift_route, rift_route and _rift_rule.selected == 1)
 
@@ -216,7 +223,7 @@ func _rpc_preview_rift_rule(revision: int, remix: bool) -> void:
 	if _compatible_peer != 1 or revision <= _preview_revision:
 		return
 	_preview_revision = revision
-	_lbl_join_status.text = RouteRules.description(remix)
+	_lbl_join_status.text = RouteRules.DUAL_INTERCEPT if _dual_intercept and remix else RouteRules.description(remix)
 	_confirm_rift_rule.visible = remix
 	if remix:
 		NetworkManager.warm_remix_pilot_scripts()
@@ -225,7 +232,8 @@ func _confirm_rift_preview() -> void:
 	if _compatible_peer != 1 or not _confirm_rift_rule.visible:
 		return
 	_confirm_rift_rule.hide()
-	_lbl_join_status.text = RouteRules.REMIX + "\n已确认，等待房主开始"
+	var name := RouteRules.DUAL_INTERCEPT if _dual_intercept else RouteRules.REMIX
+	_lbl_join_status.text = name + "\n已确认，等待房主开始"
 	_rpc_confirm_rift_rule.rpc_id(1, _preview_revision)
 
 @rpc("any_peer", "reliable", "call_remote")
@@ -258,6 +266,7 @@ func _rpc_start_game(battle_size: Vector2i, rift_route := false, remix := false)
 		return
 	game_start_requested.emit()
 	GameState.rift_remix = rift_route and remix
+	GameState.rift_dual_intercept = _dual_intercept and GameState.rift_remix
 	get_tree().change_scene_to_file("res://scenes/rift_route_trial.tscn" if rift_route else "res://scenes/main.tscn")
 
 
@@ -267,6 +276,8 @@ func _on_host_list_updated(hosts: Array) -> void:
 
 	var added := false
 	for entry: Dictionary in hosts:
+		if not _room_matches_mode(entry):
+			continue
 		var key := "%s:%d" % [entry.get("ip", ""), entry.get("port", 0)]
 		if _host_buttons.has(key):
 			continue
@@ -318,12 +329,15 @@ func _on_host_button_pressed(ip: String, port: int) -> void:
 
 func _on_quick_join_pressed() -> void:
 	## 快速加入第一个可用房间
-	var hosts := HarmonyBridge.get_discovered_hosts()
+	var hosts := HarmonyBridge.get_discovered_hosts().filter(_room_matches_mode)
 	if hosts.is_empty():
 		_lbl_join_status.text = "❌ 未发现可加入房间"
 		return
 	var first: Dictionary = hosts[0]
 	_on_host_button_pressed(String(first.get("ip", "")), int(first.get("port", 0)))
+
+func _room_matches_mode(entry: Dictionary) -> bool:
+	return (entry.get("name") == RouteRules.DUAL_INTERCEPT) == _dual_intercept
 
 
 func _deferred_join_host(ip: String, port: int) -> void:
@@ -344,7 +358,7 @@ func _deferred_join_host(ip: String, port: int) -> void:
 
 func _on_player_connected(peer_id: int) -> void:
 	if NetworkManager.is_host:
-		_btn_start.visible = true
+		_btn_start.visible = not _dual_intercept
 		_btn_rift.visible = true
 		_btn_start.disabled = true
 		_btn_rift.disabled = true
@@ -373,23 +387,28 @@ func _begin_version_check(peer_id: int) -> void:
 		return
 	_version_deadline = Time.get_ticks_msec() + VERSION_WAIT_MS
 	_version_label().text = "已连接，正在检查联机版本…"
-	var err := (multiplayer as SceneMultiplayer).send_bytes(LAN_PROTOCOL.to_utf8_buffer(), peer_id)
+	var err := (multiplayer as SceneMultiplayer).send_bytes(_lobby_identity(), peer_id)
 	if err != OK:
 		_show_version_error()
+
+func _lobby_identity() -> PackedByteArray:
+	# Older lobbies list every room. Require matching entry points before either peer can start.
+	var identity := LAN_PROTOCOL + ":dual-intercept" if _dual_intercept else LAN_PROTOCOL
+	return identity.to_utf8_buffer()
 
 func _on_lobby_packet(peer_id: int, packet: PackedByteArray) -> void:
 	if not NetworkManager.is_online():
 		return
 	if peer_id not in NetworkManager.connected_peers and (NetworkManager.is_host or peer_id != 1):
 		return
-	if packet != LAN_PROTOCOL.to_utf8_buffer():
+	if packet != _lobby_identity():
 		_show_version_error()
 		return
 	_compatible_peer = peer_id
 	_version_deadline = 0
 	if NetworkManager.is_host:
-		_btn_start.disabled = false
-		_rift_rule.show()
+		_btn_start.disabled = _dual_intercept
+		_rift_rule.visible = not _dual_intercept
 		_publish_rift_rule()
 	else:
 		_lbl_join_status.text = "联机版本一致，等待房主开始…"
@@ -404,7 +423,7 @@ func _show_version_error() -> void:
 	_btn_rift.disabled = true
 	_rift_rule.hide()
 	_confirm_rift_rule.hide()
-	_version_label().text = VERSION_ERROR
+	_version_label().text = "请确认双方都从标题进入「双线截击」，并使用同一版本" if _dual_intercept else VERSION_ERROR
 
 
 func _on_connection_failed() -> void:
@@ -528,7 +547,7 @@ func _refresh_debug_info() -> void:
 func _sync_host_buttons_from_bridge() -> void:
 	if _mode != LobbyMode.JOIN:
 		return
-	var hosts := HarmonyBridge.get_discovered_hosts()
+	var hosts := HarmonyBridge.get_discovered_hosts().filter(_room_matches_mode)
 	if hosts.is_empty():
 		if _host_buttons.is_empty():
 			_lbl_scan_hint.text = "🔍 扫描中，未找到房间…"

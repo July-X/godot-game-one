@@ -175,6 +175,8 @@ var _laser_dot_by_slot: Dictionary[int, float] = {}
 var _coop_encounter := false
 var _route_inducement := false
 var _pulse_used_this_shield := false
+var _authored_pulse_schedule := false
+var _pulse_origin_distance := COOP_PULSE_ORIGIN_DISTANCE
 const AggroLedger := preload("res://scripts/battle/enemies/boss/boss_aggro.gd")
 signal attack_target_selected(attack: String, slot: int, direction: Vector2)
 var _aggro := AggroLedger.new()
@@ -231,6 +233,8 @@ const ULTIMATE_LASER_INNER_RATIO: float = 0.3  ## 内圈比例（秒杀区）
 const COOP_HULL_SECONDS := 21.0
 const COOP_MIN_HULL := 1000.0
 const COOP_PULSE_CHARGE := 0.90
+const COOP_PULSE_ORIGIN_DISTANCE := 48.0
+const INTERCEPT_PULSE_ORIGIN_DISTANCE := 152.0
 const ROUTE_PULSE_AIM_SECONDS := 0.30
 const COOP_PULSE_DURATION := 0.18
 const COOP_PULSE_RADIUS := 34.0
@@ -562,6 +566,15 @@ func enable_route_inducement(duo := false) -> void:
 	_route_inducement = true
 	_route_duo_enabled = duo and _coop_encounter
 
+func enable_intercept_trial_pulses(wider_opening: bool) -> void:
+	_authored_pulse_schedule = true
+	_pulse_origin_distance = INTERCEPT_PULSE_ORIGIN_DISTANCE if wider_opening else COOP_PULSE_ORIGIN_DISTANCE
+	enable_route_inducement()
+
+func try_intercept_trial_pulse() -> void:
+	if _authored_pulse_schedule and _pulse.phase == PulsePhase.OPEN and has_impact_shield():
+		_try_coop_pulse()
+
 func _break_shield() -> void:
 	var rewarded := _first_exposure_bonus > 0.0
 	_exposure_left = BOSS_EXPOSURE_SECONDS + _first_exposure_bonus
@@ -855,6 +868,8 @@ func _spawn_enemy_bullet(pos: Vector2, angle: float, damage: float, speed: float
 
 ## 发起攻击只由这里计时，绕行、后退和卡边均不会拖延齐射。
 func _tick_attack_schedule(delta: float) -> void:
+	if _authored_pulse_schedule:
+		return
 	_shoot_timer -= delta
 	if _shoot_timer > 0.0:
 		return
@@ -957,7 +972,7 @@ func _pulse_path(slot: int) -> Dictionary:
 	var flyable := Rect2(Vector2(24, 24), field - Vector2(48, 48))
 	if not flyable.has_point(at + side) and not flyable.has_point(at - side):
 		return {}
-	var origin := global_position + axis * 48.0
+	var origin := global_position + axis * _pulse_origin_distance
 	var end := at + axis * 112.0
 	if _coop_encounter:
 		var alive := GameState.get_alive_player_ids()
@@ -1002,6 +1017,8 @@ func _tick_coop_pulse(delta: float) -> void:
 			_finish_coop_pulse()
 		elif _pulse_left <= 0.0:
 			_pulse_left = COOP_PULSE_DURATION
+			# Spend the wider gap only on a pulse that actually fires. The locked segment is already stored.
+			_pulse_origin_distance = COOP_PULSE_ORIGIN_DISTANCE
 			if _route_inducement:
 				_open_flank_window()
 			_set_coop_pulse(PulsePhase.FIRE, _pulse.slot, _pulse.from, _pulse.to)

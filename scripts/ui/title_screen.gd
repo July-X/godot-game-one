@@ -16,6 +16,7 @@ const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 
 func _ready() -> void:
 	GameState.rift_remix = false
+	GameState.rift_dual_intercept = false
 	if not (OS.has_feature("android") or OS.has_feature("ios")):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_start_blink()
@@ -32,6 +33,8 @@ func _ready() -> void:
 	$RiftChoices/Remix.text = RouteRules.REMIX
 	$RiftChoices/Original.pressed.connect(_start_rift.bind(false), CONNECT_DEFERRED)
 	$RiftChoices/Remix.pressed.connect(_start_rift.bind(true), CONNECT_DEFERRED)
+	$RiftChoices/DualIntercept.text = RouteRules.DUAL_INTERCEPT
+	$RiftChoices/DualIntercept.pressed.connect(_on_multiplayer_pressed.bind(true), CONNECT_DEFERRED)
 	$RiftChoices/Back.pressed.connect(_show_menu.bind(_menu))
 	$TrialChoices/A.pressed.connect(_start_game.bind("res://scenes/first_card_trial_a.tscn"), CONNECT_DEFERRED)
 	$TrialChoices/B.pressed.connect(_start_game.bind("res://scenes/first_card_trial_b.tscn"), CONNECT_DEFERRED)
@@ -99,11 +102,12 @@ func _start_rift(remix: bool) -> void:
 	_start_game("res://scenes/rift_route_trial.tscn")
 
 
-func _on_multiplayer_pressed() -> void:
+func _on_multiplayer_pressed(dual_intercept := false) -> void:
 	## 进入多人大厅前也做一次清理，确保每次都是新会话。
 	NetworkDiscovery.stop_all()
 	HarmonyBridge.stop_all()
 	NetworkManager.disconnect_network()
+	GameState.rift_dual_intercept = dual_intercept
 	## 多人模式入口：进入 lobby 选择角色
 	get_tree().change_scene_to_file("res://scenes/ui/lobby.tscn")
 

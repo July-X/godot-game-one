@@ -17,9 +17,15 @@ const HUNTER_NOTICE := {"earned": "猎手已击破 · 母舰首次破盾多 1 �
 const LEG_HINT_SECONDS := 2.0
 const CUT_CUE_TICKS := 27
 const FLANK_SPARK_TICKS := 19
+const DUAL_EMITTER_TICK := 90
+const DUAL_BOSS_TICK := 9 * 60
+const DUAL_PULSE_TICKS := [12 * 60, 19 * 60]
+const DUAL_END_TICK := 25 * 60
+const DUAL_SIDES := ["left", "right"]
 var leg := Leg.INTERCEPT
 var _settling := false
 var remix := false
+var dual_intercept := false
 var _route_hint_left := 0.0
 var _build_hint_pending := false
 var _draft_wait := false
@@ -38,6 +44,7 @@ var _flank_sparks: Array[Dictionary] = []
 
 func _ready() -> void:
 	remix = GameState.rift_remix
+	dual_intercept = remix and GameState.rift_dual_intercept and NetworkManager.is_online()
 	super._ready()
 	_spark_layer.draw.connect(_draw_flank_sparks)
 	# Ships and their end-of-run effects can still be visible behind the result.
@@ -94,6 +101,31 @@ func _physics_process(delta: float) -> void:
 	if _draft_wait:
 		return
 	trial_tick += 1
+	if dual_intercept:
+		_advance_dual_intercept()
+	else:
+		_advance_route()
+	if not _fighters.is_empty() or not _breaks.is_empty() or not _cut_cues.is_empty():
+		_move_fighters()
+		while not _breaks.is_empty() and trial_tick >= int(_breaks[0].until):
+			_breaks.pop_front()
+		_cues.queue_redraw()
+	if not dual_intercept and trial_tick % 60 == 0 and (trial_tick < SETTLE_TICK or trial_tick >= BOSS_LEG):
+		_update_countdown()
+
+func _advance_dual_intercept() -> void:
+	if trial_tick == DUAL_EMITTER_TICK:
+		_add_fighter(DUAL_SIDES[0], 1, Vector2(.25, .38), CHARGE_TICKS, 8)
+		_add_fighter(DUAL_SIDES[1], 1, Vector2(.75, .38), CHARGE_TICKS, 8)
+	elif trial_tick == DUAL_BOSS_TICK:
+		_set_leg(Leg.BOSS)
+		_start_route_boss()
+	elif trial_tick in DUAL_PULSE_TICKS and is_instance_valid(_boss):
+		_boss.try_intercept_trial_pulse()
+	elif trial_tick == DUAL_END_TICK:
+		_complete_route("完成")
+
+func _advance_route() -> void:
 	if trial_tick == CARD_TICK:
 		_set_leg(Leg.BUILD)
 		_open_route_drafts()
@@ -129,13 +161,6 @@ func _physics_process(delta: float) -> void:
 	if trial_tick == BOSS_LEG:
 		_set_leg(Leg.BOSS)
 		_start_route_boss()
-	if not _fighters.is_empty() or not _breaks.is_empty() or not _cut_cues.is_empty():
-		_move_fighters()
-		while not _breaks.is_empty() and trial_tick >= int(_breaks[0].until):
-			_breaks.pop_front()
-		_cues.queue_redraw()
-	if trial_tick % 60 == 0 and (trial_tick < SETTLE_TICK or trial_tick >= BOSS_LEG):
-		_update_countdown()
 
 func _add_intercept_wave(mirrored: bool, remix_second := false) -> void:
 	var column := .74 if mirrored else .26
@@ -159,7 +184,7 @@ func _draw_fan_heading(center: Vector2, at: Vector2, progress: float) -> void:
 		var direction := _fan_direction(at, offset)
 		_cues.draw_dashed_line(center + direction * 34, center + direction * lerpf(82, 140, progress),
 			ink, 1.5, 9.0, false)
-	if leg == Leg.BUILD:
+	if leg == Leg.BUILD or dual_intercept:
 		for side: float in [-1.0, 1.0]:
 			var edge := center + Vector2(side * 24.0, 0)
 			_cues.draw_polyline(PackedVector2Array([edge + Vector2(-side * 7, -9), edge,
@@ -167,7 +192,7 @@ func _draw_fan_heading(center: Vector2, at: Vector2, progress: float) -> void:
 
 func _draw_cues() -> void:
 	super._draw_cues()
-	if leg == Leg.BUILD and _fighters.values().any(func(order: Dictionary): return _is_charging(order)):
+	if (leg == Leg.BUILD or (dual_intercept and leg == Leg.INTERCEPT)) and _fighters.values().any(func(order: Dictionary): return _is_charging(order)):
 		for side: float in [-1.0, 1.0]:
 			var x := field.x * .5 + side * minf(field.x * .045, 32.0)
 			_cues.draw_dashed_line(Vector2(x, field.y * .44), Vector2(x, field.y * .66),
@@ -199,7 +224,7 @@ func _on_emitter_died(role: String) -> void:
 	var order: Dictionary = _fighters[role]
 	# Cancel the queued release explicitly before showing a confirmed cut.
 	order.fire = -1
-	if leg == Leg.BUILD:
+	if leg == Leg.BUILD or dual_intercept:
 		var at: Vector2 = order.ship.global_position
 		_show_cut(at)
 		_send_route_packet(["cut", at])
@@ -207,6 +232,13 @@ func _on_emitter_died(role: String) -> void:
 func _show_cut(at: Vector2) -> void:
 	_cut_cues.append({"at": _cues.to_local(at), "until": trial_tick + CUT_CUE_TICKS})
 	_cues.queue_redraw()
+	if dual_intercept:
+		SFX.play_ui_confirm()
+
+func _fire_fan(ship: CharacterBody2D, reliable := false) -> void:
+	super._fire_fan(ship, reliable or dual_intercept)
+	if dual_intercept:
+		_log("dual_volley", {"side": str(ship.name).get_slice("-", 1), "bullets": FAN_EXIT_OFFSETS.size()})
 
 func _send_route_packet(event: Array) -> void:
 	if NetworkManager.is_online() and multiplayer.is_server():
@@ -290,6 +322,9 @@ func _start_route_boss() -> void:
 	_show_boss_warning()
 	_spawn_boss(5)
 	if is_instance_valid(_boss):
+		if dual_intercept:
+			_boss.enable_intercept_trial_pulses(interruptions == DUAL_SIDES.size())
+			return
 		_boss.enable_route_inducement(remix)
 		_boss.route_flank_hit.connect(_on_flank_hit)
 		_boss.route_duo_success.connect(_on_duo_success)
@@ -307,7 +342,15 @@ func _on_elite_died() -> void:
 
 func _on_boss_died() -> void:
 	super._on_boss_died()
-	_complete_route("通关")
+	_complete_route("完成" if dual_intercept else "通关")
+
+func _grant_random_boss_reward_to_peer(peer_id: int) -> void:
+	if not dual_intercept:
+		super._grant_random_boss_reward_to_peer(peer_id)
+
+func spawn_boss_fragment(kind: String, world_pos: Vector2, assigned_peer_id := 0) -> void:
+	if not dual_intercept:
+		super.spawn_boss_fragment(kind, world_pos, assigned_peer_id)
 
 func _on_player_died() -> void:
 	if NetworkManager.is_online():
@@ -322,7 +365,7 @@ func _complete_route(outcome: String) -> void:
 	if not _authoritative() or finished:
 		return
 	var round_id := GameState.get_sync_round() if NetworkManager.is_online() else 0
-	var review := {"hunter": _hunter_defeated, "reward_used": _hunter_reward_spent, "flank_hits": _flank_hits}
+	var review := {} if dual_intercept else {"hunter": _hunter_defeated, "reward_used": _hunter_reward_spent, "flank_hits": _flank_hits}
 	_log("result", {"outcome": outcome, "interruptions": interruptions, "review": review})
 	if NetworkManager.is_online():
 		_rpc_route_result.rpc(round_id, outcome, interruptions, leg, review)
@@ -348,6 +391,10 @@ func _set_leg(value: Leg) -> void:
 		_rpc_route_leg.rpc(leg, false)
 
 func _update_countdown() -> void:
+	if dual_intercept:
+		var phase := "裂隙母舰" if leg == Leg.BOSS else "双线截击 · 中路可绕行"
+		_hud.set_wave_phase(phase, Color.LIGHT_CYAN)
+		return
 	var title: String = "裂隙航道 · " + ("整备，母舰将至" if _settling else LEG_NAMES[leg])
 	var hint: String = LEG_HINTS[leg] if _route_notice.is_empty() else _route_notice
 	if remix and leg == Leg.BUILD:
@@ -413,6 +460,8 @@ func apply_lan_resume_snapshot(state: Dictionary) -> bool:
 	_fighters.clear()
 	for eid: int in state.route.cues:
 		_rpc_route_cue(eid, state.route.cues[eid])
+	if dual_intercept:
+		interruptions = state.route.cuts
 	_apply_route_leg(state.route.leg, state.route.settling, false)
 	if not str(state.route.outcome).is_empty():
 		_rpc_route_result(state.round, state.route.outcome, state.route.cuts, state.route.leg, state.route.review)
@@ -445,6 +494,8 @@ func _finish(outcome: String) -> void:
 	_cues.queue_redraw()
 	_update_countdown()
 	super._finish(outcome)
+	if dual_intercept:
+		return
 	if not _route_review.is_empty():
 		var hunter := "猎手未击破"
 		if _route_review.hunter:

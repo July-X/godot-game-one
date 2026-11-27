@@ -61,7 +61,7 @@ func is_available() -> bool:
 	return _available
 
 
-func start_host_advertise(room_name: String, game_port: int) -> Error:
+func start_host_advertise(room_name: String, game_port: int, named_fallback := false) -> Error:
 	_discovered_hosts.clear()
 	if not _available:
 		if not _can_use_fallback_backend():
@@ -70,7 +70,7 @@ func start_host_advertise(room_name: String, game_port: int) -> Error:
 		_is_hosting = true
 		_is_scanning = false
 		_emit_status("鸿蒙插件不可用，启用 ENet 调试发布后端")
-		NetworkDiscovery.start_broadcasting(game_port)
+		NetworkDiscovery.start_broadcasting(game_port, room_name if named_fallback else "")
 		return OK
 	_is_hosting = true
 	_is_scanning = false
@@ -93,7 +93,7 @@ func start_host_advertise(room_name: String, game_port: int) -> Error:
 	if _can_use_fallback_backend():
 		_fallback_using_network_discovery = true
 		_emit_status("鸿蒙插件缺少发布方法，启用 ENet 调试发布后端")
-		NetworkDiscovery.start_broadcasting(game_port)
+		NetworkDiscovery.start_broadcasting(game_port, room_name if named_fallback else "")
 		return OK
 	_emit_status("鸿蒙插件缺少发布方法")
 	return ERR_METHOD_NOT_FOUND

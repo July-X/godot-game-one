@@ -166,12 +166,12 @@ func _retire_trial_fighter(ship: Node2D) -> void:
 func _fan_direction(at: Vector2, offset: float) -> Vector2:
 	return at.direction_to(Vector2(at.x + field.x * offset, field.y))
 
-func _fire_fan(ship: CharacterBody2D) -> void:
+func _fire_fan(ship: CharacterBody2D, reliable := false) -> void:
 	var at := ship.global_position
 	for offset: float in FAN_EXIT_OFFSETS:
 		var direction := _fan_direction(at, offset)
 		ship._spawn_enemy_bullet(at + direction * 20.0, direction.angle(), .3,
-			Enemy.SPEED_SLOW, TrialPalette.ENEMY_BULLET_SLOW)
+			Enemy.SPEED_SLOW, TrialPalette.ENEMY_BULLET_SLOW, reliable)
 	SFX.play_enemy_volley()
 
 func _on_emitter_died(role: String) -> void:

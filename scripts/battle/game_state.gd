@@ -69,6 +69,8 @@ var _sync_sequence := 0
 var _sync_round := 0
 ## Rift-only run option. A battle retry preserves it. Title and lobby set it on entry.
 var rift_remix := false
+## 本机的试飞大厅入口。战斗仍由现有航道消息同步房主结果。
+var rift_dual_intercept := false
 var _received_sync_sequence := 0
 var _sync_connection_id := 0
 var _minimum_sync_round := 0

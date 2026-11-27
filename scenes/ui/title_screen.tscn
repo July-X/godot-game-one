@@ -81,6 +81,11 @@ theme_override_font_sizes/font_size = 20
 custom_minimum_size = Vector2(0, 56)
 theme_override_font_sizes/font_size = 20
 
+[node name="DualIntercept" type="Button" parent="RiftChoices"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "裂隙变奏：双线截击"
+
 [node name="Back" type="Button" parent="RiftChoices"]
 custom_minimum_size = Vector2(0, 48)
 text = "返回"
