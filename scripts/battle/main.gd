@@ -1677,8 +1677,8 @@ func _confirm_player_entry() -> void:
 		_player_entry_message.queue_free()
 
 func _begin_remix_entry_throttle_recovery() -> void:
-	var ordinary_battle := scene_file_path == "res://scenes/main.tscn"
-	if not (GameState.rift_remix or ordinary_battle) or NetworkManager.is_host or not NetworkManager.is_online() or _remix_entry_peer:
+	var entry_battle := scene_file_path == "res://scenes/main.tscn" or scene_file_path == "res://scenes/rift_route_trial.tscn"
+	if not (GameState.rift_remix or entry_battle) or NetworkManager.is_host or not NetworkManager.is_online() or _remix_entry_peer:
 		return
 	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 	var peer := transport.get_peer(1) if transport else null

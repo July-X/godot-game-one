@@ -56,6 +56,8 @@ func _run() -> void:
 func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 	var remix := case_name == "remix"
 	var rift := remix or case_name == "rift"
+	var original_rift := case_name == "rift"
+	var recovering := OS.get_cmdline_user_args().has("recover")
 	get_tree().node_added.connect(_trace_spawn)
 	if host:
 		var button: Button = lobby.get_node("VBox/PanelHost/BtnRiftRoute" if rift else "VBox/PanelHost/BtnStart")
@@ -86,8 +88,13 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 			return
 		_battle_at = Time.get_ticks_msec()
 		_trace("scene", {"role": "host" if host else "client", "round": GameState.get_sync_round(), "slot": NetworkManager.local_player_id()})
-		if remix and OS.get_cmdline_user_args().has("entry-timeout"):
-			await _verify_entry_timeout(battle, host)
+		if rift and OS.get_cmdline_user_args().has("entry-timeout"):
+			await _verify_entry_timeout(battle, host, original_rift)
+			return
+		if original_rift and OS.get_cmdline_user_args().has("entry-retry"):
+			_check("retry_starts_during_active_entry_profile", await _wait_until(func():
+				return battle._player_entry_ready and _entry_profile().y == ENetPacketPeer.PACKET_THROTTLE_SCALE, 1.0))
+			await _verify_entry_retry(battle, host, true)
 			return
 		if host:
 			battle.guest_bullet_batch_spawned.connect(_observe_guest_batch)
@@ -111,30 +118,30 @@ func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 			if remix:
 				_check("authority_has_both_pilots_before_practice_wave", await _wait_until(func():
 					return battle._player_entry_ready and battle.trial_tick < 78, .3))
-			if remix or not rift:
-				var continued := await _wait_until(func(): return _guest_followup_ms.size() >= 2, 1.3) if _guest_shot_at > 0 else false
-				_trace("followups", {"slot": NetworkManager.recovery.guest_slot, "after_first_ms": _guest_followup_ms})
-				_check("two_distinct_followup_batches_within_window", continued and _guest_followup_ms[1] <= 1300)
+			var continued := await _wait_until(func(): return _guest_followup_ms.size() >= 2, 1.3) if _guest_shot_at > 0 else false
+			_trace("followups", {"slot": NetworkManager.recovery.guest_slot, "after_first_ms": _guest_followup_ms})
+			_check("two_distinct_followup_batches_within_window", continued and _guest_followup_ms[1] <= 1300)
 		else:
 			await _verify_entry_replays(battle)
 			if remix:
 				_check("guest_has_both_pilots_before_practice_wave", battle._player_entry_ready and battle.trial_tick < 78)
-			if OS.get_cmdline_user_args().has("recover"):
+			if recovering:
 				var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 				var link := transport.get_peer(1)
 				var saved: Vector3i = battle._remix_entry_throttle_settings
 				_trace("entry_throttle_saved", {"profile": [saved.x, saved.y, saved.z]})
 				_check("entry_throttle_is_temporary", _throttle_profile(link) == Vector3i(saved.x,
 					ENetPacketPeer.PACKET_THROTTLE_SCALE, saved.z))
-				var restored := await _wait_until(func(): return battle._remix_entry_peer == null, 1.8)
-				var profile := _throttle_profile(link)
-				_check("entry_transport_parameters_restore_before_rewire", restored and profile == saved)
-				_trace("entry_throttle_restored", {"profile": [profile.x, profile.y, profile.z]})
+				if not original_rift:
+					var restored := await _wait_until(func(): return battle._remix_entry_peer == null, 1.8)
+					var profile := _throttle_profile(link)
+					_check("entry_transport_parameters_restore_before_rewire", restored and profile == saved)
+					_trace("entry_throttle_restored", {"profile": [profile.x, profile.y, profile.z]})
 			else:
 				# Keep shooting through the host's entire observation window on slow samples.
 				await _wait_until(func(): return not NetworkManager.is_online(), 6.0)
-		if (remix or not rift) and OS.get_cmdline_user_args().has("recover"):
-			await _verify_lan_recovery_and_retry(host, expected, remix)
+		if recovering:
+			await _verify_lan_recovery_and_retry(host, expected, remix, original_rift)
 
 func _throttle_profile(link: ENetPacketPeer) -> Vector3i:
 	return Vector3i(int(link.get_statistic(ENetPacketPeer.PEER_PACKET_THROTTLE_INTERVAL)),
@@ -214,21 +221,39 @@ func _verify_entry_replays(battle: Node) -> void:
 	_check("replay_keeps_current_pilot", battle._players.get(slot) == pilot and battle._players.size() == 2 and not battle._players.has(99))
 	_trace("replayed_roster", {"round": round_id, "slot": slot, "same_instance": pilot.get_instance_id()})
 
-func _verify_entry_timeout(battle: Node, host: bool) -> void:
+func _verify_entry_timeout(battle: Node, host: bool, original_rift: bool) -> void:
 	if not host:
 		battle._next_player_entry_request = battle._player_entry_deadline + 1000
-	var timed_out := await _wait_until(func(): return battle._player_entry_deadline < 0, 4.0)
-	_check("entry_timeout_explained_and_wave_still_held", timed_out and not battle._player_entry_ready
-		and battle.trial_tick == 0 and battle._player_entry_message.text.contains("超时"))
+	if original_rift:
+		_check("timeout_starts_during_active_entry_profile", await _wait_until(func():
+			return _entry_profile().y == ENetPacketPeer.PACKET_THROTTLE_SCALE, .6))
+	if original_rift and host:
+		await get_tree().create_timer(3.2).timeout
+		_check("original_authority_wave_keeps_its_schedule", battle.trial_tick >= 180)
+	else:
+		var timed_out := await _wait_until(func(): return battle._player_entry_deadline < 0, 4.0)
+		_check("entry_timeout_explained", timed_out and not battle._player_entry_ready
+			and is_instance_valid(battle._player_entry_message) and battle._player_entry_message.text.contains("超时"))
+		_check("entry_timeout_preserves_wave_schedule", battle.trial_tick > 0 if original_rift else battle.trial_tick == 0)
+	if original_rift:
+		_check("timeout_clears_temporary_profile", await _wait_until(func(): return _entry_profile() == Vector3i(5000, 2, 2), .4)
+			and battle._remix_entry_peer == null)
+	await _verify_entry_retry(battle, host, original_rift)
+
+func _verify_entry_retry(battle: Node, host: bool, original_rift: bool) -> void:
 	var battle_id := battle.get_instance_id()
+	var old_round := GameState.get_sync_round()
 	if host:
 		await get_tree().create_timer(.35).timeout
 		battle.get_node("TrialUI/Options/Buttons/Retry").pressed.emit()
 	var recovered := await _wait_until(func():
 		var current := get_tree().current_scene
 		return is_instance_valid(current) and current.get_instance_id() != battle_id and current._player_entry_ready, 4.0)
-	_check("host_retry_after_timeout_can_enter", recovered)
-	_trace("timeout_retry", {"recovered": recovered, "round": GameState.get_sync_round()})
+	_check("host_can_retry_after_entry", recovered and GameState.get_sync_round() > old_round)
+	var event := "timeout_retry" if OS.get_cmdline_user_args().has("entry-timeout") else "entry_retry"
+	_trace(event, {"recovered": recovered, "round": GameState.get_sync_round()})
+	if original_rift and recovered:
+		await _verify_rift_retry_profile()
 	if not host:
 		await get_tree().create_timer(.4).timeout
 
@@ -237,7 +262,7 @@ func _trace(event: String, data: Dictionary) -> void:
 	data["wall_ms"] = int(Time.get_unix_time_from_system() * 1000)
 	print("[ENTRY] ", event, " ", JSON.stringify(data))
 
-func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool) -> void:
+func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool, original_rift: bool) -> void:
 	var battle := get_tree().current_scene
 	var battle_id := battle.get_instance_id()
 	var old_round := GameState.get_sync_round()
@@ -248,7 +273,7 @@ func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool) -
 	var original_wire: int = NetworkManager.recovery.guest_wire
 	var slot: int = NetworkManager.recovery.guest_slot
 	var old_pilot: Node = battle._players.get(slot)
-	if host and not remix:
+	if host and not remix and not original_rift:
 		var link: ENetPacketPeer = (multiplayer.multiplayer_peer as ENetMultiplayerPeer).get_peer(original_wire)
 		_check("host_observes_temporary_acceleration", _throttle_profile(link).y == ENetPacketPeer.PACKET_THROTTLE_SCALE)
 		var restored_profile := await _wait_until(func():
@@ -256,7 +281,14 @@ func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool) -
 				and _throttle_profile(link) == Vector3i(5000, 2, 2)), 2.0)
 		_check("host_entry_transport_defaults_restore_before_rewire", restored_profile)
 	elif not host:
+		if original_rift:
+			await get_tree().create_timer(maxf(.02, 1.0 - (Time.get_ticks_msec() - _battle_at) / 1000.0)).timeout
+			_check("rewire_starts_while_entry_profile_active", battle._remix_entry_peer != null
+				and _entry_profile().y == ENetPacketPeer.PACKET_THROTTLE_SCALE)
 		NetworkManager.recovery.set_background(true)
+		if original_rift:
+			_check("disconnect_hold_restores_profile", battle._remix_entry_peer == null
+				and _entry_profile() == Vector3i(5000, 2, 2))
 		await get_tree().create_timer(.2).timeout
 		NetworkManager.drop_lan_transport()
 		NetworkManager.recovery.set_background(false)
@@ -268,6 +300,10 @@ func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool) -
 		and battle._players.get(slot) == old_pilot)
 	if not restored:
 		return
+	if original_rift:
+		var profile := _entry_profile()
+		_check("reconnected_round_keeps_default_profile", battle._remix_entry_peer == null and profile == Vector3i(5000, 2, 2))
+		_trace("rewire_profile", {"profile": [profile.x, profile.y, profile.z]})
 	if host:
 		await get_tree().create_timer(.3).timeout
 		battle._restart()
@@ -281,6 +317,22 @@ func _verify_lan_recovery_and_retry(host: bool, expected: String, remix: bool) -
 		current._rpc_spawn_networked_player(old_round, 99, 300.0, 400.0)
 		_check("retry_rejects_old_round_player", current._players.size() == 2 and not current._players.has(99))
 		await get_tree().create_timer(.3).timeout
+	if original_rift and restarted:
+		await _verify_rift_retry_profile()
+
+func _entry_profile() -> Vector3i:
+	var transport := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	var wire: int = NetworkManager.recovery.guest_wire if multiplayer.is_server() else 1
+	var link := transport.get_peer(wire) if transport and wire > 0 else null
+	return _throttle_profile(link) if is_instance_valid(link) else Vector3i.ZERO
+
+func _verify_rift_retry_profile() -> void:
+	var profile := _entry_profile()
+	_check("new_round_has_its_own_entry_profile", profile == Vector3i(5000, ENetPacketPeer.PACKET_THROTTLE_SCALE, 2))
+	var restored := await _wait_until(func(): return _entry_profile() == Vector3i(5000, 2, 2), 2.0)
+	_check("new_round_restores_default_profile", restored and get_tree().current_scene._remix_entry_peer == null)
+	var defaults := _entry_profile()
+	_trace("retry_profile", {"initial": [profile.x, profile.y, profile.z], "restored": [defaults.x, defaults.y, defaults.z]})
 
 func _verify_rejection(lobby: Node, host: bool) -> void:
 	var status: Label = lobby._lbl_host_status if host else lobby._lbl_join_status

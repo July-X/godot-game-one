@@ -18,7 +18,7 @@ def trace(log, event):
     return json.loads(next(line[len(prefix):] for line in log.splitlines() if line.startswith(prefix)))
 
 
-def normal_timings(name, swap, host, guest, codes):
+def ordered_entry_timings(name, swap, host, guest, codes):
     """Keep the timing evidence even when a cold entry misses the gate."""
     def first(log, event, tag="ENTRY"):
         return next(iter(traces(log, event, tag)), {})
@@ -88,6 +88,10 @@ def normal_timings(name, swap, host, guest, codes):
                                         for line in log.splitlines()) for log in (host, guest)):
         issues.append("engine or script error")
     first_rpc = next((row for row in incoming if row["batch"] == first_received.get("batch")), {})
+    accepted = {row["batch"] for row in incoming}
+    early_unseen = [{"batch": row["batch"], "ms": elapsed(ms(row), t0), "counter": row.get("counter"),
+                     "throttle": row.get("throttle")} for row in sent
+                    if row["batch"] not in accepted and (not first_rpc or ms(row) < ms(first_rpc))]
     return {"case": name, "host_device": "4:3" if swap else "20:9", "failed": bool(issues), "issues": issues,
             "slot": slot, "round": round_id, "start_to_host_ready_ms": elapsed(host_ready, start),
             "start_to_guest_ready_ms": elapsed(guest_ready, start), "guest_input_bound_ms": elapsed(ms(bound), t0),
@@ -98,11 +102,12 @@ def normal_timings(name, swap, host, guest, codes):
             "guest_visual_bullet_ms": elapsed(ms(local_visual), t0), "authority_move_and_shot_ms": confirmed,
             "first_sent_batch": sent[0]["batch"] if sent else None, "first_authority_batch": first_received.get("batch"),
             "followups_after_first_ms": followups, "ordered_batches_sent": len(ordered),
-            "reliable_batches_sent": len(reliable), "batches_at_authority": len(spawned)}
+            "reliable_batches_sent": len(reliable), "batches_at_authority": len(spawned),
+            "early_batches_unseen_by_host": early_unseen}
 
 
-def run_pair(output, name, port, mode, swap, *extra):
-    command = [os.getenv("GODOT", "godot"), "--headless", "--path", ".",
+def run_pair(output, name, port, mode, swap, *extra, project=Path.cwd()):
+    command = [os.getenv("GODOT", "godot"), "--headless", "--path", str(project),
                "res://tests/lobby_start_probe.tscn", "--"]
     jobs = []
     try:
@@ -124,8 +129,8 @@ def run_pair(output, name, port, mode, swap, *extra):
 
     logs = [(output / f"{name}-{role}.log").read_text(encoding="utf-8")
             for role in ("host", "client")]
-    if mode == "normal":
-        return normal_timings(name, swap, *logs, codes)
+    if mode in ("normal", "rift") and not any(flag in extra for flag in ("entry-timeout", "entry-retry")):
+        return ordered_entry_timings(name, swap, *logs, codes)
     for code, log in zip(codes, logs):
         assert code == 0 and "failed=0" in log, name
         assert not any(word in log for word in ("SCRIPT ERROR", "Node not found",
@@ -134,6 +139,8 @@ def run_pair(output, name, port, mode, swap, *extra):
                        for line in log.splitlines()), name
     if "entry-timeout" in extra:
         return {"case": name, "timeout_and_retry": True}
+    if "entry-retry" in extra:
+        return {"case": name, "retry_while_profile_active": True}
     host, client = logs
     host_ready = trace(host, "scene")["wall_ms"]
     start_pressed = trace(host, "start_pressed")["wall_ms"]
@@ -190,6 +197,10 @@ def main():
     parser.add_argument("--normal-runs", type=int, default=1)
     parser.add_argument("--normal-only", action="store_true")
     parser.add_argument("--normal-recovery", action="store_true")
+    parser.add_argument("--rift-only", type=int, metavar="RUNS")
+    parser.add_argument("--rift-lifecycle", action="store_true", help="Test original Rift reconnect and timeout with Retry")
+    parser.add_argument("--baseline-project", type=Path,
+                        help="Alternate a baseline and this project for each original Rift sample")
     parser.add_argument("--start-port", type=int, default=19910)
     args = parser.parse_args()
     output = args.output.resolve()
@@ -202,16 +213,34 @@ def main():
         cases += [(f"remix-{i + 1}", "remix", i % 2 != 0, ()) for i in range(args.remix_runs)]
         cases += [("rift", "rift", True, ()), ("remix-recovery", "remix", True, ("recover",)),
                   ("remix-timeout", "remix", False, ("entry-timeout",))]
+    if args.rift_only is not None:
+        cases = [(f"rift-{i + 1}", "rift", i % 2 != 0, ()) for i in range(args.rift_only)]
+    if args.baseline_project and args.rift_only is None:
+        parser.error("--baseline-project requires --rift-only")
+    if args.baseline_project and args.rift_lifecycle:
+        parser.error("--rift-lifecycle runs only in the current project")
+    if args.rift_lifecycle:
+        cases += [("rift-recovery", "rift", True, ("recover",)), ("rift-timeout", "rift", False, ("entry-timeout",)),
+                  ("rift-early-retry", "rift", True, ("entry-retry",))]
     results = []
     failed = 0
+    port = args.start_port
     for index, (name, mode, swap, extra) in enumerate(cases):
-        try:
-            row = run_pair(output, name, args.start_port + index, mode, swap, *extra)
-        except (AssertionError, StopIteration, subprocess.TimeoutExpired) as error:
-            row = {"case": name, "failed": True, "detail": str(error)}
-        failed += bool(row.get("failed"))
-        print(json.dumps(row, ensure_ascii=False), flush=True)
-        results.append(row)
+        projects = [("", Path.cwd())]
+        if args.baseline_project:
+            projects = [("baseline-", args.baseline_project.resolve()), ("candidate-", Path.cwd())]
+            if index % 2:
+                projects.reverse()
+        for label, project in projects:
+            case = label + name
+            try:
+                row = run_pair(output, case, port, mode, swap, *extra, project=project)
+            except (AssertionError, StopIteration, subprocess.TimeoutExpired) as error:
+                row = {"case": case, "failed": True, "detail": str(error)}
+            port += 1
+            failed += bool(row.get("failed"))
+            print(json.dumps(row, ensure_ascii=False), flush=True)
+            results.append(row)
     (output / "timings.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     return int(failed != 0)
 
