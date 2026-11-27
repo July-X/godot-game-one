@@ -181,15 +181,18 @@ func _check_title() -> void:
 	var choices := title.get_node("OpeningChoices") as Control
 	_check("title_fits_safety_margin", SafeArea.for_viewport(get_viewport()).encloses(menu.get_global_rect())
 		and menu.is_visible_in_tree() and not choices.is_visible_in_tree())
-	await _tap_button(menu.get_node("BtnOpeningTrial"))
+	await _tap_button(menu.get_node("BtnTrials"))
+	await _tap_button(title.get_node("TrialHub/BtnOpeningTrial"))
 	_check("opens_secondary_choices", get_tree().current_scene == title and not menu.is_visible_in_tree()
 		and choices.is_visible_in_tree() and choices.get_node("Start").text == "开始 90 秒试飞"
 		and choices.get_node("A").text == "近身试飞 A" and choices.get_node("B").text == "近身试飞 B")
 	await _check_choice_insets(title, choices)
 	await _tap_button(choices.get_node("Back"))
+	await _tap_button(title.get_node("TrialHub/Back"))
 	_check("chooser_back_restores_title", get_tree().current_scene == title and menu.is_visible_in_tree()
 		and not choices.is_visible_in_tree())
-	await _tap_button(menu.get_node("BtnOpeningTrial"))
+	await _tap_button(menu.get_node("BtnTrials"))
+	await _tap_button(title.get_node("TrialHub/BtnOpeningTrial"))
 	for variant in ["B", "A"]:
 		if not await _check_close_choice(choices, variant):
 			return

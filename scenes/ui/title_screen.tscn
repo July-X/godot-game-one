@@ -2,154 +2,217 @@
 
 [ext_resource type="Texture2D" path="res://assets/sprites/ui/logo.png" id="1"]
 [ext_resource type="Script" path="res://scripts/ui/title_screen.gd" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/ui/entry_backdrop.tscn" id="3"]
+[ext_resource type="Theme" path="res://scenes/ui/entry_theme.tres" id="4"]
+[ext_resource type="Script" path="res://scripts/ui/entry_card.gd" id="5"]
+
+[sub_resource type="Shader" id="LogoContrast"]
+code = "shader_type canvas_item;
+void fragment() {
+	// The existing 512 px artwork cuts through the last word.
+	// Extend its canvas and reuse the full pixel L already in BULLET.
+	float x = UV.x * 576.0;
+	float source_x = x;
+	if (x >= 512.0) {
+		source_x = 18.0;
+		if (UV.y >= 0.52 && UV.y < 0.87) {
+			if (x < 518.0) {
+				source_x = x - 276.0;
+			} else if (x >= 524.0 && x < 566.0) {
+				source_x = x - 324.0;
+			}
+		}
+	}
+	vec4 ink = texture(TEXTURE, vec2(source_x / 512.0, UV.y));
+	COLOR = vec4(min(ink.rgb * 2.7, vec3(1.0)), ink.a);
+}"
+
+[sub_resource type="ShaderMaterial" id="LogoMaterial"]
+shader = SubResource("LogoContrast")
 
 [node name="TitleScreen" type="CanvasLayer"]
 script = ExtResource("2")
 
-[node name="Bg" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-mouse_filter = 2
-color = Color(0.04, 0.04, 0.1, 1)
+[node name="Space" parent="." instance=ExtResource("3")]
 
-[node name="Menu" type="VBoxContainer" parent="."]
-theme_override_constants/separation = 8
-
-[node name="Logo" type="TextureRect" parent="Menu"]
-custom_minimum_size = Vector2(0, 154)
+[node name="Hero" type="VBoxContainer" parent="."]
 mouse_filter = 2
+theme = ExtResource("4")
+theme_override_constants/separation = 10
+
+[node name="Logo" type="TextureRect" parent="Hero"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+texture_filter = 1
+material = SubResource("LogoMaterial")
 texture = ExtResource("1")
 expand_mode = 1
-stretch_mode = 5
+stretch_mode = 0
 
-[node name="StartLabel" type="Label" parent="Menu"]
-theme_override_colors/font_color = Color(0.6, 0.7, 1.0, 1)
-theme_override_font_sizes/font_size = 16
-text = "选择模式开始"
+[node name="Name" type="Label" parent="Hero"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.6, 0.78, 0.88, 1)
+theme_override_font_sizes/font_size = 17
 horizontal_alignment = 1
-vertical_alignment = 1
+text = "太空战机"
+
+[node name="Menu" type="VBoxContainer" parent="."]
+theme = ExtResource("4")
+theme_override_constants/separation = 10
 
 [node name="BtnSingle" type="Button" parent="Menu"]
-custom_minimum_size = Vector2(0, 56)
-text = "🎮  单人游戏"
-theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(0.6, 0.85, 1, 1)
+layout_mode = 2
+theme_type_variation = &"LaunchCard"
+text = "单人出击"
+script = ExtResource("5")
+detail = "进入标准弹幕战斗"
 
 [node name="BtnMultiplayer" type="Button" parent="Menu"]
-custom_minimum_size = Vector2(0, 56)
-text = "📡  多人联机"
-theme_override_font_sizes/font_size = 22
-theme_override_colors/font_color = Color(0.3, 1.0, 0.6, 1)
+layout_mode = 2
+text = "双人联机"
+script = ExtResource("5")
+detail = "创建房间，或加入附近搭档"
 
-[node name="BtnFirstCard" type="Button" parent="Menu"]
-custom_minimum_size = Vector2(0, 48)
-text = "首卡试飞"
-theme_override_font_sizes/font_size = 20
+[node name="BtnTrials" type="Button" parent="Menu"]
+layout_mode = 2
+text = "试飞任务"
+script = ExtResource("5")
+detail = "选择短程练习与裂隙航道"
 
-[node name="BtnOffenseWindow" type="Button" parent="Menu"]
-custom_minimum_size = Vector2(0, 48)
-text = "进攻窗口 · 45 秒"
-theme_override_font_sizes/font_size = 20
-
-[node name="BtnOpeningTrial" type="Button" parent="Menu"]
-custom_minimum_size = Vector2(0, 48)
-text = "开场试飞 · 90 秒"
-theme_override_font_sizes/font_size = 20
-
-[node name="BtnRiftRoute" type="Button" parent="Menu"]
-custom_minimum_size = Vector2(0, 48)
-text = "裂隙航道 · 试玩"
-theme_override_font_sizes/font_size = 20
-
-[node name="RiftChoices" type="VBoxContainer" parent="."]
+[node name="TrialHub" type="VBoxContainer" parent="."]
 visible = false
+theme = ExtResource("4")
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="RiftChoices"]
-text = "裂隙航道 · 选择本局路线"
-horizontal_alignment = 1
-
-[node name="Original" type="Button" parent="RiftChoices"]
-custom_minimum_size = Vector2(0, 56)
-theme_override_font_sizes/font_size = 20
-
-[node name="Remix" type="Button" parent="RiftChoices"]
-custom_minimum_size = Vector2(0, 56)
-theme_override_font_sizes/font_size = 20
-
-[node name="DualIntercept" type="Button" parent="RiftChoices"]
-custom_minimum_size = Vector2(0, 48)
+[node name="Title" type="Label" parent="TrialHub"]
 layout_mode = 2
-text = "裂隙变奏：双线截击"
+theme_override_font_sizes/font_size = 25
+text = "试飞任务"
 
-[node name="Back" type="Button" parent="RiftChoices"]
-custom_minimum_size = Vector2(0, 48)
-text = "返回"
+[node name="BtnFirstCard" type="Button" parent="TrialHub"]
+layout_mode = 2
+text = "首卡试飞"
+script = ExtResource("5")
+detail = "对比两种首卡提示"
+
+[node name="BtnOffenseWindow" type="Button" parent="TrialHub"]
+layout_mode = 2
+text = "进攻窗口"
+script = ExtResource("5")
+detail = "45 秒练习进攻时机"
+
+[node name="BtnOpeningTrial" type="Button" parent="TrialHub"]
+layout_mode = 2
+text = "开场试飞"
+script = ExtResource("5")
+detail = "90 秒试飞与两种近身练习"
+
+[node name="BtnRiftRoute" type="Button" parent="TrialHub"]
+layout_mode = 2
+text = "裂隙航道"
+script = ExtResource("5")
+detail = "原版、变奏与双线截击"
+
+[node name="Back" type="Button" parent="TrialHub"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
+text = "返回首页"
 
 [node name="TrialChoices" type="VBoxContainer" parent="."]
 visible = false
+theme = ExtResource("4")
 theme_override_constants/separation = 8
 
 [node name="Title" type="Label" parent="TrialChoices"]
-theme_override_colors/font_color = Color(0.7, 0.78, 0.92, 1)
-theme_override_font_sizes/font_size = 17
+layout_mode = 2
+theme_override_font_sizes/font_size = 25
 text = "首卡试飞"
-horizontal_alignment = 1
 
 [node name="A" type="Button" parent="TrialChoices"]
-custom_minimum_size = Vector2(280, 56)
-theme_override_font_sizes/font_size = 22
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
 text = "试飞 A"
 
 [node name="B" type="Button" parent="TrialChoices"]
-custom_minimum_size = Vector2(280, 56)
-theme_override_font_sizes/font_size = 22
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
 text = "试飞 B"
 
 [node name="Back" type="Button" parent="TrialChoices"]
-custom_minimum_size = Vector2(280, 48)
-theme_override_font_sizes/font_size = 20
-text = "返回"
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
+text = "返回试飞任务"
 
 [node name="OpeningChoices" type="VBoxContainer" parent="."]
 visible = false
+theme = ExtResource("4")
 theme_override_constants/separation = 8
 
 [node name="Title" type="Label" parent="OpeningChoices"]
-theme_override_colors/font_color = Color(0.7, 0.78, 0.92, 1)
-theme_override_font_sizes/font_size = 17
+layout_mode = 2
+theme_override_font_sizes/font_size = 25
 text = "开场试飞"
-horizontal_alignment = 1
 
 [node name="Start" type="Button" parent="OpeningChoices"]
-custom_minimum_size = Vector2(0, 56)
-theme_override_colors/font_color = Color(0.6, 0.85, 1, 1)
-theme_override_font_sizes/font_size = 22
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
 text = "开始 90 秒试飞"
 
 [node name="A" type="Button" parent="OpeningChoices"]
-custom_minimum_size = Vector2(0, 56)
-theme_override_font_sizes/font_size = 22
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
 text = "近身试飞 A"
 
 [node name="B" type="Button" parent="OpeningChoices"]
-custom_minimum_size = Vector2(0, 56)
-theme_override_font_sizes/font_size = 22
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
 text = "近身试飞 B"
 
 [node name="Back" type="Button" parent="OpeningChoices"]
-custom_minimum_size = Vector2(0, 48)
-theme_override_font_sizes/font_size = 20
-text = "返回"
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
+text = "返回试飞任务"
 
-[node name="VersionLabel" type="Label" parent="."]
-offset_right = 180.0
-offset_bottom = 20.0
-theme_override_colors/font_color = Color(0.3, 0.35, 0.5, 0.6)
-theme_override_font_sizes/font_size = 11
-text = "v1.0.0 | Godot 4.6"
-horizontal_alignment = 2
+[node name="RiftChoices" type="VBoxContainer" parent="."]
+visible = false
+theme = ExtResource("4")
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="RiftChoices"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 25
+text = "裂隙航道"
+
+[node name="Original" type="Button" parent="RiftChoices"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
+text = "原版航道"
+
+[node name="Remix" type="Button" parent="RiftChoices"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
+text = "变奏航道"
+
+[node name="DualIntercept" type="Button" parent="RiftChoices"]
+layout_mode = 2
+text = "裂隙变奏：双线截击 · 仅双人"
+script = ExtResource("5")
+detail = "双方从此入口进入"
+
+[node name="Back" type="Button" parent="RiftChoices"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 54)
+theme_override_font_sizes/font_size = 19
+text = "返回试飞任务"

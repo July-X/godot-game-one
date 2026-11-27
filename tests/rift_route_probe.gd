@@ -26,8 +26,9 @@ func _run() -> void:
 	get_tree().root.add_child(title)
 	get_tree().current_scene = title
 	await get_tree().process_frame
-	_check("title_exposes_trial", is_instance_valid(title.get_node("Menu/BtnRiftRoute")))
-	title.get_node("Menu/BtnRiftRoute").pressed.emit()
+	title.get_node("Menu/BtnTrials").pressed.emit()
+	_check("title_exposes_trial", is_instance_valid(title.get_node("TrialHub/BtnRiftRoute")))
+	title.get_node("TrialHub/BtnRiftRoute").pressed.emit()
 	_check("title_shows_both_rules_with_original_default", title.get_node("RiftChoices").visible and not GameState.rift_remix)
 	title.get_node("RiftChoices/Original").pressed.emit()
 	await get_tree().scene_changed
@@ -90,7 +91,8 @@ func _run() -> void:
 	_world._return_to_title.call_deferred()
 	await get_tree().scene_changed
 	title = get_tree().current_scene
-	title.get_node("Menu/BtnRiftRoute").pressed.emit()
+	title.get_node("Menu/BtnTrials").pressed.emit()
+	title.get_node("TrialHub/BtnRiftRoute").pressed.emit()
 	title.get_node("RiftChoices/Remix").pressed.emit()
 	await get_tree().scene_changed
 	_world = get_tree().current_scene
@@ -107,7 +109,7 @@ func _run() -> void:
 	_world._return_to_title.call_deferred()
 	await get_tree().scene_changed
 	_check("returning_to_title_restores_original", not GameState.rift_remix)
-	get_tree().current_scene._on_single_pressed()
+	get_tree().current_scene.get_node("Menu/BtnSingle").pressed.emit()
 	await get_tree().scene_changed
 	_check("ordinary_run_keeps_original_rank_and_state", get_tree().current_scene.scene_file_path == Main.resource_path
 		and Leaderboard.get_entries() == baseline and GameState.get_card_stacks(1).is_empty()

@@ -54,8 +54,13 @@ func _run() -> void:
 		await _verify_rejection(ordinary, false)
 		_done()
 		return
-	get_tree().current_scene.get_node("Menu/BtnRiftRoute").pressed.emit()
-	var entry := get_tree().current_scene.get_node("RiftChoices/DualIntercept") as Button
+	var title := get_tree().current_scene
+	if title.has_node("TrialHub"):
+		title.get_node("Menu/BtnTrials").pressed.emit()
+		title.get_node("TrialHub/BtnRiftRoute").pressed.emit()
+	else:
+		title.get_node("Menu/BtnRiftRoute").pressed.emit()
+	var entry := title.get_node("RiftChoices/DualIntercept") as Button
 	_check("separate_title_entry", entry.is_visible_in_tree())
 	entry.pressed.emit()
 	await get_tree().scene_changed

@@ -14,6 +14,7 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 - [裂隙母舰的画面设计与验收](./docs/art_audio_pipeline.md#裂隙母舰可读性)
 - [Harmony 插件契约](./docs/Harmony_Plugin_Contract.md)
 - [弹幕射击可玩性调研](./docs/research_bullet_hell_fun_2026-09-27.md)
+- [标题与联机大厅](./docs/entry_ui.md)
 - [联机回归门禁](./tests/run_probe.sh)
 - [波次编排门禁](./tests/wave_probe.tscn)
 
@@ -29,20 +30,22 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 
 ```
 scenes/ui/title_screen.tscn   ← 项目主场景
-├── 单机 → scenes/main.tscn
-├── 首卡试飞 → 试飞 A / 试飞 B → 相同的首选起点
-├── 进攻窗口 · 45 秒 → 单人贯穿／威力试飞
-├── 开场试飞 · 90 秒 → 开始 90 秒试飞 / 近身试飞 A / 近身试飞 B
-└── 联机 → scenes/ui/lobby.tscn → scenes/main.tscn
+├── 单人出击 → 标准战斗
+├── 双人联机 → 创建房间 / 加入附近房间 → 普通合作或裂隙航道
+└── 试飞任务
+    ├── 首卡试飞 → 试飞 A / 试飞 B
+    ├── 进攻窗口 → 45 秒单人试飞
+    ├── 开场试飞 → 开始 90 秒试飞 / 近身试飞 A / 近身试飞 B
+    └── 裂隙航道 → 原版 / 变奏 / 双线截击（仅双人）
 ```
 
-标题页的「首卡试飞」供观察者选 A 或 B。两版直接进入首选，重试沿用所选版本。完整试飞仍可直接运行 `scenes/first_card_trial.tscn`，从一级继续到首领战。[复跑与 Android 导出](docs/first_card_trial.md) · [五分钟试玩单](docs/first_card_playtest.md)
+「试飞任务」内的「首卡试飞」供观察者选 A 或 B。两版直接进入首选，重试沿用所选版本。完整试飞仍可直接运行 `scenes/first_card_trial.tscn`，从一级继续到首领战。[复跑与 Android 导出](docs/first_card_trial.md) · [五分钟试玩单](docs/first_card_playtest.md)
 
-「进攻窗口 · 45 秒」复用现有飞机和卡牌。开火前击毁蓄力的后排，下一轮少一股实际弹流。中路可绕行，飞行中可重试，选卡前可勾选「旧版对照」。[复跑和盲试玩](docs/offense_window_trial.md)
+「进攻窗口」是 45 秒试飞。开火前击毁蓄力的后排，下一轮少一股实际弹流。中路可绕行，飞行中可重试，选卡前可勾选「旧版对照」。[复跑和盲试玩](docs/offense_window_trial.md)
 
-「开场试飞 · 90 秒」进入二级选择。首项进入完整试飞，先用普通主炮试一次截断，再从贯穿、溅射、威力中选择。也可点「近身试飞 A」或「近身试飞 B」，直接体验 18 秒的精英对照。[开场路线](docs/opening_trial.md) · [近身对照](docs/elite_close_trial.md)
+「开场试飞」提供完整的 90 秒试飞，先用普通主炮试一次截断，再从贯穿、溅射、威力中选择。也可点「近身试飞 A」或「近身试飞 B」，直接体验 18 秒的精英对照。[开场路线](docs/opening_trial.md) · [近身对照](docs/elite_close_trial.md)
 
-「裂隙航道 · 试玩」可选择原版或变奏。变奏让首卡后的第二波沿同侧入场，由纵列先发，中路仍可绕行。母舰发出定向脉冲后，可绕到亮出的盾沿用实弹加速破盾。[航道规则](docs/rift_route.md)
+「裂隙航道」可选择原版或变奏。变奏让首卡后的第二波沿同侧入场，由纵列先发，中路仍可绕行。母舰发出定向脉冲后，可绕到亮出的盾沿用实弹加速破盾。双线截击需要两人从同一试飞入口进入。[航道规则](docs/rift_route.md) · [双线截击](docs/dual_intercept.md)
 
 ## 核心循环
 

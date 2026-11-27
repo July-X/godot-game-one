@@ -37,7 +37,7 @@ func _run() -> void:
 	var usable := safe.grow(-SafeArea.MENU_MARGIN)
 	_check("title_button_rectangles_inside_inset", usable.encloses(title.get_node("Menu/BtnSingle").get_global_rect())
 		and usable.encloses(title.get_node("Menu/BtnMultiplayer").get_global_rect())
-		and usable.encloses(title.get_node("Menu/BtnFirstCard").get_global_rect()))
+		and usable.encloses(title.get_node("Menu/BtnTrials").get_global_rect()))
 	await _tap(title.get_node("Menu/BtnMultiplayer"))
 	var lobby := await _wait_for_scene("res://scenes/ui/lobby.tscn")
 	if lobby == null:
@@ -51,7 +51,7 @@ func _run() -> void:
 	title = await _wait_for_scene(TITLE)
 	if title == null:
 		return
-	await _tap(title.get_node("Menu/BtnFirstCard"))
+	await _open_first_card(title)
 	var choices: VBoxContainer = title.get_node("TrialChoices")
 	_check("neutral_menu_opens", choices.visible and not title.get_node("Menu/BtnSingle").is_visible_in_tree()
 		and choices.get_node("A").text == "试飞 A" and choices.get_node("B").text == "试飞 B")
@@ -60,12 +60,15 @@ func _run() -> void:
 	_check("chooser_inside_inset", safe.encloses(choices.get_global_rect())
 		and safe.encloses(choices.get_node("A").get_global_rect()) and safe.encloses(choices.get_node("B").get_global_rect()))
 	await _tap(choices.get_node("Back"))
+	await _tap(title.get_node("TrialHub/Back"))
 	_check("touch_cancel_restores_title", get_tree().current_scene == title and not choices.visible and title.get_node("Menu/BtnSingle").is_visible_in_tree())
-	title.get_node("Menu/BtnFirstCard").grab_focus()
+	title.get_node("Menu/BtnTrials").grab_focus()
+	await _key(KEY_ENTER)
 	await _key(KEY_ENTER)
 	_check("keyboard_can_open_chooser", choices.visible)
 	await _key(KEY_W)
 	_check("chooser_holds_during_single_shortcut", get_tree().current_scene == title and choices.visible)
+	await _key(KEY_ESCAPE)
 	await _key(KEY_ESCAPE)
 	_check("keyboard_cancel_restores_title", get_tree().current_scene == title and not choices.visible)
 	title.get_node("Menu/BtnSingle").grab_focus()
@@ -77,7 +80,7 @@ func _run() -> void:
 	_check("gamepad_moves_title_focus", title.get_node("Menu/BtnMultiplayer").has_focus())
 
 	for variant in ["A", "B"]:
-		await _tap(title.get_node("Menu/BtnFirstCard"))
+		await _open_first_card(title)
 		if variant == "A":
 			await _capture_chooser()
 		await _tap(title.get_node("TrialChoices/" + variant))
@@ -86,8 +89,9 @@ func _run() -> void:
 		title = await _wait_for_scene(TITLE)
 		if title == null:
 			return
-		_check(variant + "_return_clears_chooser", not title.get_node("TrialChoices").visible and title.get_node("Menu/BtnFirstCard").is_visible_in_tree())
-	title.get_node("Menu/BtnFirstCard").grab_focus()
+		_check(variant + "_return_clears_chooser", not title.get_node("TrialChoices").visible and title.get_node("Menu/BtnTrials").is_visible_in_tree())
+	title.get_node("Menu/BtnTrials").grab_focus()
+	await _key(KEY_ENTER)
 	await _key(KEY_ENTER)
 	title.get_node("TrialChoices/B").grab_focus()
 	await _key(KEY_ENTER)
@@ -99,7 +103,7 @@ func _run() -> void:
 	title = await _wait_for_scene(TITLE)
 	if title == null:
 		return
-	_check("mouse_can_return_to_title", title.get_node("Menu/BtnFirstCard").is_visible_in_tree())
+	_check("mouse_can_return_to_title", title.get_node("Menu/BtnTrials").is_visible_in_tree())
 	await _tap(title.get_node("Menu/BtnSingle"))
 	var solo := await _wait_for_scene(SOLO)
 	if solo == null:
@@ -107,6 +111,10 @@ func _run() -> void:
 	await _start_steering(solo, "solo", Vector2.RIGHT)
 	_release_stick(solo, "solo")
 	_finish()
+
+func _open_first_card(title: Node) -> void:
+	await _tap(title.get_node("Menu/BtnTrials"))
+	await _tap(title.get_node("TrialHub/BtnFirstCard"))
 
 func _prepare_mobile_scene(node: Node) -> void:
 	if node.scene_file_path in [SOLO, TRIAL_A, TRIAL_B]:

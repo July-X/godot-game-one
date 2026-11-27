@@ -223,7 +223,8 @@ func _check_title_flow() -> void:
 	await get_tree().scene_changed
 	var title := get_tree().current_scene
 	await get_tree().process_frame
-	await _tap(title.get_node("Menu/BtnOffenseWindow"))
+	await _tap(title.get_node("Menu/BtnTrials"))
+	await _tap(title.get_node("TrialHub/BtnOffenseWindow"))
 	trial = get_tree().current_scene as Trial
 	_check("title_opens_independent_trial", is_instance_valid(trial) and UpgradeDraft.get_draft(1).cards == Trial.OFFER)
 	if not is_instance_valid(trial):

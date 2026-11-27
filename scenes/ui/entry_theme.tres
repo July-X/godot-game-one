@@ -1,0 +1,117 @@
+[gd_resource type="Theme" format=3]
+
+[sub_resource type="StyleBoxFlat" id="Button"]
+content_margin_left = 17.0
+content_margin_top = 9.0
+content_margin_right = 17.0
+content_margin_bottom = 9.0
+bg_color = Color(0.065, 0.109, 0.17, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.34, 0.45, 1)
+
+[sub_resource type="StyleBoxFlat" id="Hover"]
+content_margin_left = 17.0
+content_margin_top = 9.0
+content_margin_right = 17.0
+content_margin_bottom = 9.0
+bg_color = Color(0.10, 0.19, 0.28, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.65, 0.77, 1)
+
+[sub_resource type="StyleBoxFlat" id="Pressed"]
+content_margin_left = 17.0
+content_margin_top = 9.0
+content_margin_right = 17.0
+content_margin_bottom = 9.0
+bg_color = Color(0.12, 0.24, 0.32, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.72, 0.81, 1)
+
+[sub_resource type="StyleBoxFlat" id="Disabled"]
+content_margin_left = 17.0
+content_margin_top = 9.0
+content_margin_right = 17.0
+content_margin_bottom = 9.0
+bg_color = Color(0.055, 0.077, 0.12, 0.91)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.17, 0.24, 0.32, 1)
+
+[sub_resource type="StyleBoxFlat" id="Focus"]
+draw_center = false
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.55, 0.85, 0.9, 1)
+
+[sub_resource type="StyleBoxFlat" id="Card"]
+content_margin_left = 18.0
+content_margin_top = 7.0
+content_margin_right = 18.0
+content_margin_bottom = 31.0
+bg_color = Color(0.065, 0.109, 0.17, 0.97)
+border_width_left = 2
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.34, 0.45, 1)
+
+[sub_resource type="StyleBoxFlat" id="CardHover"]
+content_margin_left = 18.0
+content_margin_top = 7.0
+content_margin_right = 18.0
+content_margin_bottom = 31.0
+bg_color = Color(0.11, 0.21, 0.29, 1)
+border_width_left = 3
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.67, 0.77, 1)
+
+[sub_resource type="StyleBoxFlat" id="Launch"]
+content_margin_left = 18.0
+content_margin_top = 7.0
+content_margin_right = 18.0
+content_margin_bottom = 31.0
+bg_color = Color(0.086, 0.18, 0.25, 1)
+border_width_left = 4
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.34, 0.67, 0.72, 1)
+
+[resource]
+default_font_size = 17
+Button/colors/font_color = Color(0.82, 0.9, 0.97, 1)
+Button/colors/font_disabled_color = Color(0.47, 0.57, 0.68, 1)
+Button/colors/font_focus_color = Color(0.94, 0.98, 1, 1)
+Button/styles/normal = SubResource("Button")
+Button/styles/hover = SubResource("Hover")
+Button/styles/pressed = SubResource("Pressed")
+Button/styles/disabled = SubResource("Disabled")
+Button/styles/focus = SubResource("Focus")
+OptionButton/styles/normal = SubResource("Button")
+OptionButton/styles/hover = SubResource("Hover")
+OptionButton/styles/pressed = SubResource("Pressed")
+OptionButton/styles/disabled = SubResource("Disabled")
+OptionButton/styles/focus = SubResource("Focus")
+EntryCard/base_type = &"Button"
+EntryCard/font_sizes/font_size = 22
+EntryCard/styles/normal = SubResource("Card")
+EntryCard/styles/hover = SubResource("CardHover")
+EntryCard/styles/pressed = SubResource("CardHover")
+LaunchCard/base_type = &"EntryCard"
+LaunchCard/styles/normal = SubResource("Launch")
+Label/colors/font_color = Color(0.82, 0.9, 0.97, 1)
