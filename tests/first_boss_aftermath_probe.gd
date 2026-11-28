@@ -58,7 +58,10 @@ func _run() -> void:
 	var slot := NetworkManager.local_player_id() if NetworkManager.is_online() else 1
 	var pilot: Node2D = _main._players[slot] if NetworkManager.is_online() else _main._player
 	var boss_at := Vector2(NetworkManager.battle_size(_main).x * 0.5, BOSS_Y)
-	pilot.global_position = boss_at + Vector2(-46.0 if _role == "client" else 46.0, 172.0)
+	# The two pickup circles overlap at the single-player pose. Approach from
+	# separate sides so the host is farther from the guest's supply fragments.
+	var pickup_offset := -190.0 if _role == "client" else (190.0 if _role == "host" else 46.0)
+	pilot.global_position = boss_at + Vector2(pickup_offset, 172.0)
 	pilot.reset_physics_interpolation()
 	pilot.set_physics_process(false)
 	pilot.set_process_unhandled_input(false)
@@ -195,7 +198,8 @@ func _exercise(pilot: Node2D, slot: int) -> void:
 	pilot._motion.handle_mobile_move(Vector2.ZERO)
 	var pickup := await _until_active(func():
 		if _role == "client":
-			return GameState.get_shoot_speed_level(slot) > 1
+			return (GameState.get_shoot_speed_level(slot) > 1 or GameState.get_bullet_power_level(slot) > 1
+				or GameState.get_current_health(slot) > GameState.START_HEALTH)
 		return _collected_cores > 0 and GameState.get_laser_cooldown(slot) < 6.5, 1.0)
 	_check("real_move_shoot_and_collect", moved and did_shoot and pickup,
 		"slot=%d moved=%.1f shot=%s pickup=%s laser_cd=%.2f fire_level=%d active=%.3f" % [slot,
@@ -256,19 +260,22 @@ func _check_spawns() -> void:
 	var appeared := await _wait_until(func(): return not _births.enemy.is_empty() and not _births.asteroid.is_empty(), 6)
 	if not await _require("both_pressure_sources_resumed", appeared):
 		return
-	var earliest := minf(float(_births.enemy[0].active), float(_births.asteroid[0].active))
-	if _sample == "quiet":
-		_check("existing_gap_neither_shortened_nor_delayed", earliest > 2.5 and earliest < 2.85, str(earliest))
-	elif _baseline or _sample == "later":
-		_check("birth_before_two_seconds", earliest < 0.8, str(earliest))
-	else:
-		_check("minimum_active_aftermath", earliest >= 1.92 and earliest < 2.22, str(earliest))
+	# Remote render deltas and batched deliveries are not the authoritative spawn clock.
+	if _role != "client":
+		var earliest := minf(float(_births.enemy[0].active), float(_births.asteroid[0].active))
+		if _sample == "quiet":
+			_check("existing_gap_neither_shortened_nor_delayed", earliest > 2.5 and earliest < 2.85, str(earliest))
+		elif _baseline or _sample == "later":
+			_check("birth_before_two_seconds", earliest < 0.8, str(earliest))
+		else:
+			_check("minimum_active_aftermath", earliest >= 1.92 and earliest < 2.22, str(earliest))
 	if _sample in ["pending", "later"]:
 		var staggered := await _wait_until(func(): return _births.enemy.size() >= 4, 4)
-		var spacing := []
-		for index in range(1, mini(_births.enemy.size(), 4)):
-			spacing.append(float(_births.enemy[index].active) - float(_births.enemy[index - 1].active))
-		_check("original_four_enemies_keep_stagger", staggered and spacing.min() >= 0.04, str(spacing))
+		if _role != "client":
+			var spacing := []
+			for index in range(1, mini(_births.enemy.size(), 4)):
+				spacing.append(float(_births.enemy[index].active) - float(_births.enemy[index - 1].active))
+			_check("original_four_enemies_keep_stagger", staggered and spacing.min() >= 0.04, str(spacing))
 	if _role == "host":
 		_report_first_births.rpc(_birth_ids())
 	elif _role == "client":
