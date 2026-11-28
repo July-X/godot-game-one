@@ -24,6 +24,7 @@ var _stream_boss_warning: AudioStreamWAV
 var _stream_boss_approach: AudioStreamWAV
 var _stream_boss_shield_recharge: AudioStreamWAV
 var _stream_boss_pulse_lock: AudioStreamWAV
+var _stream_boss_reward: AudioStreamWAV
 var _stream_volley: AudioStreamWAV
 var _stream_laser: AudioStreamWAV
 var _stream_player_hurt: AudioStreamWAV
@@ -60,6 +61,8 @@ func _ready() -> void:
 	_stream_boss_approach.data += gap + _generate_tone(349.23, 0.22, 0.39).data
 	_stream_boss_shield_recharge = _generate_sweep(315.0, 850.0, 0.29, 0.23, 0.085)
 	_stream_boss_pulse_lock = _generate_tone(720.0, 0.085, 0.15)
+	_stream_boss_reward = _generate_tone(466.16, 0.085, 0.15)
+	_stream_boss_reward.data += _generate_tone(698.46, 0.125, 0.14).data
 	_stream_player_hurt = _generate_tone(200.0, 0.2, 0.4)
 	_stream_ui_confirm = _generate_tone(800.0, 0.08, 0.25)
 	_stream_ui_select = _generate_tone(500.0, 0.05, 0.15)
@@ -240,6 +243,14 @@ func play_boss_shield_recharge() -> void:
 
 func play_boss_pulse_lock() -> void:
 	_play_stream(_stream_boss_pulse_lock, _players)
+
+func play_first_boss_reward() -> void:
+	_play_stream(_stream_boss_reward, _players)
+
+func stop_first_boss_reward() -> void:
+	for voice in _players:
+		if voice.playing and voice.stream == _stream_boss_reward:
+			voice.stop()
 
 func stop_boss_pulse_lock() -> void:
 	for voice in _players:

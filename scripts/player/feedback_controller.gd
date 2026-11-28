@@ -18,6 +18,10 @@ var _downed_tween: Tween
 var _walk_cycle: float = 0.0
 var _invincible_timer: float = 0.0
 var _explosion_scene = preload("res://scenes/effects/explosion.tscn")
+var _reward_body_cue: Node2D
+var _reward_speed_before := -1.0
+var _reward_exhaust_boost := 0.0
+var _reward_exhaust_tween: Tween
 
 
 func update(delta: float) -> void:
@@ -52,6 +56,9 @@ func _update_engine_breathing(delta: float) -> void:
 	## 两者都基于 PLAYER_VISUAL_SCALE，不能写死倍率
 	var base: Vector2 = _glow_base_scale
 	_engine_glow.scale = Vector2(base.x * breath, base.y)
+	if _reward_exhaust_boost > 0.0:
+		_engine_glow.modulate.a = minf(_engine_glow.modulate.a + _reward_exhaust_boost * 0.27, 1.0)
+		_engine_glow.scale.y *= 1.0 + _reward_exhaust_boost * 0.52
 
 func _update_walk_animation(delta: float) -> void:
 	if _player.velocity.length() > 10.0:
@@ -76,6 +83,8 @@ func _update_invincible_flash() -> void:
 
 
 func set_downed_visual(active: bool) -> void:
+	if active:
+		clear_first_boss_reward_visuals()
 	if _engine_glow:
 		_engine_glow.visible = not active
 	if not _sprite:
@@ -95,6 +104,56 @@ func set_downed_visual(active: bool) -> void:
 	_downed_tween = create_tween().set_loops().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_downed_tween.tween_property(_sprite, "self_modulate:a", 0.52, 0.75)
 	_downed_tween.tween_property(_sprite, "self_modulate:a", 0.82, 0.75)
+
+
+## 本机到账时用两道机翼短光，避免覆盖原机体的受击和队友配色。
+func show_first_boss_reward(reward_type: String, previous_value: float) -> void:
+	clear_first_boss_reward_visuals()
+	if reward_type == "speed" and previous_value >= 0.0 \
+			and GameState.get_move_speed_multiplier(_player.peer_id) > previous_value:
+		_reward_speed_before = previous_value
+	var cue := Node2D.new()
+	cue.name = "FirstBossRewardBody"
+	cue.modulate.a = 0.15
+	cue.scale = Vector2.ONE * 0.9
+	_player.add_child(cue)
+	_reward_body_cue = cue
+	for side: float in [-1.0, 1.0]:
+		var strake := Line2D.new()
+		strake.points = PackedVector2Array([Vector2(side * 15.0, -16.0), Vector2(side * 31.0, -2.0),
+			Vector2(side * 30.0, 11.0), Vector2(side * 21.0, 15.0)])
+		strake.width = 2.7
+		strake.default_color = Color("#c1f0fc")
+		strake.antialiased = true
+		cue.add_child(strake)
+	var lift := cue.create_tween().set_parallel()
+	lift.tween_property(cue, "scale", Vector2.ONE * 1.12, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	lift.tween_property(cue, "modulate:a", 0.93, 0.075)
+	lift.tween_property(cue, "modulate:a", 0.0, 0.29).from(0.93).set_delay(0.075)
+	lift.chain().tween_callback(cue.queue_free)
+
+func has_first_boss_speed_reward() -> bool:
+	return _reward_speed_before >= 0.0
+
+func show_first_boss_speed_move() -> void:
+	if GameState.get_move_speed_multiplier(_player.peer_id) <= _reward_speed_before:
+		return
+	_reward_speed_before = -1.0
+	_reward_exhaust_boost = 1.0
+	_reward_exhaust_tween = create_tween()
+	_reward_exhaust_tween.tween_property(self, "_reward_exhaust_boost", 0.0, 0.34).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+func clear_first_boss_reward_visuals() -> void:
+	if is_instance_valid(_reward_body_cue):
+		_reward_body_cue.hide()
+		_reward_body_cue.queue_free()
+		_reward_body_cue = null
+	if _reward_exhaust_tween:
+		_reward_exhaust_tween.kill()
+		_reward_exhaust_tween = null
+	if _reward_exhaust_boost > 0.0:
+		_reward_exhaust_boost = 0.0
+		_update_engine_breathing(0.0)
 
 
 ## ── 外观刷新 ────────────────────────────────────────

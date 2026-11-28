@@ -88,6 +88,8 @@ var _player_report_rejected: int = 0
 var _last_entity_resync_request_msec: int = 0
 var _pending_impact := PackedFloat32Array()
 var _boss_reward_claimed_peers: Dictionary = {}
+var _local_boss_bonus_before: Dictionary[String, Vector2] = {}
+var _local_first_boss_reward := false
 const ENTITY_SYNC_INTERVAL: float = 0.022
 const ENTITY_SYNC_STRIDE: int = 3
 const ENTITY_SHIELD_SYNC_STRIDE: int = 3
@@ -282,6 +284,7 @@ func _debug_log_variant_assets() -> void:
 
 func _exit_tree() -> void:
 	_restore_remix_entry_throttle()
+	SFX.stop_first_boss_reward()
 	BGM.stop_bgm()
 
 func _spawn_player() -> void:
@@ -387,6 +390,10 @@ func set_lan_hold(held: bool) -> void:
 			if shot.ordinary_enemy_round > 0:
 				Pool.release(shot)
 		GameState.clear_unconfirmed_actions()
+		_local_boss_bonus_before.clear()
+		_hud.clear_first_boss_reward_flash()
+		if _hud.first_boss_bonus_presentation:
+			SFX.stop_first_boss_reward()
 		if _is_first_ordinary_boss():
 			SFX.stop_first_boss_cues(true)
 			_boss.queue_redraw()
@@ -699,6 +706,7 @@ func _rpc_despawn_player(p_peer_id: int) -> void:
 
 func _spawn_hud() -> void:
 	_hud = _hud_scene.instantiate()
+	_hud.first_boss_bonus_presentation = scene_file_path == "res://scenes/main.tscn"
 	add_child(_hud)
 
 
@@ -1349,6 +1357,7 @@ func _spawn_boss(level: int) -> void:
 			if is_instance_valid(_players.get(peer_id)) and GameState.is_player_alive(peer_id):
 				pilots.append(peer_id)
 	_boss.setup(level, coop, pilots)
+	_hud.first_boss_bonus_presentation = _boss.uses_first_boss_cues()
 	if _player and is_instance_valid(_player):
 		_boss.set_target(_player)
 	_boss.boss_died.connect(_on_boss_died)
@@ -1392,6 +1401,7 @@ func _pick_boss_variant_id() -> int:
 func _on_boss_died() -> void:
 	_clear_boss_laser_visual()
 	if _boss != null:
+		_expect_local_boss_reward(_boss)
 		var eid: int = _boss.entity_id
 		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 			_despawned_entity_ids[eid] = true
@@ -2100,6 +2110,7 @@ func _rpc_spawn_boss(eid: int, level: int, variant_id: int, snapshot: Dictionary
 		_boss.position = to_local(snapshot.position)
 		_boss.set_sprite_variant(variant_id)
 		_boss.setup(level)
+		_hud.first_boss_bonus_presentation = _boss.uses_first_boss_cues()
 		if is_instance_valid(_player):
 			_boss.set_target(_player)
 		_boss.boss_died.connect(_on_boss_died)
@@ -2167,11 +2178,54 @@ func on_local_powerup_feedback(powerup_type: String, world_pos: Vector2, confirm
 		add_child(ring)
 		ring.start_core_pickup()
 
-func on_local_boss_reward_feedback(_reward_type: String) -> void:
+func _expect_local_boss_reward(boss: Boss) -> void:
+	if not GameState.normal_growth_enabled:
+		return
+	_local_boss_bonus_before.clear()
+	var slot := NetworkManager.local_player_id()
+	if _lan_frozen_frame >= 0 or not GameState.is_player_alive(slot):
+		return
+	_local_first_boss_reward = boss.uses_first_boss_cues()
+	for kind: String in _boss_reward_pool():
+		_local_boss_bonus_before[kind] = _local_boss_reward_values(kind, slot)
+
+## x 是权威奖励累计值，y 是受武器上限约束后的实际数值。
+func _local_boss_reward_values(kind: String, slot: int) -> Vector2:
+	match kind:
+		"laser_cd":
+			return Vector2(GameState.get_laser_cd_bonus(slot), GameState.get_laser_cooldown_max(slot))
+		"bullet_count":
+			return Vector2(GameState.get_extra_bullet_count(slot), GameState.get_bullet_count(slot))
+		"damage":
+			return Vector2(GameState.get_extra_damage_bonus(slot), GameState.get_bullet_damage(slot))
+		"speed":
+			return Vector2(GameState.get_move_speed_bonus(slot), GameState.get_move_speed_multiplier(slot))
+	return Vector2.ZERO
+
+func on_local_boss_reward_feedback(reward_type: String) -> void:
 	if _hud == null:
 		return
-	if _hud.has_method("show_boss_bonus_attribute_feedback"):
+	if not GameState.normal_growth_enabled:
 		_hud.show_boss_bonus_attribute_feedback()
+		return
+	if not GameState.game_running or _lan_frozen_frame >= 0 or not _local_boss_bonus_before.has(reward_type):
+		return
+	var slot := NetworkManager.local_player_id()
+	var before := _local_boss_bonus_before[reward_type]
+	var current := _local_boss_reward_values(reward_type, slot)
+	if current.x <= before.x:
+		return
+	# 来自同一可靠通道的死亡、权威数值和到账通知，按顺序只消费一次。
+	_local_boss_bonus_before.clear()
+	if not _local_first_boss_reward:
+		_hud.show_boss_bonus_attribute_feedback()
+		return
+	var pilot: Node = _players.get(slot) if NetworkManager.is_online() else _player
+	if not is_instance_valid(pilot) or pilot.is_downed or not GameState.is_player_alive(slot):
+		return
+	pilot.show_first_boss_reward(reward_type, before.y)
+	_hud.show_boss_bonus_attribute_feedback(reward_type, reward_type == "laser_cd" and current.y < before.y)
+	SFX.play_first_boss_reward()
 
 func _send_boss_reward_feedback(peer_id: int, reward_type: String) -> void:
 	var target_peer := peer_id if peer_id > 0 else 1
@@ -2216,6 +2270,8 @@ func _rpc_spawn_asteroid(eid: int, pos_x: float, pos_y: float) -> void:
 @rpc("authority", "reliable", "call_remote")
 func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
 	_pending_enemy_warning_acks.erase(eid)
+	if combat_kill and not _despawned_entity_ids.has(eid) and is_instance_valid(_boss) and _boss.entity_id == eid:
+		_expect_local_boss_reward(_boss)
 	_despawned_entity_ids[eid] = true
 	if is_instance_valid(_boss) and _boss.entity_id == eid:
 		_clear_boss_laser_visual()
@@ -2659,6 +2715,10 @@ func _rpc_spawn_bullets(data: Array) -> void:
 					entry[6] = GameState.get_main_cannon_speed()
 		_rpc_spawn_bullets.rpc(data)
 	_spawn_network_bullets(data, sender)
+	if not multiplayer.is_server() and multiplayer.get_remote_sender_id() == 1 and _lan_frozen_frame < 0:
+		var pilot: Node = _players.get(NetworkManager.local_player_id())
+		if is_instance_valid(pilot) and not pilot.is_downed:
+			pilot._combat.confirm_first_boss_reward_volley(data)
 
 @rpc("any_peer", "reliable", "call_remote")
 func _rpc_request_scatter(data: Array) -> void:

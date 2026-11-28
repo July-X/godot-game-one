@@ -21,6 +21,15 @@ var _missile_pod_built: int = 0
 var _pickup_radius: float = 280.0
 var _pickup_frame_skip: int = 0
 
+const REWARD_VOLLEY_MAX_AGE_MS := 900
+const REWARD_VOLLEY_MAX_CANDIDATES := 16
+var _first_boss_cannon_reward := ""
+var _first_boss_cannon_before := -1.0
+var _capture_first_boss_volley := false
+var _first_boss_volley_positions := PackedVector2Array()
+var _first_boss_volley_candidates: Array[Dictionary] = []
+var _first_boss_muzzle_cue: Node2D
+
 
 func update(delta: float) -> void:
 	_shoot_timer -= delta
@@ -53,6 +62,8 @@ func cancel_pending_casts() -> void:
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
 
 func _spawn_bullet(pos: Vector2, angle: float, damage: int, is_player: bool, level: int, speed: float, scatter := false) -> void:
+	if _capture_first_boss_volley:
+		_first_boss_volley_positions.append(pos)
 	var owner_peer: int = _player.peer_id if is_player else -1
 	if NetworkManager.is_online():
 		## 联机统一走服务器权威：
@@ -87,6 +98,9 @@ func _shoot() -> void:
 	var bullet_count: int = GameState.get_bullet_count(_player.peer_id)
 	var level: int = GameState.get_shoot_level(_player.peer_id)
 	var damage: int = GameState.get_bullet_damage(_player.peer_id)
+	if not _first_boss_cannon_reward.is_empty():
+		var realized := bullet_count if _first_boss_cannon_reward == "bullet_count" else damage
+		_capture_first_boss_volley = realized > _first_boss_cannon_before
 	var speed := GameState.get_main_cannon_speed()
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		speed = GameState.MAIN_CANNON_SPEED
@@ -127,6 +141,106 @@ func _shoot() -> void:
 			_spawn_bullet(_player.global_position + engine_offset + offset, base_angle, damage, true, level, speed)
 
 	_show_muzzle_flash()
+	if _capture_first_boss_volley:
+		_finish_first_boss_reward_volley(damage)
+
+
+func arm_first_boss_cannon_reward(reward_type: String, previous_value: float) -> void:
+	var supported_value := (GameState.get_bullet_count(_player.peer_id) if reward_type == "bullet_count"
+		else GameState.get_bullet_damage(_player.peer_id))
+	if previous_value < 0.0 or supported_value <= previous_value:
+		return
+	_first_boss_cannon_reward = reward_type
+	_first_boss_cannon_before = previous_value
+
+
+func _finish_first_boss_reward_volley(damage: int) -> void:
+	_capture_first_boss_volley = false
+	var positions := _first_boss_volley_positions
+	_first_boss_volley_positions = PackedVector2Array()
+	if positions.is_empty():
+		return
+	# 均匀分布的两端往往已存在。第一道内侧弹线对应这轮实际新增的发射位置。
+	var offset := _player.to_local(positions[mini(1, positions.size() - 1)])
+	if not NetworkManager.is_online() or multiplayer.is_server():
+		_show_first_boss_reward_muzzle(offset)
+		return
+	# 加入端等房主原有的弹体回送。保留短队列以允许上一批上传丢失。
+	_first_boss_volley_candidates.append({
+		"positions": positions, "damage": damage, "offset": offset,
+		"expires": Time.get_ticks_msec() + REWARD_VOLLEY_MAX_AGE_MS,
+	})
+	if _first_boss_volley_candidates.size() > REWARD_VOLLEY_MAX_CANDIDATES:
+		_first_boss_volley_candidates.pop_front()
+
+
+func confirm_first_boss_reward_volley(data: Array) -> void:
+	if _first_boss_volley_candidates.is_empty() or _player.is_downed:
+		return
+	var now := Time.get_ticks_msec()
+	while not _first_boss_volley_candidates.is_empty() and int(_first_boss_volley_candidates.front().expires) < now:
+		_first_boss_volley_candidates.pop_front()
+	for candidate in _first_boss_volley_candidates:
+		if _matches_first_boss_volley(data, candidate.positions, candidate.damage):
+			_show_first_boss_reward_muzzle(candidate.offset)
+			return
+
+
+func _matches_first_boss_volley(data: Array, positions: PackedVector2Array, damage: int) -> bool:
+	# 主炮每次同步排队，单轮中间不会插入其他槽位或者其他武器的弹体。
+	for start in range(data.size() - positions.size() + 1):
+		var matched := true
+		for i in positions.size():
+			var row: Array = data[start + i]
+			if row.size() < 11 or not bool(row[4]) or int(row[10]) != _player.peer_id \
+					or int(row[3]) != damage or Vector2(row[0], row[1]) != positions[i]:
+				matched = false
+				break
+		if matched:
+			return true
+	return false
+
+
+func _show_first_boss_reward_muzzle(added_port: Vector2) -> void:
+	var reward_type := _first_boss_cannon_reward
+	_first_boss_cannon_reward = ""
+	_first_boss_volley_candidates.clear()
+	var muzzle := _player.get_node_or_null("MuzzleFlash") as Sprite2D
+	if not muzzle or not muzzle.texture:
+		return
+	var cue := Node2D.new()
+	cue.name = "FirstBossRewardMuzzle"
+	cue.set_meta("reward_type", reward_type)
+	_player.add_child(cue)
+	_first_boss_muzzle_cue = cue
+	var flare := Sprite2D.new()
+	flare.texture = muzzle.texture
+	if reward_type == "bullet_count":
+		flare.position = added_port
+		flare.scale = Vector2(0.85, 1.25)
+		flare.modulate = Color("#9de5ffd7")
+		var port := Line2D.new()
+		port.position = added_port
+		port.points = PackedVector2Array([Vector2(-5, 4), Vector2(-4, -3), Vector2(4, -3), Vector2(5, 4)])
+		port.width = 2.0
+		port.default_color = Color("#bef0ff")
+		cue.add_child(port)
+	else:
+		flare.position = muzzle.position
+		flare.scale = Vector2(1.4, 1.7)
+		flare.modulate = Color("#ffac68da")
+	cue.add_child(flare)
+	var fade := cue.create_tween()
+	fade.tween_property(cue, "modulate:a", 0.0, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	fade.tween_callback(cue.queue_free)
+
+
+func clear_first_boss_reward_visuals() -> void:
+	_first_boss_volley_candidates.clear()
+	if is_instance_valid(_first_boss_muzzle_cue):
+		_first_boss_muzzle_cue.hide()
+		_first_boss_muzzle_cue.queue_free()
+		_first_boss_muzzle_cue = null
 
 
 ## ── 技能 ────────────────────────────────────────────

@@ -23,6 +23,7 @@ func go_downed(at: Vector2) -> void:
 	_invincible_timer = 0.0
 	_action_router.consume_actions()
 	_combat.cancel_pending_casts()
+	_combat.clear_first_boss_reward_visuals()
 	_motion.stop_for_downed()
 	_feedback.set_downed_visual(true)
 	remove_from_group("player")
@@ -45,6 +46,8 @@ func complete_revive() -> void:
 func clear_lan_input() -> void:
 	_action_router.consume_actions()
 	_combat.cancel_pending_casts()
+	_combat.clear_first_boss_reward_visuals()
+	_feedback.clear_first_boss_reward_visuals()
 	_motion.stop_for_downed()
 
 func extend_rescue_protection(ticks: int) -> void:
@@ -224,7 +227,15 @@ func _physics_process(delta: float) -> void:
 
 	## 闪避：Shift 或触屏按键触发，位移和无敌帧同时给
 	_consume_dash()
+	var speed_reward_input := false
+	var movement_start := Vector2.ZERO
+	if _feedback.has_first_boss_speed_reward() and not _motion.is_dashing():
+		var move_input: Vector2 = _motion.touch_move if _motion.mobile_mode else _motion.mouse_vel
+		speed_reward_input = move_input.length_squared() > 0.01
+		movement_start = global_position
 	_motion.update(delta, GameState.get_move_speed_multiplier(), NetworkManager.battle_size(self))
+	if speed_reward_input and movement_start.distance_squared_to(global_position) > 0.0025:
+		_feedback.show_first_boss_speed_move()
 	if _motion.is_dashing():
 		## 冲刺期间强制无敌，且盖过受击后的 1 秒无敌计时
 		_invincible_timer = maxf(_invincible_timer, 0.05)
@@ -309,6 +320,14 @@ func _tick_runtime(delta: float) -> void:
 
 
 ## ── 公开入口 ──────────────────────────────────────────
+
+func show_first_boss_reward(reward_type: String, previous_value := -1.0) -> void:
+	if is_downed or not GameState.game_running or not _is_locally_controlled_player():
+		return
+	_feedback.show_first_boss_reward(reward_type, previous_value)
+	if reward_type in ["bullet_count", "damage"]:
+		_combat.arm_first_boss_cannon_reward(reward_type, previous_value)
+
 
 func request_action(action: String) -> void:
 	if not is_downed:

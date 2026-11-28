@@ -62,6 +62,10 @@ var _draft_prompt := ""
 var _recommends_first := false
 var _rejected_action := ""
 var _rejected_until := 0
+var first_boss_bonus_presentation := false
+var _first_boss_laser_pending := false
+var _first_boss_laser_tween: Tween
+var _first_boss_laser_icon: TextureRect
 const BOSS_BAR_SIZE := Vector2(520, 39)
 const EDGE_MARGIN := 18.0
 const SIDE_WIDTH := 198.0
@@ -111,6 +115,7 @@ func _ready() -> void:
 	GameState.level_changed.connect(_on_level_changed)
 	GameState.powerup_collected.connect(_on_powerup_collected)
 	GameState.player_scores_changed.connect(_on_player_scores_changed)
+	GameState.laser_used.connect(_on_first_boss_reward_laser_used)
 	UpgradeDraft.draft_opened.connect(_on_draft_opened)
 	_update_score(0)
 	_update_level(1)
@@ -804,10 +809,10 @@ func _update_powerup_display() -> void:
 
 	_render_boss_bonus_section()
 
-	if prev_extra_bullet_count != _cached_extra_bullet_count \
-	or prev_extra_damage_bonus != _cached_extra_damage_bonus \
-	or not is_equal_approx(prev_laser_cd_bonus, _cached_laser_cd_bonus) \
-	or not is_equal_approx(prev_move_speed_bonus, _cached_move_speed_bonus):
+	if not first_boss_bonus_presentation and (prev_extra_bullet_count != _cached_extra_bullet_count
+		or prev_extra_damage_bonus != _cached_extra_damage_bonus
+		or not is_equal_approx(prev_laser_cd_bonus, _cached_laser_cd_bonus)
+		or not is_equal_approx(prev_move_speed_bonus, _cached_move_speed_bonus)):
 		_pulse_powerup_bonus_lines()
 
 
@@ -820,17 +825,17 @@ func _render_boss_bonus_section() -> void:
 		return
 	_add_boss_bonus_group_header()
 	if has_bullet:
-		_add_boss_bonus_bar("弹幕", float(_cached_extra_bullet_count), BOSS_BONUS_BULLET_COUNT_MAX, "+%d/%d" % [_cached_extra_bullet_count, int(BOSS_BONUS_BULLET_COUNT_MAX)], Color(1.0, 0.78, 0.28), Color(1.0, 0.58, 0.16))
+		_add_boss_bonus_bar("bullet_count", "弹幕", float(_cached_extra_bullet_count), BOSS_BONUS_BULLET_COUNT_MAX, "+%d/%d" % [_cached_extra_bullet_count, int(BOSS_BONUS_BULLET_COUNT_MAX)], Color(1.0, 0.78, 0.28), Color(1.0, 0.58, 0.16))
 	if has_damage:
-		_add_boss_bonus_bar("火力", float(_cached_extra_damage_bonus), BOSS_BONUS_DAMAGE_MAX, "+%d/%d" % [_cached_extra_damage_bonus, int(BOSS_BONUS_DAMAGE_MAX)], Color(1.0, 0.58, 0.32), Color(1.0, 0.35, 0.18))
+		_add_boss_bonus_bar("damage", "火力", float(_cached_extra_damage_bonus), BOSS_BONUS_DAMAGE_MAX, "+%d/%d" % [_cached_extra_damage_bonus, int(BOSS_BONUS_DAMAGE_MAX)], Color(1.0, 0.58, 0.32), Color(1.0, 0.35, 0.18))
 	if has_laser:
-		_add_boss_bonus_bar("激光", _cached_laser_cd_bonus, BOSS_BONUS_LASER_CD_MAX, "-%.1f/%.1fs" % [_cached_laser_cd_bonus, BOSS_BONUS_LASER_CD_MAX], Color(0.58, 0.86, 1.0), Color(0.25, 0.72, 1.0))
+		_add_boss_bonus_bar("laser_cd", "激光", _cached_laser_cd_bonus, BOSS_BONUS_LASER_CD_MAX, "-%.1f/%.1fs" % [_cached_laser_cd_bonus, BOSS_BONUS_LASER_CD_MAX], Color(0.58, 0.86, 1.0), Color(0.25, 0.72, 1.0))
 	if has_speed:
-		_add_boss_bonus_bar("移速", _cached_move_speed_bonus, BOSS_BONUS_MOVE_SPEED_MAX, "+%d/%d%%" % [int(round(_cached_move_speed_bonus * 100.0)), int(BOSS_BONUS_MOVE_SPEED_MAX * 100.0)], Color(0.7, 1.0, 0.58), Color(0.32, 0.88, 0.38))
+		_add_boss_bonus_bar("speed", "移速", _cached_move_speed_bonus, BOSS_BONUS_MOVE_SPEED_MAX, "+%d/%d%%" % [int(round(_cached_move_speed_bonus * 100.0)), int(BOSS_BONUS_MOVE_SPEED_MAX * 100.0)], Color(0.7, 1.0, 0.58), Color(0.32, 0.88, 0.38))
 
-func _add_boss_bonus_bar(name: String, value: float, max_value: float, value_text: String, name_color: Color, bar_color: Color) -> void:
+func _add_boss_bonus_bar(reward_type: String, name: String, value: float, max_value: float, value_text: String, name_color: Color, bar_color: Color) -> void:
 	var fill_w := int(POWERUP_BAR_WIDTH * clampf(value / max(max_value, 0.001), 0.0, 1.0))
-	_add_powerup_bar(name, name_color, bar_color, fill_w, value_text, 0, false, true)
+	_add_powerup_bar(name, name_color, bar_color, fill_w, value_text, 0, false, reward_type)
 
 func _add_boss_bonus_group_header() -> void:
 	var spacer := Control.new()
@@ -846,12 +851,14 @@ func _add_boss_bonus_group_header() -> void:
 	title.set_meta("boss_bonus_label", true)
 	_powerup_display.add_child(title)
 
-func _add_powerup_bar(name: String, name_color: Color, bar_color: Color, fill_w: int, value_text: String, prev_fill_w: int = 0, animate: bool = false, is_boss_bonus: bool = false) -> void:
+func _add_powerup_bar(name: String, name_color: Color, bar_color: Color, fill_w: int, value_text: String, prev_fill_w: int = 0, animate: bool = false, reward_type: String = "") -> void:
+	var is_boss_bonus := not reward_type.is_empty()
 	var row := HBoxContainer.new()
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_theme_constant_override("separation", 6)
 	if is_boss_bonus:
 		row.set_meta("boss_bonus_row", true)
+		row.set_meta("boss_reward_type", reward_type)
 	_powerup_display.add_child(row)
 
 	var name_lbl := Label.new()
@@ -928,25 +935,26 @@ func _animate_powerup_row(row: Control, bg: ColorRect, fill: ColorRect, val_lbl:
 		flash_tween.tween_property(edge_flash, "modulate:a", 0.0, 0.16)
 		flash_tween.tween_callback(edge_flash.queue_free)
 
-func _pulse_powerup_bonus_lines() -> void:
+func _pulse_powerup_bonus_lines(reward_type := "") -> void:
 	for child in _powerup_display.get_children():
-		_pulse_boss_bonus_node(child)
+		if not child.is_queued_for_deletion() and (reward_type.is_empty() or child.get_meta("boss_reward_type", "") == reward_type):
+			_pulse_boss_bonus_node(child, not reward_type.is_empty())
 
-func _pulse_boss_bonus_node(node: Node) -> void:
+func _pulse_boss_bonus_node(node: Node, first_reward: bool) -> void:
 	if node is Label and bool(node.get_meta("boss_bonus_label", false)):
 		var lbl := node as Label
 		lbl.scale = Vector2(0.98, 0.98)
-		lbl.modulate = Color(1.0, 0.95, 0.65, 0.75)
+		lbl.modulate = Color(1.25, 1.20, 1.10) if first_reward else Color(1.0, 0.95, 0.65, 0.75)
 		var tween := create_tween().set_parallel(true)
 		tween.tween_property(lbl, "scale", Vector2(1, 1), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		tween.tween_property(lbl, "modulate", Color(1.0, 0.85, 0.4, 0.98), 0.18)
+		tween.tween_property(lbl, "modulate", Color.WHITE if first_reward else Color(1.0, 0.85, 0.4, 0.98), 0.18)
 	if node is ColorRect and bool(node.get_meta("boss_bonus_fill", false)):
 		var rect := node as ColorRect
 		rect.modulate = Color(1.35, 1.35, 1.15, 1.0)
 		var fill_tween := create_tween()
 		fill_tween.tween_property(rect, "modulate", Color(1, 1, 1, 1), 0.22)
 	for child in node.get_children():
-		_pulse_boss_bonus_node(child)
+		_pulse_boss_bonus_node(child, first_reward)
 
 func _setup_damage_flash() -> void:
 	_damage_flash = ColorRect.new()
@@ -1065,9 +1073,37 @@ func add_skill(data: Dictionary) -> void:
 	_create_skill_slot(data)
 	_layout_skill_bar()
 
-func show_boss_bonus_attribute_feedback() -> void:
-	_update_powerup_display()
-	_pulse_powerup_bonus_lines()
+func show_boss_bonus_attribute_feedback(reward_type := "", laser_upgrade_usable := false) -> void:
+	if reward_type.is_empty():
+		_update_powerup_display()
+	else:
+		_refresh_powerup_display_if_needed()
+	_pulse_powerup_bonus_lines(reward_type)
+	if laser_upgrade_usable:
+		_first_boss_laser_pending = true
+
+func _on_first_boss_reward_laser_used(slot: int) -> void:
+	if not _first_boss_laser_pending or slot != _local_peer_id():
+		return
+	_first_boss_laser_pending = false
+	for skill in _skill_slots:
+		if skill.data.action != "laser":
+			continue
+		_first_boss_laser_icon = skill.icon
+		_first_boss_laser_icon.pivot_offset = _first_boss_laser_icon.size * 0.5
+		_first_boss_laser_icon.scale = Vector2.ONE * 1.16
+		_first_boss_laser_tween = create_tween()
+		_first_boss_laser_tween.tween_property(_first_boss_laser_icon, "scale", Vector2.ONE, 0.23)
+		_first_boss_laser_tween.finished.connect(func(): _first_boss_laser_tween = null)
+		break
+
+func clear_first_boss_reward_flash() -> void:
+	if first_boss_bonus_presentation:
+		_update_powerup_display()
+	if _first_boss_laser_tween:
+		_first_boss_laser_tween.kill()
+		_first_boss_laser_tween = null
+		_first_boss_laser_icon.scale = Vector2.ONE
 
 func show_first_boss_warning() -> void:
 	var color := Color("#ffbc70")
