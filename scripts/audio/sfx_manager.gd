@@ -21,6 +21,7 @@ var _stream_elite_death: AudioStreamWAV
 var _stream_shield_hit: AudioStreamWAV
 var _stream_shield_break: AudioStreamWAV
 var _stream_boss_warning: AudioStreamWAV
+var _stream_boss_approach: AudioStreamWAV
 var _stream_volley: AudioStreamWAV
 var _stream_laser: AudioStreamWAV
 var _stream_player_hurt: AudioStreamWAV
@@ -53,6 +54,8 @@ func _ready() -> void:
 	var gap := PackedByteArray()
 	gap.resize(roundi(0.065 * _stream_boss_warning.mix_rate) * 2)
 	_stream_boss_warning.data += gap + _generate_tone(1245, 0.23, 0.45).data
+	_stream_boss_approach = _generate_tone(523.25, 0.12, 0.35)
+	_stream_boss_approach.data += gap + _generate_tone(349.23, 0.22, 0.39).data
 	_stream_player_hurt = _generate_tone(200.0, 0.2, 0.4)
 	_stream_ui_confirm = _generate_tone(800.0, 0.08, 0.25)
 	_stream_ui_select = _generate_tone(500.0, 0.05, 0.15)
@@ -220,8 +223,15 @@ func play_elite_death() -> void:
 	_elite_voice.play()
 
 func play_boss_warning() -> void:
+	_play_priority_warning(_stream_boss_warning)
+
+func play_boss_approach() -> void:
+	_play_priority_warning(_stream_boss_approach)
+
+func _play_priority_warning(stream: AudioStreamWAV) -> void:
+	_warning_voice.stream = stream
 	_warning_voice.play()
-	priority_cue.emit(_stream_boss_warning.get_length())
+	priority_cue.emit(stream.get_length())
 
 func play_player_hurt() -> void:
 	_hurt_voice.play()

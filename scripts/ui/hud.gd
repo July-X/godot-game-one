@@ -1046,6 +1046,36 @@ func show_boss_bonus_attribute_feedback() -> void:
 	_update_powerup_display()
 	_pulse_powerup_bonus_lines()
 
+func show_first_boss_warning() -> void:
+	var color := Color("#ffbc70")
+	show_center_banner("首领接近", 1.55, color, 192.0)
+
+	var frame := Panel.new()
+	frame.name = "BossWarningFrame"
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.z_index = -1
+	var outline := StyleBoxFlat.new()
+	outline.draw_center = false
+	outline.set_border_width_all(5)
+	outline.set_corner_radius_all(14)
+	outline.border_color = color
+	frame.add_theme_stylebox_override("panel", outline)
+	add_child(frame)
+	frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.offset_left = 8.0
+	frame.offset_top = 8.0
+	frame.offset_right = -8.0
+	frame.offset_bottom = -8.0
+	frame.modulate.a = 0.0
+
+	var pulse := frame.create_tween()
+	pulse.tween_property(frame, "modulate:a", 0.62, 0.16)
+	pulse.tween_property(frame, "modulate:a", 0.13, 0.25)
+	pulse.tween_property(frame, "modulate:a", 0.49, 0.18)
+	pulse.tween_property(frame, "modulate:a", 0.0, 0.48)
+	pulse.tween_callback(frame.queue_free)
+	SFX.play_boss_approach()
+
 func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.0, 0.3, 0.2, 1.0),
 		width: float = BOSS_BAR_SIZE.x) -> void:
 	if is_instance_valid(_boss_status_root) and _boss_status_root.visible:

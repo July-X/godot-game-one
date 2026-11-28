@@ -28,6 +28,8 @@ var _longest_empty := 0
 var _empty_run := 0
 var _dodges := 0
 var _warning := -1
+var _warning_outline_seen := false
+var _approach_cues := 0
 var _entry_elite := false
 var _requests := 0
 var _first_damage := -1
@@ -35,6 +37,7 @@ var _correct_first_offer := false
 
 func _measure(battle: Node, authority: bool) -> void:
 	_battle = battle
+	SFX.priority_cue.connect(_observe_approach_cue)
 	if OS.get_cmdline_user_args().has("rules"):
 		await _exercise_schedule()
 		return
@@ -70,6 +73,7 @@ func _measure(battle: Node, authority: bool) -> void:
 		await _wait_until(func(): return not NetworkManager.is_online() or not GameState.game_running, 52)
 	if _candidate:
 		_check("visible_warning_before_boss_entry", _warning >= 0 and _warning < _entry)
+		_check("approach_outline_and_one_local_cue", _warning_outline_seen and _approach_cues == 1)
 		if authority:
 			_check("first_offer_at_ten_actual_kills_and_one_calibration", _correct_first_offer and _calibrations == 1)
 	_event("end", {"request": _first_request, "entry": _entry, "hull_hit": _first_damage,
@@ -188,11 +192,19 @@ func _elite_active() -> bool:
 	return is_instance_valid(_battle._elite) and not _battle._elite.is_queued_for_deletion()
 
 func _observe_hud() -> void:
+	var frame := _battle._hud.get_node_or_null("BossWarningFrame") as Panel
+	if frame and frame.modulate.a > 0.05:
+		_warning_outline_seen = true
 	var alert: Label = _battle._hud._alert_label
 	if (_warning < 0 and is_instance_valid(alert) and alert.visible and alert.modulate.a > 0.1
 			and ("母舰展开" in alert.text or "首领接近" in alert.text)):
 		_warning = _tick()
 		_event("boss_warning_visible", {"text": alert.text, "safe": _battle._hud._safe_rect.encloses(alert.get_rect())})
+
+func _observe_approach_cue(duration: float) -> void:
+	var cue := SFX.get("_stream_boss_approach") as AudioStreamWAV
+	if cue and SFX._warning_voice.stream == cue and is_equal_approx(duration, cue.get_length()):
+		_approach_cues += 1
 
 func _requested(level: int) -> void:
 	if not _authority:
@@ -308,7 +320,7 @@ func _exercise_schedule() -> void:
 	hud._layout_in_safe_area(safe)
 	_battle.get_node("MobileControls")._layout_in_safe_area(safe)
 	var alert: Label = hud._alert_label
-	var clear: bool = is_instance_valid(alert) and alert.visible and alert.text == "首领接近 · 留出横移空间"
+	var clear: bool = is_instance_valid(alert) and alert.visible and alert.text == "首领接近"
 	if clear:
 		var box := alert.get_global_rect()
 		clear = safe.encloses(box) and not box.intersects(hud._skill_bar.get_global_rect())
@@ -316,11 +328,19 @@ func _exercise_schedule() -> void:
 		for score: Label in hud._score_rows:
 			clear = clear and not box.intersects(score.get_global_rect())
 	_check("warning_uses_safe_top_row_without_overlap", clear)
+	var frame := hud.get_node_or_null("BossWarningFrame") as Panel
+	var outline := frame.get_theme_stylebox("panel") as StyleBoxFlat if frame else null
+	_check("warning_outline_is_visible_clear_and_ignores_touches", frame != null and frame.modulate.a > 0.05
+		and frame.mouse_filter == Control.MOUSE_FILTER_IGNORE and outline != null and not outline.draw_center)
+	GameState.set_first_boss_warning(true)
+	_check("approach_cue_is_distinct_and_plays_once", _approach_cues == 1
+		and SFX._warning_voice.stream == SFX.get("_stream_boss_approach")
+		and SFX._warning_voice.stream != SFX.get("_stream_boss_warning"))
 	if not shot.is_empty():
 		RenderingServer.force_draw(false)
 		_check("warning_screenshot", get_viewport().get_texture().get_image().save_png(shot) == OK)
 	_battle._on_wave_phase_changed(2, "浪峰")
-	_check("wave_phase_does_not_replace_active_warning", alert.text == "首领接近 · 留出横移空间")
+	_check("wave_phase_does_not_replace_active_warning", alert.text == "首领接近")
 	GameState.elite_spawn_requested.emit()
 	await get_tree().process_frame
 	_check("warning_does_not_insert_another_elite", not _elite_active())
@@ -329,8 +349,11 @@ func _exercise_schedule() -> void:
 	_check("warning_timer_respects_battle_freeze", GameState.get("first_boss_warning_active")
 		and not is_instance_valid(_battle._boss))
 	get_tree().paused = false
-	_check("one_boss_enters_after_warning", await _wait_until(func(): return is_instance_valid(_battle._boss), 5)
+	# 图形录制可能慢于实时，入场倒计时仍用游戏时钟。
+	await get_tree().create_timer(1.85).timeout
+	_check("one_boss_enters_after_warning", is_instance_valid(_battle._boss)
 		and not _elite_active() and not GameState.get("first_boss_warning_active"))
+	_check("warning_outline_clears_before_entry", not is_instance_valid(frame))
 	GameState.elite_spawn_requested.disconnect(_battle._on_elite_spawn_requested)
 	while GameState.level < 10:
 		GameState.add_kill(1)

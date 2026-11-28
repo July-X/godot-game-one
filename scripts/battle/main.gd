@@ -1508,7 +1508,7 @@ func _show_boss_warning() -> void:
 
 func _show_first_boss_warning() -> void:
 	if is_instance_valid(_hud) and not _has_active_boss() and GameState.game_running:
-		_hud.show_center_banner("首领接近 · 留出横移空间", 1.55, Color(1.0, 0.3, 0.28), 360.0)
+		_hud.show_first_boss_warning()
 
 func _grant_random_boss_rewards_to_alive_players() -> void:
 	var peer_ids := GameState.get_alive_player_ids()
