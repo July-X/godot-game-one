@@ -92,3 +92,32 @@ python3 tests/run_first_boss_pace_probe.py /tmp/first-boss-warning-lan --variant
 godot --headless --fixed-fps 60 --path . res://tests/combat_feedback_probe.tscn
 bash tests/run_probe.sh 25184 feedback
 ```
+
+## 首只母舰的双人分工与输出提示
+
+首只普通母舰的顶栏分别显示即时威胁和血盾状态。定向脉冲按房主已锁定的机师槽位显示分工。标记者看到「锁定你 · 横移躲开」，队友看到「锁定队友 · 侧翼打盾」。脉冲发出后显示脉冲状态，取消或失去双人配合条件时撤下分工。
+
+护盾处于暴露相位时写「护盾已破 · 输出」，最后的回盾预告写「即将回盾」。激光发生时即时威胁一栏仍显示激光阶段。恢复原局沿用房主的脉冲和护盾快照。
+
+Godot 4.7.2 同机对照以 `7abc816` 为基线。图形夹具直接建立两进程 ENet，通过现有战斗链路让主炮碰撞生效。桌面窗口用 20:9 和 4:3 互换房主，叠加非对称安全区。两轮各通过 96 项，其中房主 53 项、加入端 43 项。两种锁定方向与实际发射一致。房主观察到 P1 横移时 P2 将护盾从 142.9 打到 126.9，P2 横移时 P1 将护盾从 126.9 打到 86.9。两轮被标记机师均保持 50 生命，站在束内的对照损失 10。调换两名机师起始站位的自然选敌专项各通过 25 项。
+
+同夹具截取两种角色提示、破盾约一秒后和回盾预告。重叠站位无法开招，倒地和破盾取消未发脉冲。活动锁向可从当前快照恢复，暴露期换线时旧锁向被拒绝，破盾音画未重播。基线的图形首跑在侧翼弹生效前取了读数，无窗口复跑通过。用修正取样时机的同夹具对照，基线的实弹与状态回归通过，仅缺新文案的断言失败。候选图形首跑曾在恢复后的首次界面刷新前读到空提示，刷新改为随原局恢复执行。
+
+真实标题和大厅按固定种子进入普通战斗，房主在 4137 帧入场、4460 帧首次命中本体，加入端在 4141 帧看到入场。单人规则验证 19 项，包含同为第 5 级配置的固定试飞和后续第 10 级普通首领。战斗界面验证了激光和护盾同屏，触摸 43 项、桌面 21 项。拇指弧联机 55 项、小屏 23 项。裂隙双向牵制 91 项。证据来自桌面脚本和本机回环，真机画面、触感及真人是否主动分工仍待验证。
+
+生命周期首跑发现探针仍调用已移除的入局同步方法，改走现有房间快照后双端通过 124 项。单人命中定格仍推进物理帧编号，探针改为累计游戏时间，保留原两帧容差。单人实测约 4.50 秒破盾时长，其中最后 0.80 秒是回盾预告，42 项通过。
+
+```sh
+mkdir -p /tmp/boss-hud/wide-host /tmp/boss-hud/wide-client
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25235 boss-coop-wide-host /tmp/boss-hud/wide-host
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25236 boss-coop-wide-client /tmp/boss-hud/wide-client
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25239 boss
+godot --headless --fixed-fps 60 --path . res://tests/boss_lifecycle_probe.tscn -- solo
+godot --headless --fixed-fps 60 --path . res://tests/first_boss_pace_probe.tscn -- solo rules
+godot --headless --fixed-fps 60 --path . res://tests/battle_presentation_probe.tscn -- verify "" touch inset inset-rounded
+python3 tests/run_first_boss_pace_probe.py /tmp/boss-hud/lobby --variant C --case lan-anchor --port 25233
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25230 boss-aggro
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25231 boss-aggro-mirror
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25232 rift-duo-host
+PROBE_KEEP_LOGS=1 bash tests/run_probe.sh 25234 draft-touch-wide-client
+```

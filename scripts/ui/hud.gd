@@ -52,6 +52,7 @@ var _boss_status_fill: ColorRect = null
 var _boss_shield_fill: ColorRect = null
 var _boss_status_label: Label = null
 var _boss_status_phase: Label = null
+var _boss_attack_label: Label = null
 var _boss_shield_release_left := 0.0
 var _alert_label: Label
 var _alert_tween: Tween
@@ -1124,7 +1125,7 @@ func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.
 		_layout_top_rows())
 
 func show_boss_status(current: float, maximum: float, shield: float, max_shield: float,
-		phase_name: String, attack_window: String, recharging: bool) -> void:
+		phase_name: String, attack_window: String, recharging: bool, first_ordinary: bool, exposed: bool) -> void:
 	_ensure_boss_status_ui()
 	if not _boss_status_root.visible:
 		_boss_status_root.show()
@@ -1144,9 +1145,18 @@ func show_boss_status(current: float, maximum: float, shield: float, max_shield:
 		status = "护盾 %d%%" % maxi(1, roundi(shield_ratio * 100))
 	elif recharging:
 		status = "即将回盾"
+	elif exposed:
+		status = "护盾已破 · 输出"
 	elif _boss_shield_release_left > 0.0:
 		status = "破盾 · 可攻击"
-	_boss_status_phase.text = status if attack_window.is_empty() else status + " · " + attack_window
+	var separate_attack := first_ordinary and not attack_window.is_empty()
+	if _boss_attack_label.visible != separate_attack:
+		_boss_attack_label.visible = separate_attack
+		_boss_status_label.size.x = 192.0 if separate_attack else 265.0
+		_boss_status_phase.position.x = 355.0 if separate_attack else 273.0
+		_boss_status_phase.size.x = 155.0 if separate_attack else 237.0
+	_boss_attack_label.text = attack_window if separate_attack else ""
+	_boss_status_phase.text = status if first_ordinary or attack_window.is_empty() else status + " · " + attack_window
 	_boss_status_phase.add_theme_color_override("font_color", Color("#c3d6e2") if shield > 0.0 or recharging else Palette.CARD_STYLE)
 
 func show_boss_shield_released() -> void:
@@ -1171,6 +1181,10 @@ func _ensure_boss_status_ui() -> void:
 	_boss_shield_fill = _add_boss_track(panel, 32.0, Color("#73bbdd"))
 	_boss_status_label = _label(15, Vector2(10, 2), Vector2(265, 24))
 	panel.add_child(_boss_status_label)
+	_boss_attack_label = _label(14, Vector2(206, 2), Vector2(146, 24), HORIZONTAL_ALIGNMENT_CENTER)
+	_boss_attack_label.add_theme_color_override("font_color", Color("#ffbc70"))
+	panel.add_child(_boss_attack_label)
+	_boss_attack_label.hide()
 	_boss_status_phase = _label(14, Vector2(273, 2), Vector2(237, 24), HORIZONTAL_ALIGNMENT_RIGHT)
 	panel.add_child(_boss_status_phase)
 	_set_control_ignore_input(panel)

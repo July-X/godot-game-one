@@ -387,6 +387,8 @@ func set_lan_hold(held: bool) -> void:
 			if shot.ordinary_enemy_round > 0:
 				Pool.release(shot)
 		GameState.clear_unconfirmed_actions()
+		if _is_first_ordinary_boss():
+			_update_boss_hud()
 		_lan_message = _hud.show_lan_wait()
 		return
 	if _lan_frozen_frame < 0:
@@ -408,6 +410,8 @@ func set_lan_hold(held: bool) -> void:
 	if is_instance_valid(_lan_message):
 		_lan_message.hide()
 		_lan_message.queue_free()
+	if _is_first_ordinary_boss():
+		_update_boss_hud()
 	Input.mouse_mode = _lan_mouse_mode
 
 func update_lan_wait(seconds: int, synchronizing: bool) -> void:
@@ -1414,10 +1418,29 @@ func _update_boss_hud() -> void:
 		_hud.hide_boss_status()
 		return
 	var window: Boss.AttackWindow = _boss.get_attack_window()
-	var attack: String = _boss.coop_pulse_label() if window == Boss.AttackWindow.OPEN else ""
+	var first_ordinary := _is_first_ordinary_boss()
+	var attack: String = Boss.ATTACK_WINDOW_LABELS[window]
+	if window == Boss.AttackWindow.OPEN:
+		attack = _first_boss_pulse_label() if first_ordinary else _boss.coop_pulse_label()
 	_hud.show_boss_status(_boss.get_network_health(), _boss.get_network_max_health(),
-		_boss.get_shield_hp(), _boss.get_max_shield_hp(), _boss.get_phase_name(),
-		Boss.ATTACK_WINDOW_LABELS[window] if attack.is_empty() else attack, _boss.is_shield_recharging())
+		_boss.get_shield_hp(), _boss.get_max_shield_hp(), _boss.get_phase_name(), attack,
+		_boss.is_shield_recharging(), first_ordinary, first_ordinary and _boss.is_shield_exposed())
+
+func _is_first_ordinary_boss() -> bool:
+	return (GameState.normal_growth_enabled and _has_active_boss()
+		and _boss.get_network_level() == GameState.FIRST_BOSS_LEVEL)
+
+func _first_boss_pulse_label() -> String:
+	var marked: int = _boss.coop_pulse_warning_slot()
+	if marked == 0:
+		return _boss.coop_pulse_label()
+	# 同一局的槽位和脉冲快照在换线后仍有效。冻结期间没有即时操作提示。
+	if _lan_frozen_frame >= 0 or not NetworkManager.is_online() or not _boss.has_impact_shield():
+		return ""
+	var local := NetworkManager.local_player_id()
+	if _alive_players.size() != 2 or not _alive_players.has(marked) or not _alive_players.has(local):
+		return ""
+	return "锁定你 · 横移躲开" if marked == local else "锁定队友 · 侧翼打盾"
 
 func _enter_boss_fight_mode() -> void:
 	_clear_non_boss_entities()

@@ -121,6 +121,9 @@ func has_impact_shield() -> bool:
 func is_shield_recharging() -> bool:
 	return _shield_stamp >= 0 and _shield_stamp % SHIELD_PHASE_COUNT == ShieldPhase.RECHARGING
 
+func is_shield_exposed() -> bool:
+	return _shield_stamp >= 0 and _shield_stamp % SHIELD_PHASE_COUNT == ShieldPhase.EXPOSED
+
 func apply_network_boss_shield(stamp: int, hp: float, max_hp: float) -> bool:
 	if stamp < _shield_stamp:
 		return false
@@ -928,6 +931,11 @@ func coop_pulse_label() -> String:
 	if _pulse.phase == PulsePhase.TRACK:
 		return "瞄准 " + pilot
 	return "锁定 " + pilot if _pulse.phase == PulsePhase.LOCK else "脉冲 · " + pilot
+
+func coop_pulse_warning_slot() -> int:
+	if _pulse.phase == PulsePhase.TRACK or _pulse.phase == PulsePhase.LOCK:
+		return int(_pulse.slot)
+	return 0
 
 func coop_pulse_contains(point: Vector2) -> bool:
 	return point.distance_squared_to(Geometry2D.get_closest_point_to_segment(point, _pulse.from, _pulse.to)) \

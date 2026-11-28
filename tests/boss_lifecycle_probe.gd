@@ -13,6 +13,8 @@ var release_cues := 0
 var first_break_frame := -1
 var first_warning_frame := -1
 var first_raised_frame := -1
+var exposure_time := 0.0
+var recharge_time := 0.0
 var beam_overlapping_volleys := 0
 var contacts := {}
 var boss_playbacks := {}
@@ -83,7 +85,7 @@ func _run() -> void:
 		if _role == "client":
 			BGM.stop_bgm()
 			_main._backdrop.set_boss_mode(false)
-			_main._request_player_sync.rpc_id(1)
+			NetworkManager.request_battle_players.rpc_id(1, GameState.get_sync_round(), false)
 			_check("player_snapshot_restores_active_stage", await _wait_until(_presentation.bind(true), 3), "")
 	_boss = _main._boss
 	if _role != "client":
@@ -131,13 +133,18 @@ func _process(delta: float) -> void:
 					boss_playbacks[label] = {}
 				boss_playbacks[label][playback.get_instance_id()] = true
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if first_break_frame < 0 or first_raised_frame >= 0 or not is_instance_valid(_boss):
 		return
-	if first_warning_frame < 0 and _boss.is_shield_recharging():
-		first_warning_frame = Engine.get_physics_frames()
-	elif first_warning_frame >= 0 and _boss.has_impact_shield():
+	if first_warning_frame >= 0 and _boss.has_impact_shield():
 		first_raised_frame = Engine.get_physics_frames()
+		return
+	# 护盾计时使用游戏时间。单人命中定格期间仍会推进物理帧编号。
+	exposure_time += delta
+	if _boss.is_shield_recharging():
+		recharge_time += delta
+		if first_warning_frame < 0:
+			first_warning_frame = Engine.get_physics_frames()
 
 func _observe(node: Node) -> void:
 	if node.get_script() == BURST:
@@ -176,7 +183,7 @@ func _shield_cycle() -> bool:
 			return _boss.get_attack_window() == BossModel.AttackWindow.CHARGING, 7.0)):
 		return false
 	_check("hud_separate_partial_shield_and_full_hull", await _wait_until(func():
-		return (_main._hud._boss_status_phase.text.ends_with("激光蓄力")
+		return (_main._hud._boss_attack_label.text == "激光蓄力"
 			and _main._hud._boss_shield_fill.size.x < 500.0
 			and _main._hud._boss_status_fill.size.x == 500.0), 0.7), str(_boss.get_shield_hp()))
 	if _role == "client":
@@ -194,7 +201,7 @@ func _shield_cycle() -> bool:
 	_check("breaker_does_not_spill_into_hull", _boss.get_network_health() == hull_hp and release_cues == 1
 		and not is_instance_valid(_main._boss_laser_visual), "")
 	_check("hud_break_keeps_hull_full", await _wait_until(func():
-		return (_hud_says("破盾 · 可攻击") and _main._hud._boss_shield_fill.size.x == 0.0
+		return (_hud_says("护盾已破 · 输出") and _main._hud._boss_shield_fill.size.x == 0.0
 			and _main._hud._boss_status_fill.size.x == 500.0), 0.25), "")
 	if _role == "solo" and DisplayServer.get_name() != "headless":
 		await _read_pixels(instance_from_id(bursts[0]))
@@ -214,10 +221,11 @@ func _shield_cycle() -> bool:
 		return false
 	if _role != "client":
 		var sampled := await _wait_until(func(): return first_raised_frame >= 0, 0.2)
-		var open_ticks := first_raised_frame - first_break_frame
-		var warning_ticks := first_raised_frame - first_warning_frame
-		_check("exposure_270_ticks_warns_last_48", sampled and absi(open_ticks - 270) <= 2
-			and absi(warning_ticks - 48) <= 2, "open=%d warning=%d" % [open_ticks, warning_ticks])
+		var open_ticks := exposure_time * Engine.physics_ticks_per_second
+		var warning_ticks := recharge_time * Engine.physics_ticks_per_second
+		_check("exposure_270_ticks_warns_last_48", sampled and absf(open_ticks - 270.0) <= 2.0
+			and absf(warning_ticks - 48.0) <= 2.0, "open=%.2f warning=%.2f physical_frames=%d" % [
+				open_ticks, warning_ticks, first_raised_frame - first_break_frame])
 	_check("first_shards_expired", bursts.size() == 1 and not is_instance_id_valid(bursts[0]), "")
 
 	if not _require("second_laser_locks_before_fire", await _wait_until(func():
@@ -250,7 +258,8 @@ func _shield_cycle() -> bool:
 	_check("open_while_beam_stays_same_node_and_geometry", is_same(in_flight, _main._boss_laser_visual)
 		and _faces_laser_beam() and is_equal_approx(_boss.get_network_health(), after_open_hit), "")
 	_check("combined_beam_and_shield_state_in_hud", await _wait_until(func():
-		return (_main._hud._boss_status_phase.text.begins_with("破盾 · 可攻击 · 激光")
+		return (_main._hud._boss_status_phase.text == "护盾已破 · 输出"
+			and _main._hud._boss_attack_label.text.begins_with("激光")
 			and _main._hud._boss_shield_fill.size.x == 0.0), 0.22), "")
 	if _role == "host":
 		var eid: int = _boss.entity_id
@@ -679,7 +688,7 @@ func _retry_and_leave() -> void:
 		and not _main._hud._boss_status_root.visible, "")
 	var playback: AudioStreamPlayback = BGM._bgm_player.get_stream_playback()
 	if _role == "client":
-		_main._request_player_sync.rpc_id(1)
+		NetworkManager.request_battle_players.rpc_id(1, GameState.get_sync_round(), false)
 	await _wait_seconds(0.25)
 	_check("duplicate_stage_does_not_restart_voice", playback == BGM._bgm_player.get_stream_playback(), "")
 	if _role == "client":

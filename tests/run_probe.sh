@@ -27,13 +27,13 @@ case "$CASE" in
   score-safe-wide-host|score-safe-wide-client) SCENE=res://tests/score_safe_area_probe.tscn ;;
   rescue) SCENE=res://tests/rescue_lan_probe.tscn ;;
   boss|boss-kill) SCENE=res://tests/boss_lifecycle_probe.tscn ;;
-  boss-coop) SCENE=res://tests/boss_coop_probe.tscn ;;
+  boss-coop|boss-coop-wide-host|boss-coop-wide-client) SCENE=res://tests/boss_coop_probe.tscn ;;
   boss-aggro|boss-aggro-mirror) SCENE=res://tests/boss_aggro_probe.tscn ;;
   rift-wide-host|rift-wide-client|rift-timeout-host|rift-timeout-client|rift-review) SCENE=res://tests/rift_route_lan_probe.tscn ;;
   rift-induce-host|rift-induce-client|rift-flank-host|rift-flank-client|rift-duo-host|rift-duo-client|rift-outer-burn|rift-outer-burn-mirror) SCENE=res://tests/rift_inducement_probe.tscn ;;
   hunter-wide-host|hunter-wide-client) SCENE=res://tests/rift_hunter_probe.tscn ;;
   boss-dodge) SCENE=res://tests/boss_dodge_probe.tscn ;;
-  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-coop|boss-aggro|boss-aggro-mirror|rift-wide-{host,client}|rift-timeout-{host,client}|rift-review|rift-induce-{host,client}|rift-flank-{host,client}|rift-duo-{host,client}|rift-outer-burn[-mirror]|hunter-wide-{host,client}|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
+  *) echo "用法: $0 [端口] [draft|draft-touch-wide-{host,client}|score-safe-wide-{host,client}|rescue|feedback|boss|boss-kill|boss-coop|boss-coop-wide-{host,client}|boss-aggro|boss-aggro-mirror|rift-wide-{host,client}|rift-timeout-{host,client}|rift-review|rift-induce-{host,client}|rift-flank-{host,client}|rift-duo-{host,client}|rift-outer-burn[-mirror]|hunter-wide-{host,client}|boss-dodge|wide-{host,client}|wide-tablet-{host,client}|pickup-tablet-{host,client}|resume-{guest,host,timeout,exit,quiet}]" >&2; exit 2 ;;
 esac
 HOST_DISPLAY=(--headless)
 CLIENT_DISPLAY=(--headless)
@@ -44,7 +44,7 @@ if [[ "$CASE" == resume-* ]]; then
   fi
   PROBE_ARGS+=("$(cd "$3" && pwd)")
 elif [[ $# -ge 3 ]]; then
-  if [[ ( "$CASE" != wide-* && "$CASE" != pickup-tablet-* && "$CASE" != hunter-wide-* && "$CASE" != rift-induce-* && "$CASE" != rift-flank-* && "$CASE" != rift-duo-* && "$CASE" != rift-review && "$CASE" != rescue && "$CASE" != boss-coop ) || ! -d "$3" ]]; then
+  if [[ ( "$CASE" != wide-* && "$CASE" != pickup-tablet-* && "$CASE" != hunter-wide-* && "$CASE" != rift-induce-* && "$CASE" != rift-flank-* && "$CASE" != rift-duo-* && "$CASE" != rift-review && "$CASE" != rescue && "$CASE" != boss-coop* ) || ! -d "$3" ]]; then
     echo "截图需要 rescue、boss-coop、wide-*、hunter-wide-*、rift-induce-*、rift-flank-*、rift-duo-*、rift-review 或 pickup-tablet-* 模式，以及一个已有目录" >&2
     exit 2
   fi
@@ -54,10 +54,10 @@ elif [[ $# -ge 3 ]]; then
   if [[ "$CASE" == wide-host ]]; then
     host_size=1600x720
     client_size=1280x720
-  elif [[ "$CASE" == rift-review ]]; then
+  elif [[ "$CASE" == rift-review || "$CASE" == boss-coop-wide-host ]]; then
     host_size=1600x720
     client_size=960x720
-  elif [[ "$CASE" == wide-tablet-host || "$CASE" == pickup-tablet-host || "$CASE" == hunter-wide-client || "$CASE" == rift-induce-client || "$CASE" == rift-flank-client || "$CASE" == rift-duo-client ]]; then
+  elif [[ "$CASE" == boss-coop-wide-client || "$CASE" == wide-tablet-host || "$CASE" == pickup-tablet-host || "$CASE" == hunter-wide-client || "$CASE" == rift-induce-client || "$CASE" == rift-flank-client || "$CASE" == rift-duo-client ]]; then
     host_size=960x720
   elif [[ "$CASE" == wide-tablet-client || "$CASE" == pickup-tablet-client || "$CASE" == hunter-wide-host || "$CASE" == rift-induce-host || "$CASE" == rift-flank-host || "$CASE" == rift-duo-host ]]; then
     host_size=1600x720

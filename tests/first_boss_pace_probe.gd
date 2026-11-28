@@ -2,6 +2,7 @@ extends "res://tests/player_growth_probe.gd"
 ## Real title/lobby entry. The driver only aims, moves and chooses cards.
 
 const ELITE := "res://scenes/entities/elite.tscn"
+const Boss := preload("res://scripts/battle/enemies/boss/boss.gd")
 var _patrol := false
 var _choose := false
 var _seed := SEED
@@ -358,3 +359,36 @@ func _exercise_schedule() -> void:
 	while GameState.level < 10:
 		GameState.add_kill(1)
 	_check("next_boss_remains_level_ten", steps == [Vector2i(72, 5), Vector2i(310, 10)])
+	var first: Boss = _battle._boss
+	first.set_physics_process(false)
+	first.take_damage(first.get_shield_hp())
+	await get_tree().create_timer(0.80).timeout
+	_check("solo_first_boss_keeps_output_status_without_coop_cue", hud._boss_status_phase.text == "护盾已破 · 输出"
+		and not hud._boss_attack_label.is_visible_in_tree() and first.is_shield_exposed())
+	first._tick_shield_cycle(Boss.BOSS_EXPOSURE_SECONDS - Boss.BOSS_RECHARGE_WARNING + 0.05)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check("solo_output_replaced_by_actual_recharge", hud._boss_status_phase.text == "即将回盾"
+		and first.is_shield_recharging())
+	first.die()
+	await get_tree().process_frame
+	_battle._spawn_boss(10)
+	await _check_legacy_boss_hud(_battle, "later_ordinary_boss")
+	get_tree().change_scene_to_file("res://scenes/first_card_trial.tscn")
+	await get_tree().scene_changed
+	var trial := get_tree().current_scene
+	trial._spawn_boss(5)
+	await _check_legacy_boss_hud(trial, "fixed_trial_boss_at_same_level")
+
+func _check_legacy_boss_hud(battle: Node, label: String) -> void:
+	var boss: Boss = battle._boss
+	boss.set_physics_process(false)
+	boss._start_ultimate_laser()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var hud = battle._hud
+	_check(label + "_keeps_combined_laser_status", hud._boss_status_phase.text.ends_with(" · 激光蓄力")
+		and not hud._boss_attack_label.is_visible_in_tree())
+	boss.take_damage(boss.get_shield_hp())
+	await get_tree().create_timer(0.80).timeout
+	_check(label + "_keeps_legacy_exposure_status", hud._boss_status_phase.text == "可攻击")

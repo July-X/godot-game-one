@@ -175,7 +175,7 @@ func _run() -> void:
 	if _verify:
 		_check("real_damage_was_observed", _hp_drops > 0)
 		_check("laser_has_ended", is_instance_valid(_boss) and not _boss._ultimate_laser_firing)
-		_check("open_vulnerability_label", _main._hud._boss_status_phase.text == "可攻击")
+		_check("open_vulnerability_label", _main._hud._boss_status_phase.text == "护盾已破 · 输出")
 		_check("vulnerable_keeps_hull_bar_and_empty_shield", _main._hud._boss_shield_fill.size.x == 0.0 and _main._hud._boss_status_fill.color == Color("#e1827f"))
 	if is_instance_valid(_boss):
 		_boss.take_damage(_boss.get_network_health() + 1)
@@ -291,19 +291,28 @@ func _report(name: String) -> void:
 			[_safe_profile, _mobile, safe, skills, safe.end - skills.end, slot.size,
 				hud._skill_bar.get_theme_constant("separation")])
 		var margin := safe.end - skills.end
-		var expected_slot := Vector2(94, 94) if _mobile else Vector2(80, 80)
-		_check("skill_slots_keep_their_hitbox_and_gap", slot.size == expected_slot
-			and skills.size == Vector2(expected_slot.x * 3 + 16, expected_slot.y)
-			and hud._skill_bar.get_theme_constant("separation") == 8)
+		var expected_y := safe.get_center().y
 		if _mobile:
+			var scatter: Button = hud._skill_slots[1].button
+			var dash: Button = hud._skill_slots[2].button
+			var hitboxes: Array[Rect2] = [slot.get_global_rect(), scatter.get_global_rect(), dash.get_global_rect()]
+			var gap := INF
+			for i in hitboxes.size():
+				var a := hitboxes[i]
+				var b := hitboxes[(i + 1) % hitboxes.size()]
+				gap = minf(gap, a.get_center().distance_to(b.get_center()) - (a.size.x + b.size.x) * 0.5)
+			_check("skill_slots_keep_their_hitbox_and_gap", slot.size == Vector2(94, 94)
+				and scatter.size == slot.size and dash.size == Vector2(114, 114) and gap >= 18.0)
+			expected_y = minf(expected_y, skills.position.y - cards.size.y * 0.5 - 8.0)
 			var center_combat := Rect2(safe.position + safe.size * Vector2(.25, .17), safe.size * Vector2(.43, .55))
 			_check("thumb_clearance_leaves_center_and_cards_clear", margin.x > 18 and margin.y > 18
 				and safe.encloses(skills) and not skills.intersects(center_combat) and not skills.intersects(cards))
 		else:
+			_check("skill_slots_keep_their_hitbox_and_gap", slot.size == Vector2(80, 80) and skills.size == Vector2(256, 80))
 			_check("desktop_skill_margin_stays_at_18", margin == Vector2(18, 18))
 		_check("boss_and_cards_in_separate_rows", hud._draft_panel.visible and row.get_child_count() == 3 and boss_rect.has_area()
 			and boss_rect.end.y <= cards.position.y and get_viewport().get_visible_rect().encloses(cards))
-		_check("draft_centered_and_enlarged", cards.get_center().distance_to(hud._safe_rect.get_center()) < 1
+		_check("draft_centered_and_enlarged", cards.get_center().distance_to(Vector2(safe.get_center().x, expected_y)) < 1
 			and row.get_child(0).size.y >= 120 and row.get_child(0).get_node("CardName").get_theme_font_size("font_size") >= 19)
 		_check("draft_has_no_focus", get_viewport().gui_get_focus_owner() == null and not get_tree().paused)
 		_check("countdown_max_10_seconds", hud._draft_time_bar.max_value == 10.0 and absf(hud._draft_time_bar.value - 7.5) < 0.2)
@@ -315,7 +324,7 @@ func _report(name: String) -> void:
 			return
 		var phase := {"charge": "蓄力", "laser_and_draft": "推进", "laser_hold": "持续"}
 		_check("boss_window_" + name, hud._boss_status_phase.text.begins_with("护盾 ")
-			and hud._boss_status_phase.text.ends_with("激光" + phase[name]))
+			and hud._boss_attack_label.text == "激光" + phase[name])
 		_check("separate_hull_and_shield_" + name, hud._boss_shield_fill.get_global_rect().position.y > hud._boss_status_fill.get_global_rect().end.y
 			and is_equal_approx(hud._boss_shield_fill.size.x, 500.0 * _boss.get_shield_hp() / _boss.get_max_shield_hp())
 			and is_equal_approx(hud._boss_status_fill.size.x, 500.0 * _boss.get_network_health() / _boss.get_network_max_health()))
@@ -331,7 +340,7 @@ func _report(name: String) -> void:
 			and boss_sprite.global_position == _boss._ultimate_laser_start)
 		print("[BATTLE] opaque_hull=", hull, " player=", swift, " hit_radius=", hit_circle.shape.radius)
 	if _verify and name == "shield_release":
-		_check("one_release_in_boss_row", hud._boss_status_phase.text == "破盾 · 可攻击"
+		_check("one_release_in_boss_row", hud._boss_status_phase.text == "护盾已破 · 输出"
 			and hud._boss_shield_fill.size.x == 0.0 and hud._draft_panel.visible and boss_rect.end.y <= cards.position.y)
 
 func _check_safe_area() -> void:
@@ -401,9 +410,9 @@ func _exercise_touch_lifecycle() -> void:
 	_check("old_skill_corner_has_no_touch_target", _player.can_dash() and GameState.get_laser_cooldown() == 0
 		and UpgradeDraft.has_draft(1) and _stick._move_touch_id == 0)
 	var skill: Button = hud._skill_slots[0].button
-	var skill_corner := skill.get_global_rect().end - Vector2(4, 4)
-	_touch(1, skill_corner, true)
-	_touch(1, skill_corner, false)
+	var skill_center := skill.get_global_rect().get_center()
+	_touch(1, skill_center, true)
+	_touch(1, skill_center, false)
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_check("second_finger_uses_shifted_skill_without_selecting_card", GameState.get_laser_cooldown() > 0
