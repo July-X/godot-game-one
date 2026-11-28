@@ -824,10 +824,12 @@ func _tick_wave_director(delta: float) -> void:
 	# 可选目标在场时，普通导演仍按原数量和预算投放。
 	if is_instance_valid(_transport):
 		alive -= 1
+	var allow_duo_shear := NetworkManager.is_online() and _player_entry_ready \
+		and GameState.normal_growth_enabled and GameState.last_boss_level == 0 and _alive_players.size() == 2
 	var orders: Array = _wave_director.advance(delta, GameState.level, alive,
-		NetworkManager.battle_size(self), ENEMY_SCREEN_CAP)
+		NetworkManager.battle_size(self), ENEMY_SCREEN_CAP, allow_duo_shear)
 	for order: Dictionary in orders:
-		_spawn_enemy_at(int(order["type"]), order["pos"])
+		_spawn_enemy_at(int(order["type"]), order["pos"], 0, true, bool(order.get("duo_shear", false)))
 	_refresh_wave_phase_hud()
 	if orders.is_empty() and alive <= 1:
 		_try_launch_transport()
@@ -994,10 +996,12 @@ static func compute_post_elite_multiplier(elite_count: int) -> float:
 ## 章节主题（wave_director.gd CHAPTER_THEMES）改的是**怎么躲**而不是"躲不躲得过"：
 ## 弹速变快的同时敌人变脆、开火变密，玩家的最优应对从"站桩输出"变成
 ## "贴脸抢输出窗口"。手感因此一章一换，而难度总量没变。
-func _spawn_enemy_at(enemy_type: int, pos: Vector2, authored_health := 0, can_drop := true) -> CharacterBody2D:
+func _spawn_enemy_at(enemy_type: int, pos: Vector2, authored_health := 0, can_drop := true,
+		duo_shear := false) -> CharacterBody2D:
 	var enemy = _enemy_scene.instantiate()
 	enemy.position = pos
 	enemy.enemy_type = enemy_type
+	enemy.duo_shear = duo_shear
 	var mult: float = GameState.post_elite_multiplier
 	var theme: Dictionary = _wave_director.theme_for_chapter(
 		_wave_director.chapter_for_level(GameState.level))

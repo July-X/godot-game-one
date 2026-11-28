@@ -58,6 +58,7 @@ func _ready() -> void:
 	_check_no_repeated_formation()
 	_check_chapter_theme_bounds()
 	_check_simulation_stays_healthy()
+	_check_duo_shear_replaces_one_equal_budget_wave()
 	_report()
 
 
@@ -73,6 +74,37 @@ func _check(name: String, ok: bool, detail: String) -> void:
 	else:
 		_failed += 1
 	print("%s VERDICT %s pass=%s | %s" % [TAG, name, str(ok).to_lower(), detail])
+
+
+func _check_duo_shear_replaces_one_equal_budget_wave() -> void:
+	var original: Node = _dir.new()
+	var replacement: Node = _dir.new()
+	for director: Node in [original, replacement]:
+		director.reset(_dir.PHASE_SURGE)
+		director._last_formation = _dir.FORMATION_SWARM
+		director._rng.seed = 47681
+		director._budget = 3.0
+		director.advance(0.0, 2, 0, SCREEN, 24, director == replacement)
+	var original_rows: Array = original._pending
+	var replaced_rows: Array = replacement._pending
+	var same: bool = original_rows.size() == 3 and replaced_rows.size() == 3 and original._cooldown == replacement._cooldown
+	for i in mini(original_rows.size(), replaced_rows.size()):
+		var old: Dictionary = original_rows[i]
+		var new: Dictionary = replaced_rows[i]
+		same = (same and new.type == old.type and new.delay == old.delay and bool(new.get("duo_shear", false))
+			and not old.has("duo_shear") and new.pos.y < 0.0)
+	_check("duo_shear_keeps_budget_and_stagger", same and original._budget == replacement._budget, str(replaced_rows))
+	replacement._pending.clear()
+	replacement._cooldown = 0.0
+	replacement._last_formation = _dir.FORMATION_SWARM
+	replacement._budget = 3.0
+	replacement.advance(0.0, 2, 0, SCREEN, 24, true)
+	_check("duo_shear_occurs_only_once_in_round", replacement._pending.size() == 3
+		and replacement._pending.all(func(row): return not row.has("duo_shear")), "")
+	replacement.reset()
+	_check("duo_shear_retry_releases_reservation", not replacement._duo_shear_scheduled, "")
+	original.free()
+	replacement.free()
 
 
 # ── 1. 校准基准不能和 main.gd 漂移 ───────────────────────────

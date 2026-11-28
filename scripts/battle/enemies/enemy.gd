@@ -20,6 +20,7 @@ const TRANSPORT_SPEED := 300.0
 var bullet_speed_mult: float = 1.0
 var ordinary_attack := false
 var is_transport := false
+var duo_shear := false
 
 var entity_id: int = 0
 
@@ -90,9 +91,13 @@ func _ready() -> void:
 	_move_angle = randf() * TAU
 	_wobble_timer = randf() * TAU
 	_shoot_timer = randf_range(0.5, shoot_cooldown)
+	if duo_shear:
+		add_to_group("duo_shear_wing")
+		_target = _pick_duo_shear_target()
 
 func set_target(target: Node2D) -> void:
-	_target = target
+	if not duo_shear:
+		_target = target
 
 func _physics_process(delta: float) -> void:
 	if not GameState.game_running:
@@ -211,6 +216,8 @@ func _tick_ordinary_attack(delta: float) -> void:
 			return
 	match attack_phase:
 		AttackPhase.FLIGHT:
+			if duo_shear and (_shoot_timer <= 0.0 or not _target_can_be_attacked()):
+				_target = _pick_duo_shear_target()
 			if _shoot_timer <= 0.0 and _target_can_be_attacked():
 				_begin_ordinary_attack()
 		AttackPhase.PREPARE:
@@ -242,6 +249,24 @@ func _wait_for_ordinary_warning() -> void:
 func _target_can_be_attacked() -> bool:
 	return is_instance_valid(_target) and not _target.is_queued_for_deletion() \
 		and not _target.get("is_downed") and not is_queued_for_deletion()
+
+func _pick_duo_shear_target() -> Node2D:
+	# 同一队中重叠的蓄力收束到一架飞机，已经锁定的发射角照旧保持。
+	for wing in get_tree().get_nodes_in_group("duo_shear_wing"):
+		if wing != self and wing.attack_phase == AttackPhase.PREPARE and wing._target_can_be_attacked():
+			return wing._attack_target
+	var nearest := INF
+	var choices: Array[Node2D] = []
+	for pilot: Node2D in get_tree().get_nodes_in_group("player"):
+		if pilot.is_queued_for_deletion() or pilot.is_downed or not GameState.is_player_alive(pilot.peer_id):
+			continue
+		var distance := global_position.distance_squared_to(pilot.global_position)
+		if distance < nearest:
+			nearest = distance
+			choices.clear()
+		if distance == nearest:
+			choices.append(pilot)
+	return choices.front() if choices.size() == 1 else (choices.pick_random() if not choices.is_empty() else null)
 
 func _begin_ordinary_attack() -> void:
 	var heading := global_position.direction_to(_target.global_position)

@@ -153,6 +153,7 @@ var _phase_left: float = PHASE_SECONDS
 var _budget: float = 0.0
 var _cooldown: float = 0.0
 var _last_formation: String = ""
+var _duo_shear_scheduled := false
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 ## 已排期但尚未出场的敌人（阵型错峰用）
 var _pending: Array[Dictionary] = []
@@ -172,6 +173,7 @@ func reset(start_phase: int = PHASE_SETUP) -> void:
 	_budget = OPENING_BUDGET
 	_cooldown = 0.0
 	_last_formation = ""
+	_duo_shear_scheduled = false
 	last_formation_id = ""
 	_pending.clear()
 
@@ -341,7 +343,7 @@ func has_quiet_gap(level: int, seconds: float) -> bool:
 ## Host 权威运行，客户端不调用——出怪点仍然走既有的 `_rpc_spawn_enemy` 广播，
 ## 所以联机两端看到的波次天然一致，不新增同步负担。
 func advance(delta: float, level: int, alive: int, screen: Vector2,
-		screen_cap: int) -> Array[Dictionary]:
+		screen_cap: int, allow_duo_shear := false) -> Array[Dictionary]:
 	_phase_left -= delta
 	if _phase_left <= 0.0:
 		_phase_left += PHASE_SECONDS
@@ -373,14 +375,19 @@ func advance(delta: float, level: int, alive: int, screen: Vector2,
 	_budget -= float(cost)
 	var fid: String = _pick_formation(phase)
 	var plan: Array[Dictionary] = plan_formation(fid, screen, cost, _rng)
+	if allow_duo_shear and not _duo_shear_scheduled and phase == PHASE_SURGE \
+			and fid in [FORMATION_VEE, FORMATION_PINCER]:
+		# 保留本次普通阵列的机型、预算和错峰，从同一侧进场让出两翼。
+		_duo_shear_scheduled = true
+		for i in plan.size():
+			var offset := (float(i) - float(plan.size() - 1) * 0.5) * 53.0
+			plan[i].pos = Vector2(screen.x * 0.5 + offset, -SPAWN_MARGIN)
+			plan[i]["duo_shear"] = true
 	_budget = minf(_budget, BUDGET_CAP)
 	for e: Dictionary in plan:
-		_pending.append({
-			"type": int(e["type"]),
-			"pos": e["pos"],
-			"delay": float(e["delay"]) + FORMATION_STAGGER,
-			"formation": fid,
-		})
+		e["delay"] = float(e["delay"]) + FORMATION_STAGGER
+		e["formation"] = fid
+		_pending.append(e)
 	_cooldown = FORMATION_INTERVAL[phase]
 	return ready
 
