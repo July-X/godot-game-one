@@ -71,6 +71,9 @@ func _battle_scenario() -> void:
 	await _barrier("complete")
 	_check("downed_revived_and_rewired_without_replaying_calibration",
 		GameState.get_main_cannon_speed() == 900.0 and _calibrations == 1, str(_calibrations))
+	_check("rewire_preserves_single_credit_per_enemy", GameState.total_kills == 4
+		and GameState.score == 40 and GameState.get_peer_score(_slot) == 40 and GameState.get_peer_score(1) == 0,
+		"kills=%d scores=%s" % [GameState.total_kills, GameState.get_all_player_scores()])
 	var original: int = _main.get_instance_id()
 	if _role == "host":
 		_main._restart()
@@ -95,7 +98,9 @@ func _stage_battle() -> bool:
 		_main._players[1].force_kill()
 		_check("growth_granted_while_one_pilot_downed", _main._players[1].is_downed, "")
 		for i in 4:
-			GameState.add_kill(_slot)
+			var enemy = _main._spawn_enemy_at(0, Vector2(340 + i * 44, 190), 1, false)
+			enemy.die(_slot)
+			enemy.die(1)
 	if not await _wait_until(func(): return GameState.rescues_left == 2 and GameState.is_player_alive(1), 3):
 		return false
 	_main._player.global_position = HOME if _role == "host" else WING

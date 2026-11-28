@@ -21,6 +21,7 @@ var entity_id: int = 0
 func get_entity_id() -> int:
 	return entity_id
 var _is_network_ghost: bool = false
+var _death_started := false
 var _shoot_timer: float = 0.0
 var _target: Node2D = null
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
@@ -442,8 +443,7 @@ func _shoot_circle() -> void:
 			SPEED_SLOW, Palette.ENEMY_BULLET_SLOW)
 
 func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
-	# 同帧命中的多颗主炮只可把这架普通敌机计入团队击杀一次。
-	if ordinary_attack and is_queued_for_deletion():
+	if ordinary_attack and (_death_started or is_queued_for_deletion()):
 		return
 	health -= amount
 	modulate = Color(2, 2, 2, 1)
@@ -453,6 +453,11 @@ func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
 		die(killer_peer_id)
 
 func die(killer_peer_id: int = -1) -> void:
+	if ordinary_attack:
+		if _death_started or is_queued_for_deletion():
+			return
+		# 主炮和清屏炸弹共用此入口。分数或死亡回调可能在节点释放前再次进入。
+		_death_started = true
 	GameState.add_kill(killer_peer_id)
 	enemy_died.emit()
 	## 延迟生成特效和道具，避免物理查询冲突
