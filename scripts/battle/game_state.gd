@@ -13,6 +13,7 @@ signal cast_rejected(action: String)
 signal player_scores_changed(scores, total_score)
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
+signal first_boss_warning_started
 signal rescue_synced(previous_peer_id: int, revived: bool)
 
 const START_HEALTH: int = 50
@@ -23,6 +24,8 @@ const RESCUE_WARNING_SECONDS := 5
 const RESCUE_RADIUS := 60.0
 const MAIN_CANNON_SPEED := 660.0
 const CALIBRATED_CANNON_SPEED := 900.0
+const FIRST_BOSS_LEVEL := 5
+const FIRST_BOSS_KILLS := 72
 
 var rescues_left := RESCUE_LIMIT
 var rescue_peer_id := 0
@@ -56,6 +59,7 @@ const LASER_COOLDOWN_MAX: float = 10.0
 
 var boss_encounter_count: int = 0
 var last_boss_level: int = 0
+var first_boss_warning_active := false
 
 ## Boss 奖励属性（击败后永久增加）
 var laser_cd_bonus: float = 0.0        # 激光冷却减少总和
@@ -187,6 +191,7 @@ func _to_dict() -> Dictionary:
 		"last_elite_threshold": last_elite_threshold,
 		"kills_for_next_level": kills_for_next_level,
 		"last_boss_level": last_boss_level,
+		"first_boss_warning": first_boss_warning_active,
 		"boss_encounter_count": boss_encounter_count,
 		"player_states": _player_states.duplicate(true),
 		"player_scores": _player_scores.duplicate(true),
@@ -411,6 +416,7 @@ func _from_dict(data: Dictionary) -> void:
 				cast_rejected.emit(action)
 	if main_cannon_calibrated and not was_calibrated and NetworkManager.recovery.deadline == 0:
 		cannon_calibrated.emit()
+	set_first_boss_warning(bool(data.get("first_boss_warning", false)))
 	if rescue_peer_id != previous_rescue_peer or rescue_seconds != previous_rescue_seconds:
 		rescue_synced.emit(previous_rescue_peer, rescues_left < previous_rescues_left)
 
@@ -419,6 +425,14 @@ func _mark_dirty() -> void:
 		return
 	if multiplayer.is_server():
 		_sync_dirty = true
+
+func set_first_boss_warning(active: bool) -> void:
+	if active == first_boss_warning_active:
+		return
+	first_boss_warning_active = active
+	if active:
+		first_boss_warning_started.emit()
+	_mark_dirty()
 
 func ensure_player_state(peer_id: int) -> void:
 	_state(peer_id)
@@ -449,6 +463,7 @@ func reset_game(normal_growth := false) -> void:
 	reset_graze()
 	boss_encounter_count = 0
 	last_boss_level = 0
+	first_boss_warning_active = false
 	_player_states.clear()
 	_player_scores.clear()
 	clear_unconfirmed_actions()
@@ -506,6 +521,11 @@ func add_kill(killer_peer_id: int = -1) -> void:
 	add_score(10 * level, killer_peer_id)
 	if kills >= kills_for_next_level:
 		level_up()
+	if (normal_growth_enabled and total_kills == FIRST_BOSS_KILLS and last_boss_level == 0
+			and (not NetworkManager.is_online() or multiplayer.is_server())):
+		# 首领配置仍按第 5 级，升级到第 5 级时也不会重复请求。
+		last_boss_level = FIRST_BOSS_LEVEL
+		boss_spawn_requested.emit(FIRST_BOSS_LEVEL)
 	_maybe_trigger_elite()
 	_mark_dirty()
 

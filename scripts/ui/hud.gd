@@ -418,7 +418,7 @@ func _layout_top_rows() -> void:
 	if is_instance_valid(_boss_status_root):
 		_boss_status_root.position = Vector2(center - BOSS_BAR_SIZE.x * 0.5, top)
 	if is_instance_valid(_alert_label):
-		_alert_label.position = Vector2(center - BOSS_BAR_SIZE.x * 0.5, top)
+		_alert_label.position = Vector2(center - _alert_label.size.x * 0.5, top)
 	_position_draft_panel()
 
 func _layout_draft_cards() -> void:
@@ -1046,7 +1046,8 @@ func show_boss_bonus_attribute_feedback() -> void:
 	_update_powerup_display()
 	_pulse_powerup_bonus_lines()
 
-func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.0, 0.3, 0.2, 1.0)) -> void:
+func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.0, 0.3, 0.2, 1.0),
+		width: float = BOSS_BAR_SIZE.x) -> void:
 	if is_instance_valid(_boss_status_root) and _boss_status_root.visible:
 		return
 	if not is_instance_valid(_alert_label):
@@ -1057,6 +1058,7 @@ func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.
 	if _alert_tween:
 		_alert_tween.kill()
 	_alert_label.text = text
+	_alert_label.size.x = width
 	_alert_label.add_theme_color_override("font_color", color)
 	_alert_label.modulate.a = 0.0
 	_alert_label.show()

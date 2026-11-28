@@ -8,6 +8,7 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 - [架构设计](./docs/architecture.md) ← 代码结构的唯一权威
 - [开发计划](./docs/Development_Plan.md)
 - [普通单人局从首卡到首只 Boss 的实测与试玩单](./docs/boss_pace_baseline.md)
+- [普通局首只首领节奏对照和复跑](./docs/first_boss_pace.md)
 - [设计决策](./docs/Design_Decisions.md)
 - [关卡设计方案](./docs/level_design_proposal.md) ← 乐句节奏 / 阵型 / 章节主题
 - [美术与音频管线](./docs/art_audio_pipeline.md)

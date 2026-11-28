@@ -231,6 +231,7 @@ func _ready() -> void:
 	GameState.cannon_calibrated.connect(_on_cannon_calibrated)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
+	GameState.first_boss_warning_started.connect(_show_first_boss_warning)
 	GameState.game_over.connect(_on_game_over_triggered)
 	GameState.rescue_synced.connect(_on_rescue_synced)
 	_debug_log_variant_assets()
@@ -819,7 +820,7 @@ func _refresh_wave_phase_hud() -> void:
 ## 起拍/涨潮每次都弹会变成噪音，而玩家在退潮时最该知道的是
 ## "接下来的 16 秒是安全的，可以专心清场和读弹道"。
 func _on_wave_phase_changed(phase_index: int, phase_name: String) -> void:
-	if _hud == null or not _hud.has_method("show_center_banner"):
+	if GameState.first_boss_warning_active or _hud == null or not _hud.has_method("show_center_banner"):
 		return
 	match phase_index:
 		_wave_director_script.PHASE_CREST:
@@ -1168,6 +1169,8 @@ func _on_elite_spawn_requested() -> void:
 		return
 	if _elite != null and is_instance_valid(_elite):
 		return
+	if GameState.normal_growth_enabled and (_pending_boss_level == GameState.FIRST_BOSS_LEVEL or GameState.first_boss_warning_active):
+		return
 	call_deferred("_spawn_elite")
 
 const ELITE_ENTRY_SECONDS := 1.5
@@ -1261,14 +1264,24 @@ func _on_boss_spawn_requested(level: int) -> void:
 		return
 	if not GameState.game_running:
 		return
+	var first_ordinary := GameState.normal_growth_enabled and level == GameState.FIRST_BOSS_LEVEL
+	if first_ordinary and GameState.first_boss_warning_active:
+		return
 	if _is_elite_blocking_boss_spawn():
 		## 精英仍在场时，缓存本次 Boss 触发，待精英死亡后立即补发
 		_pending_boss_level = maxi(_pending_boss_level, level)
 		return
 	_pending_boss_level = 0
-	_show_boss_warning()
-	var timer := get_tree().create_timer(2.0)
+	if first_ordinary:
+		GameState.set_first_boss_warning(true)
+	else:
+		_show_boss_warning()
+	var timer := get_tree().create_timer(2.0, not first_ordinary)
 	timer.timeout.connect(func():
+		if first_ordinary:
+			if not is_inside_tree() or get_tree().current_scene != self:
+				return
+			GameState.set_first_boss_warning(false)
 		if not GameState.game_running:
 			return
 		if _is_elite_blocking_boss_spawn():
@@ -1493,6 +1506,10 @@ func _show_boss_warning() -> void:
 	tween.parallel().tween_property(warning, "modulate:a", 0.0, 0.3)
 	tween.tween_callback(cl.queue_free)
 
+func _show_first_boss_warning() -> void:
+	if is_instance_valid(_hud) and not _has_active_boss() and GameState.game_running:
+		_hud.show_center_banner("首领接近 · 留出横移空间", 1.55, Color(1.0, 0.3, 0.28), 360.0)
+
 func _grant_random_boss_rewards_to_alive_players() -> void:
 	var peer_ids := GameState.get_alive_player_ids()
 	if peer_ids.is_empty():
@@ -1572,6 +1589,8 @@ func _rpc_force_game_over(final_score: int, final_level: int) -> void:
 		_hud._on_game_over(final_score, final_level)
 
 func _clear_runtime_entities_on_game_over() -> void:
+	if GameState.normal_growth_enabled:
+		GameState.set_first_boss_warning(false)
 	queue_redraw()
 	var stick := get_node_or_null("MobileControls")
 	if stick:
