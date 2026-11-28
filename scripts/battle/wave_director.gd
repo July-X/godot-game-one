@@ -320,6 +320,14 @@ static func plan_formation(formation_id: String, screen: Vector2, count: int,
 
 # ── 每帧推进 ───────────────────────────────────────────────────
 
+## advance 只会返回已排期的条目，新阵型最早从下一次推进开始出场。
+func has_pending_spawn_due(delta: float) -> bool:
+	for entry: Dictionary in _pending:
+		if float(entry["delay"]) <= delta:
+			return true
+	return false
+
+
 ## 推进编排器。返回"此刻应当出场"的敌人列表。
 ##
 ## `alive` 是当前同屏敌人数（含精英与 Boss 判定交由调用方在调用前过滤）。

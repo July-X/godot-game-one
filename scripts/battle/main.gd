@@ -10,6 +10,7 @@ signal guest_bullet_batch_spawned(slot: int, count: int, reliable: bool)
 
 const MotionController = preload("res://scripts/player/motion_controller.gd")
 const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
+const FIRST_BOSS_AFTERMATH_SECONDS := 2.0
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
@@ -46,6 +47,7 @@ var _boss_variant_cycle: Array[int] = []
 var _boss_variant_last: int = 0
 var _boss_fight_active: bool = false
 var _pending_boss_level: int = 0
+var _first_boss_aftermath_left := 0.0
 ## 旧的 `_enemy_spawn_timer` / `_difficulty_timer`（间隔刷怪 + 8 秒脉冲）已删除，
 ## 杂兵投放改由 `_wave_director` 的乐句节拍统一负责。
 var _asteroid_timer: float = 0.0
@@ -780,9 +782,15 @@ func _process(delta: float) -> void:
 		_apply_player_interpolation(delta)
 		return
 
+	_first_boss_aftermath_left = maxf(0.0, _first_boss_aftermath_left - delta)
 	if _elite != null and is_instance_valid(_elite):
 		return
 	if _boss != null and is_instance_valid(_boss):
+		return
+
+	# 原排期的空档计入收场时间。任一路提前到点时才冻结两路时钟，保留编队的错峰。
+	if _first_boss_aftermath_left > 0.0 and (
+			_asteroid_timer <= delta or _wave_director.has_pending_spawn_due(delta)):
 		return
 
 	_asteroid_timer -= delta
@@ -1401,6 +1409,8 @@ func _pick_boss_variant_id() -> int:
 func _on_boss_died() -> void:
 	_clear_boss_laser_visual()
 	if _boss != null:
+		if _boss.uses_first_boss_cues() and (not NetworkManager.is_online() or multiplayer.is_server()):
+			_first_boss_aftermath_left = FIRST_BOSS_AFTERMATH_SECONDS
 		_expect_local_boss_reward(_boss)
 		var eid: int = _boss.entity_id
 		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
