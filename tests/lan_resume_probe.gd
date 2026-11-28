@@ -64,6 +64,12 @@ func _battle_scenario() -> void:
 		return
 	await _barrier("staged")
 	var actor := "host" if _scenario == "resume-host" else "client"
+	if _role == actor:
+		_main._spawn_mobile_controls()
+		_main._hud._layout_battle_hud()
+		var motion: Node = _main._players[NetworkManager.local_player_id()]._motion
+		motion.mobile_mode = true
+		_main.get_node("MobileControls").move_input.connect(motion.handle_mobile_move)
 	await _cycle("short", actor, false)
 	await _cycle("rewire", actor, true)
 	if not get_tree().paused and NetworkManager.is_online():
@@ -145,9 +151,14 @@ func _cycle(label: String, actor: String, drop: bool) -> void:
 	await _barrier(label + "_armed")
 	if _role == actor:
 		var pilot = _main._players[my_id]
-		pilot._motion.touch_move = Vector2.RIGHT
-		pilot._action_router.request_action("dash")
+		var first := _start_joystick()
+		var dash: Vector2 = _main._hud._skill_slots[2].button.get_global_rect().get_center()
+		_screen_touch(1, dash, true)
+		_screen_touch(1, dash, false)
+		_check(label + "_touch_dash_queued_before_pause", pilot._motion.touch_move.x > 0.7
+			and pilot._action_router._queued_actions.has("touch_dash"), str(first))
 		_background(true)
+		_screen_touch(0, first, false)
 	var paused := await _wait_until(func(): return get_tree().paused and recovery.deadline > 0, 5)
 	_check(label + "_frozen_clean_input", paused and _main._players[my_id]._motion.touch_move.is_zero_approx()
 		and _main._players[my_id]._action_router._queued_actions.is_empty() and is_instance_valid(_main._lan_message), "")
@@ -218,6 +229,11 @@ func _cycle(label: String, actor: String, drop: bool) -> void:
 			and int(UpgradeDraft.get_draft(_slot).id) == _draft and is_instance_valid(_main._boss)
 			and _main._boss.entity_id == _boss_id and is_instance_valid(_main._boss_laser_visual)
 			and _marked_shot() != null, "")
+		if _role == actor:
+			var local: Node = _main._players[my_id]
+			var stick := _main.get_node("MobileControls")
+			_check(label + "_no_stale_touch_or_dash_after_restore", stick._move_touch_id == -1
+				and local.can_dash() and local._action_router._queued_actions.is_empty(), "")
 	await _barrier(label + "_complete")
 
 
@@ -233,7 +249,18 @@ func _exercise_restored_input() -> void:
 		GameState.force_sync_to_peer(_wire_id())
 	else:
 		var shot = _main._players[_slot]
-		shot._motion.mouse_vel = Vector2(160, 0)
+		if shot._motion.mobile_mode:
+			var point := _start_joystick()
+			var laser: Vector2 = _main._hud._skill_slots[0].button.get_global_rect().get_center()
+			_screen_touch(1, laser, true)
+			_screen_touch(1, laser, false)
+			_check("touch_on_restored_cooldown_keeps_joystick",
+				await _wait_until(func(): return shot.position.x > WING.x + 8.0, 1)
+				and _main.get_node("MobileControls")._move_touch_id == 0
+				and not GameState.is_cast_pending("laser"), "")
+			_screen_touch(0, point, false)
+		else:
+			shot._motion.mouse_vel = Vector2(160, 0)
 		UpgradeDraft.choose_card(_slot, 1, "tap")
 	var chosen := await _wait_until(func(): return UpgradeDraft.get_draft(_slot).get("chosen", false), 3)
 	_check("restored_slot_can_choose_once_and_report_position", chosen and int(UpgradeDraft.get_draft(_slot).get("index", -1)) == 1
@@ -241,6 +268,25 @@ func _exercise_restored_input() -> void:
 		and _main._hud._active_pickup_toasts.is_empty(), str(UpgradeDraft.get_draft(_slot)))
 	var advanced := await _wait_until(func(): return _main._players[_slot].global_position.x > WING.x + 5.0, 2)
 	_check("new_wire_controls_same_slot", advanced, str(_main._players[_slot].global_position))
+
+func _start_joystick() -> Vector2:
+	var safe: Rect2 = _main._hud._safe_rect
+	var start := safe.position + Vector2(100, safe.size.y * 0.78)
+	_screen_touch(0, start, true)
+	var drag := InputEventScreenDrag.new()
+	drag.index = 0
+	drag.position = get_viewport().get_final_transform() * (start + Vector2(96, 0))
+	Input.parse_input_event(drag)
+	Input.flush_buffered_events()
+	return start
+
+func _screen_touch(index: int, position: Vector2, pressed: bool) -> void:
+	var touch := InputEventScreenTouch.new()
+	touch.index = index
+	touch.position = get_viewport().get_final_transform() * position
+	touch.pressed = pressed
+	Input.parse_input_event(touch)
+	Input.flush_buffered_events()
 
 
 func _timeout_scenario() -> void:

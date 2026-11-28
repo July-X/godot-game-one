@@ -222,7 +222,7 @@ func _physics_process(delta: float) -> void:
 		_feedback.update(delta)
 		return
 
-	## 闪避：Shift 触发，位移 + 无敌帧同时给
+	## 闪避：Shift 或触屏按键触发，位移和无敌帧同时给
 	_consume_dash()
 	_motion.update(delta, GameState.get_move_speed_multiplier(), NetworkManager.battle_size(self))
 	if _motion.is_dashing():
@@ -232,15 +232,16 @@ func _physics_process(delta: float) -> void:
 	_feedback.update(delta)
 
 
-## 把 ActionRouter 排队的 dash 动作转成实际闪避
+## 把 ActionRouter 排队的闪避转成实际位移
 func _consume_dash() -> void:
 	for action: String in _action_router.consume_actions():
-		if action != "dash":
+		if action != "dash" and action != "touch_dash":
 			_action_router.request_action(action)
 			continue
 		if is_downed:
 			continue
-		if _motion.try_dash():
+		var direction: Vector2 = _action_router.touch_dash_direction if action == "touch_dash" else Vector2.ZERO
+		if _motion.try_dash(direction):
 			SFX.play_dash()
 			_feedback.trigger_dash()
 
@@ -312,6 +313,16 @@ func _tick_runtime(delta: float) -> void:
 func request_action(action: String) -> void:
 	if not is_downed:
 		_action_router.request_action(action)
+
+
+func request_touch_dash() -> void:
+	if is_downed:
+		return
+	# 按下后同一物理帧内摇杆也可能转向或松开，保留这次按下的方向。
+	var direction: Vector2 = _motion.touch_move
+	if direction.length() <= 0.1:
+		direction = Vector2.from_angle(rotation - PI * 0.5)
+	_action_router.request_touch_dash(direction)
 
 
 func take_damage(amount: float = 1.0) -> void:

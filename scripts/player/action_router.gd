@@ -1,16 +1,21 @@
 extends Node
 ## 统一动作路由
 ##
-## 接收来自键盘、HUD 按钮、移动端控件的动作请求，
-## 在下一帧由 CombatController 消费。
-##
-## 新增动作来源时只需调用 request_action()，不需直接调用私有战斗方法。
+## 接收键盘和 HUD 的动作请求，下一个物理帧由 Player 和 CombatController 消费。
 
 var _queued_actions: Array[String] = []
+var touch_dash_direction := Vector2.ZERO
 
 
 func request_action(action: String) -> void:
 	_queued_actions.append(action)
+
+
+func request_touch_dash(direction: Vector2) -> void:
+	if _queued_actions.has("touch_dash"):
+		return
+	touch_dash_direction = direction
+	request_action("touch_dash")
 
 
 func consume_actions() -> Array[String]:

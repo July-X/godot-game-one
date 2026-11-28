@@ -35,6 +35,12 @@ func _run() -> void:
 	var origin := Vector2(160, get_viewport().get_visible_rect().end.y - 164)
 	_touch(0, origin, true)
 	_drag(0, origin - Vector2(95, 0))
+	for slot: Dictionary in trial._hud._skill_slots:
+		var at: Vector2 = slot.button.get_global_rect().get_center()
+		_touch(1, at, true)
+		_touch(1, at, false)
+	_check("movement_only_choice_drops_skill_touches", trial._player._action_router._queued_actions.is_empty()
+		and stick._move_touch_id == 0)
 	for i in 14:
 		await get_tree().physics_frame
 	_check("pilot_moves_before_first_choice_without_starting_combat",
@@ -48,6 +54,8 @@ func _run() -> void:
 		and GameState.get_card_stacks(1) == {"splash": 1} and stick._move_touch_id == 0)
 	if not await _at(22):
 		return
+	_check("choice_does_not_replay_skill_touches", trial._player.can_dash()
+		and GameState.get_laser_cooldown() == 0 and GameState.get_skill_cooldown() == 0)
 	_check("pilot_moves_left_while_hint_drawn", trial._player.position.x < start_x - 25 and hint.visible and not draft.visible)
 	var left_x: float = trial._player.position.x
 	_drag(0, origin + Vector2(95, 0))

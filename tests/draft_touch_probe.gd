@@ -1,7 +1,5 @@
 extends "res://tests/lan_probe.gd"
 
-const MOBILE := preload("res://scenes/ui/mobile_controls.tscn")
-const MAIN := preload("res://scenes/main.tscn")
 var _hud
 var _stick
 var _pilot
@@ -27,24 +25,18 @@ func _run() -> void:
 	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 	window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
 	Input.emulate_mouse_from_touch = true
-	if _role in ["host", "client"]:
-		var err := NetworkManager.create_host(_port) if _role == "host" else NetworkManager.join_host("127.0.0.1", _port)
-		if err != OK or not await _wait_until(NetworkManager.is_online, 8):
-			_exit_failure("connected")
-			return
-		_pid = multiplayer.get_unique_id()
-	_main = MAIN.instantiate()
-	if not args.has("keys"):
-		_stick = MOBILE.instantiate()
-		_main.add_child(_stick)
-	get_tree().root.add_child(_main)
-	get_tree().current_scene = _main
+	if not await _enter_battle():
+		_exit_failure("entered_battle_from_title")
+		return
+	_main = get_tree().current_scene
+	_check("entered_battle_from_title", true, _main.scene_file_path)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_main._asteroid_timer = INF
 	_main._wave_director._cooldown = INF
 	if not await _wait_until(func(): return not NetworkManager.is_online() or _cond_both_players(), 6):
 		_exit_failure("pilots_ready")
 		return
+	_pid = NetworkManager.local_player_id() if NetworkManager.is_online() else 1
 	_pilot = _main._players.get(_pid, _main._player)
 	_hud = _main._hud
 	_main.child_entered_tree.connect(_observe)
@@ -52,6 +44,10 @@ func _run() -> void:
 		await _check_keyboard()
 		get_tree().quit(_summarize())
 		return
+	_main._spawn_mobile_controls()
+	_stick = _main.get_node("MobileControls")
+	_pilot._motion.mobile_mode = true
+	_stick.move_input.connect(_pilot._motion.handle_mobile_move)
 	_safe = Rect2(Vector2(72 if wide else 14, 23), Vector2(size) - Vector2(92, 37))
 	if args.has("compact"):
 		_safe = Rect2(87, 36, 539, 348)
@@ -66,6 +62,7 @@ func _run() -> void:
 	_touch(0, edge, true)
 	_drag(0, edge + Vector2(0, -85), edge)
 	_check("move_held_before_upgrade", _stick._move_touch_id == 0 and _pilot._motion.touch_move.y < -0.7, "")
+	_check_skill_gaps()
 	if NetworkManager.is_online() and _role == "client":
 		_mark.rpc_id(1, 1)
 	elif _role == "host" and not await _wait_until(func(): return _stage >= 1, 5):
@@ -85,9 +82,17 @@ func _run() -> void:
 	var after_open: Vector2 = _pilot.global_position
 	_drag(0, edge + Vector2(92, 0), edge + Vector2(0, -85))
 	var laser: Vector2 = _hud._skill_slots[0].button.get_global_rect().get_center()
+	var scatter: Vector2 = _hud._skill_slots[1].button.get_global_rect().get_center()
+	var dash: Vector2 = _hud._skill_slots[2].button.get_global_rect().get_center()
 	var initial_cd := GameState.get_laser_cooldown(_pid)
-	_tap(1, laser)
+	_touch(1, laser, true)
+	_drag(1, scatter, laser)
+	_drag(1, dash, scatter)
+	_touch(1, dash, false)
 	var laser_requested_once: bool = _pilot._action_router._queued_actions == ["laser"]
+	_check("skill_cast_is_pressed_once_no_drag_or_release_cast", laser_requested_once, "")
+	_tap(1, laser)
+	_tap(1, laser)
 	var expected_lasers := 3
 	var fired := await _wait_until(func(): return _shot_count("laser", _pid) >= expected_lasers, 1.4)
 	_check("second_finger_laser_uses_real_projectiles_and_cooldown",
@@ -110,7 +115,6 @@ func _run() -> void:
 	_drag(0, blank + Vector2(-90, 0), blank)
 	_check("blank_draft_panel_space_accepts_new_left_touch",
 		_stick._move_touch_id == 0 and _pilot._motion.touch_move.x < -0.7, "point=%s owner=%d" % [blank, _stick._move_touch_id])
-	var scatter: Vector2 = _hud._skill_slots[1].button.get_global_rect().get_center()
 	_tap(1, scatter)
 	var scatter_requested_once: bool = _pilot._action_router._queued_actions == ["skill"]
 	var expected_scatter := 16
@@ -118,11 +122,16 @@ func _run() -> void:
 	_check("second_finger_scatter_uses_real_projectiles_and_cooldown", scatter_requested_once and scattered
 		and _shot_count("scatter", _pid) == expected_scatter and GameState.get_skill_cooldown(_pid) > 0
 		and UpgradeDraft.has_draft(_pid), "projectiles=%d cd=%.2f" % [_shot_count("scatter", _pid), GameState.get_skill_cooldown(_pid)])
-	var dash: Vector2 = _hud._skill_slots[2].button.get_global_rect().get_center()
+	_drag(0, blank + Vector2(0, 92), blank + Vector2(-90, 0))
+	_touch(1, dash, true)
+	_drag(0, blank + Vector2(92, 0), blank + Vector2(0, 92))
+	_touch(1, dash, false)
 	_tap(1, dash)
 	var dashed := await _wait_until(_pilot.is_dash_invincible, 0.5)
 	_check("second_finger_dash_uses_movement_and_cooldown",
-		dashed and _pilot.get_dash_cooldown_ratio() > 0 and UpgradeDraft.has_draft(_pid), "")
+		dashed and _pilot.get_dash_cooldown_ratio() > 0 and UpgradeDraft.has_draft(_pid)
+		and _pilot._motion._dash_dir.dot(Vector2.DOWN) > 0.99 and _pilot._motion.touch_move.x > 0.7,
+		"dash=%s stick=%s" % [_pilot._motion._dash_dir, _pilot._motion.touch_move])
 	var expected := str(UpgradeDraft.get_draft(_pid).cards[1])
 	_tap(1, card)
 	_check("second_finger_card_only_applies_once", await _wait_until(func():
@@ -134,6 +143,7 @@ func _run() -> void:
 	_check("choosing_card_does_not_steal_left_touch", _stick._move_touch_id == 0, "")
 	_touch(0, blank, false)
 	_check("release_clears_joystick", _stick._move_touch_id == -1 and _pilot._motion.touch_move == Vector2.ZERO, "")
+	await _check_dash_fallback(dash)
 	if NetworkManager.is_online():
 		var remote_pid := int(NetworkManager.connected_peers[0]) if _role == "host" else 1
 		var remote_count := 16
@@ -145,6 +155,44 @@ func _run() -> void:
 			"remote_scatter=%d remote_laser=%d" % [_shot_count("scatter", remote_pid), _shot_count("laser", remote_pid)])
 	await _check_timeout(edge)
 	get_tree().quit(_summarize())
+
+func _enter_battle() -> bool:
+	get_tree().current_scene = null
+	get_tree().change_scene_to_file("res://scenes/ui/title_screen.tscn")
+	await get_tree().scene_changed
+	var title := get_tree().current_scene
+	if _role == "solo":
+		title.get_node("Menu/BtnSingle").pressed.emit()
+	else:
+		title.get_node("Menu/BtnMultiplayer").pressed.emit()
+		await get_tree().scene_changed
+		var lobby := get_tree().current_scene
+		_check("title_opens_lobby", lobby.scene_file_path == "res://scenes/ui/lobby.tscn", "")
+		# Select a private test port and bypass room discovery, leaving the lobby handshake and Start intact.
+		if _role == "host":
+			lobby.get_node("VBox/PanelModeSelect").hide()
+			lobby.get_node("VBox/PanelHost").show()
+			if NetworkManager.create_host_with_mode(NetworkManager.TRANSPORT_HARMONY, _port) != OK:
+				return false
+			var start: Button = lobby.get_node("VBox/PanelHost/BtnStart")
+			if not await _wait_until(func(): return start.is_visible_in_tree() and not start.disabled, 8):
+				return false
+			start.pressed.emit()
+		else:
+			lobby._on_join_mode_selected()
+			lobby._deferred_join_host("127.0.0.1", _port)
+	return await _wait_until(func():
+		return is_instance_valid(get_tree().current_scene) and get_tree().current_scene.scene_file_path == MAIN_SCENE, 8)
+
+func _check_dash_fallback(dash: Vector2) -> void:
+	var cooled := await _wait_until(_pilot.can_dash, 1.4)
+	_check("repeat_during_dash_does_not_replay", cooled and not _pilot.is_dash_invincible(), "")
+	_pilot.velocity = Vector2.DOWN * 120
+	_pilot.rotation = PI / 2
+	_tap(1, dash)
+	_check("touch_dash_without_joystick_uses_facing",
+		await _wait_until(_pilot.is_dash_invincible, 0.5) and _pilot._motion._dash_dir.dot(Vector2.RIGHT) > 0.99,
+		"dash=%s" % _pilot._motion._dash_dir)
 
 func _check_keyboard() -> void:
 	var start: Vector2 = _pilot.global_position
@@ -204,12 +252,38 @@ func _check_skill_geometry() -> void:
 		var laser: Rect2 = _hud._skill_slots[0].button.get_global_rect()
 		var scatter: Rect2 = _hud._skill_slots[1].button.get_global_rect()
 		var dash: Rect2 = _hud._skill_slots[2].button.get_global_rect()
-		_check("right_hand_targets_fit_safe_area", safe.encloses(laser) and safe.encloses(scatter) and safe.encloses(dash)
+		var inner := safe.grow(-20)
+		_check("right_hand_targets_fit_safe_area", inner.encloses(laser) and inner.encloses(scatter) and inner.encloses(dash)
 			and laser.size.x >= 54 and scatter.size.x >= 54 and dash.size.x > laser.size.x
-			and laser.end.y < dash.position.y and scatter.end.y < dash.position.y
+			and laser.get_center().y < dash.get_center().y and scatter.get_center().x < dash.get_center().x
+			and scatter.position.x > safe.get_center().x
 			and not _hud._skill_slots[2].cd_label.visible,
 			"%s laser=%s scatter=%s dash=%s" % [safe, laser, scatter, dash])
 	_hud._layout_in_safe_area(original)
+
+func _check_skill_gaps() -> void:
+	var circles: Array[Rect2] = []
+	for slot in _hud._skill_slots:
+		var bounds: Rect2 = slot.button.get_global_rect()
+		circles.append(bounds)
+		for offset: Vector2 in [Vector2(2, 2), Vector2(bounds.size.x - 2, 2),
+				Vector2(2, bounds.size.y - 2), bounds.size - Vector2(2, 2)]:
+			_tap(1, bounds.position + offset)
+	var min_gap := INF
+	for i in circles.size():
+		var a := circles[i]
+		var b := circles[(i + 1) % circles.size()]
+		var between := b.get_center() - a.get_center()
+		var gap := between.length() - (a.size.x + b.size.x) / 2
+		min_gap = minf(gap, min_gap)
+		var point := a.get_center() + between.normalized() * (a.size.x + gap) / 2
+		_touch(1, point, true)
+		_drag(1, b.get_center(), point)
+		_touch(1, b.get_center(), false)
+	_check("circle_corners_and_gaps_do_not_cast_or_steal_joystick",
+		min_gap >= 10.0 and _pilot._action_router._queued_actions.is_empty()
+		and _stick._move_touch_id == 0 and _pilot._motion.touch_move.y < -0.7,
+		"gap=%.1f actions=%s" % [min_gap, _pilot._action_router._queued_actions])
 
 func _check_timeout(edge: Vector2) -> void:
 	_touch(0, edge, true)

@@ -1,6 +1,7 @@
 extends CanvasLayer
 const Palette = preload("res://scripts/visuals/palette.gd")
 const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
+const SkillButton = preload("res://scripts/ui/skill_button.gd")
 ## HUD 控制器 — 动态技能条 + 像素风 UI
 
 @onready var _score_label: Label = $ScoreLabel
@@ -31,7 +32,7 @@ const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
 var _damage_flash: ColorRect
 
 ## 技能槽数据（新增技能只需在这里加一条）
-## {name, action, key, bar_color}
+## {name, action, key, touch_offset, bar_color}
 var _skill_data: Array[Dictionary] = []
 ## 运行时生成的技能槽节点列表
 var _skill_slots: Array[Dictionary] = []
@@ -71,9 +72,11 @@ const BOSS_BONUS_BULLET_COUNT_MAX: float = 4.0
 const BOSS_BONUS_DAMAGE_MAX: float = 20.0
 const BOSS_BONUS_MOVE_SPEED_MAX: float = 0.5
 const SKILL_SLOT_DESKTOP: Vector2 = Vector2(80, 80)
-const TOUCH_SKILL_SIZE := 74.0
-const TOUCH_DASH_SIZE := 108.0
-const TOUCH_SKILL_INSET := Vector2(36, 35)
+const TOUCH_SKILL_SIZE := 94.0
+const TOUCH_DASH_SIZE := 114.0
+## 原尺寸下，从安全区右下角到技能组包围框两角的距离。
+const TOUCH_GROUP_ORIGIN := Vector2(271, 275)
+const TOUCH_SKILL_INSET := Vector2(48, 53)
 
 ## 图标资源缺失时的字形兜底（见 _create_skill_slot）
 const SKILL_GLYPH: Dictionary = {
@@ -284,27 +287,25 @@ func _update_graze_display() -> void:
 
 
 ## ── 动态技能条 ──────────────────────────────────────────────
-## 定义技能、动态创建按钮、按 action 触发技能
-##
-## 闪避（dash）也放在这里，而不是另做一个按钮：
-## 三个动作共用一套冷却遮罩、图标与按下反馈，玩家一眼就能看出
-## "右下角这一排都是消耗资源的动作"。若把闪避做成独立控件，
-## 它就会在视觉上脱离这一排，而闪避恰恰是最需要被看到的那个（1.1s CD）。
+## 桌面保持横排，触屏以安全区右下角为基准排出拇指弧。
 func _setup_skill_bar() -> void:
 	_skill_data = [
 		{
 			"name": "激光",
 			"action": "laser", "key": KEY_Q,
+			"touch_offset": Vector2(142, 228),
 			"bar_color": Color(0.25, 0.12, 0.85),
 		},
 		{
 			"name": "散射",
 			"action": "skill", "key": KEY_W,
+			"touch_offset": Vector2(224, 145),
 			"bar_color": Color(0.15, 0.72, 0.28),
 		},
 		{
 			"name": "闪避",
 			"action": "dash", "key": KEY_SHIFT,
+			"touch_offset": Vector2(105, 110),
 			"bar_color": Color(0.15, 0.62, 0.78),
 		},
 	]
@@ -314,12 +315,11 @@ func _setup_skill_bar() -> void:
 	GameState.cast_rejected.connect(_on_cast_rejected)
 
 func _create_skill_slot(data: Dictionary) -> void:
-	var btn := Button.new()
+	var btn := SkillButton.new()
 	btn.mouse_filter = Control.MOUSE_FILTER_PASS
 	btn.focus_mode = Control.FOCUS_NONE
-	btn.add_theme_stylebox_override("normal", _surface(Color("#112034d4"), Color("#43677e")))
-	btn.add_theme_stylebox_override("hover", _surface(Color("#20374bdc"), Palette.CARD_STYLE))
-	btn.add_theme_stylebox_override("pressed", _surface(Color("#2a455de8"), Palette.CARD_STYLE))
+	btn.accent = (data.bar_color as Color).lightened(0.60)
+	_style_desktop_skill_button(btn)
 	btn.pressed.connect(_on_skill_slot_pressed.bind(data))
 	btn.gui_input.connect(_on_skill_slot_touch.bind(btn, data))
 	_skill_bar.add_child(btn)
@@ -354,11 +354,12 @@ func _create_skill_slot(data: Dictionary) -> void:
 	_skill_slots.append({
 		"data": data, "button": btn, "icon": icon, "key": key_label,
 		"name": action_label, "progress": progress, "cd_label": cooldown,
-		"ready_surface": _surface(Color("#182b3fda"), Color("#95c6d6")),
-		"cooling_surface": _surface(Color("#101b2bdc"), Color("#435166")),
-		"rejected_surface": _surface(Color("#2e1a24dc"), Color("#f59583")),
-		"visual": "",
 	})
+
+func _style_desktop_skill_button(btn: Button) -> void:
+	btn.add_theme_stylebox_override("normal", _surface(Color("#112034d4"), Color("#43677e")))
+	btn.add_theme_stylebox_override("hover", _surface(Color("#20374bdc"), Palette.CARD_STYLE))
+	btn.add_theme_stylebox_override("pressed", _surface(Color("#2a455de8"), Palette.CARD_STYLE))
 
 func _layout_battle_hud() -> void:
 	_layout_in_safe_area(SafeArea.for_viewport(get_viewport()))
@@ -486,31 +487,44 @@ func _position_draft_panel() -> void:
 
 func _layout_skill_bar() -> void:
 	var touch := _is_touch_platform()
-	var dock_scale := clampf(minf(_safe_rect.size.x / 850.0, _safe_rect.size.y / 540.0), 0.74, 1.0)
+	var dock_scale := clampf(minf(_safe_rect.size.x / 680.0, _safe_rect.size.y / 540.0), 0.65, 1.0)
 	var bounds := Vector2.ZERO
 	for i in _skill_slots.size():
 		var slot := _skill_slots[i]
-		var btn: Button = slot.button
+		var btn: SkillButton = slot.button
 		var dash: bool = slot.data.action == "dash"
-		var slot_size := Vector2.ONE * (TOUCH_DASH_SIZE if dash else TOUCH_SKILL_SIZE) * dock_scale if touch else SKILL_SLOT_DESKTOP
-		btn.position = Vector2(88, 86) * dock_scale if touch and dash else Vector2(i * 84, 0) * dock_scale if touch else Vector2(i * (slot_size.x + 8), 0)
+		if btn.circular != touch:
+			btn.set_circular(touch)
+			if not touch:
+				_style_desktop_skill_button(btn)
+		var slot_size := SKILL_SLOT_DESKTOP
+		if touch:
+			slot_size = Vector2.ONE * (TOUCH_DASH_SIZE if dash else TOUCH_SKILL_SIZE) * dock_scale
+			btn.position = (TOUCH_GROUP_ORIGIN - slot.data.touch_offset) * dock_scale - slot_size * 0.5
+		else:
+			btn.position = Vector2(i * (slot_size.x + 8), 0)
 		btn.custom_minimum_size = slot_size
 		btn.size = slot_size
 		bounds = bounds.max(btn.position + slot_size)
 		slot.key.visible = not touch
 		slot.name.visible = not touch
 		slot.cd_label.visible = not (touch and dash)
-		var icon_size := (62.0 if dash else 44.0) * dock_scale if touch else 42.0
+		var icon_size := (62.0 if dash else 48.0) * dock_scale if touch else 42.0
 		slot.icon.size = Vector2.ONE * icon_size
 		slot.icon.position = Vector2((slot_size.x - icon_size) * 0.5, (slot_size.y - icon_size) * 0.5 - (0.0 if dash else 5.0) if touch else 5.0)
 		slot.name.position = Vector2(0, slot_size.y - 36)
 		slot.name.size = Vector2(slot_size.x, 18)
-		slot.cd_label.position = Vector2(0, slot_size.y - 21)
+		slot.cd_label.add_theme_font_size_override("font_size", int(lerpf(11, 14, dock_scale)) if touch else 11)
+		slot.cd_label.position = Vector2(0, slot_size.y - (20.0 * dock_scale + 7.0 if touch else 21.0))
 		slot.cd_label.size = Vector2(slot_size.x, 15)
-		slot.progress.position = Vector2(4, slot_size.y - (6 if touch else 3))
+		slot.progress.position = Vector2(4, slot_size.y - 3)
 	_skill_bar.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_skill_bar.size = bounds
-	var inset := TOUCH_SKILL_INSET if touch else Vector2.ONE * EDGE_MARGIN
+	var inset := Vector2.ONE * EDGE_MARGIN
+	if touch:
+		inset = TOUCH_SKILL_INSET * dock_scale
+		# 矮画布把整组下移，为选卡留足纵向空间。
+		inset.y = lerpf(22.0, inset.y, smoothstep(380.0, 500.0, _safe_rect.size.y))
 	_skill_bar.position = _safe_rect.end - _skill_bar.size - inset
 
 func _get_design_canvas_size() -> Vector2:
@@ -519,9 +533,20 @@ func _get_design_canvas_size() -> Vector2:
 func _on_skill_slot_pressed(data: Dictionary) -> void:
 	_request_player_action(data.action)
 
-func _on_skill_slot_touch(event: InputEvent, button: Button, data: Dictionary) -> void:
-	if _accept_touch_press(event, button):
+func _on_skill_slot_touch(event: InputEvent, button: SkillButton, data: Dictionary) -> void:
+	if not _accept_touch_press(event, button):
+		return
+	if not button.circular:
 		_on_skill_slot_pressed(data)
+		return
+	var player := _resolve_local_player()
+	if not player or not GameState.game_running or player.trial_draft_movement_only:
+		return
+	button.flash_press()
+	if data.action == "dash":
+		player.request_touch_dash()
+	else:
+		player.request_action(data.action)
 
 func _on_cast_rejected(action: String) -> void:
 	_rejected_action = action
@@ -549,16 +574,13 @@ func _update_cooldowns() -> void:
 		var pending := GameState.is_cast_pending(action)
 		var rejected := _rejected_action == action and Time.get_ticks_msec() < _rejected_until
 		var ready := cd <= 0.0 and not pending and not rejected
-		slot.progress.size = Vector2((slot.button.size.x - 8.0) * progress, 2.0)
-		slot.progress.visible = not touch or ready
+		slot.progress.visible = not touch
 		slot.icon.modulate = Color.WHITE if ready else Color("#8794a6")
 		if touch:
-			var visual := "rejected_surface" if rejected else "ready_surface" if ready else "cooling_surface"
-			if slot.visual != visual:
-				slot.button.add_theme_stylebox_override("normal", slot[visual])
-				slot.visual = visual
+			slot.button.update_touch_state(0.0 if pending else progress, ready, rejected)
 			slot.cd_label.text = "×" if rejected else "…" if pending else str(ceili(cd)) if cd > 0.0 else ""
 		else:
+			slot.progress.size = Vector2((slot.button.size.x - 8.0) * progress, 2.0)
 			slot.cd_label.text = "未释放" if rejected else "确认中" if pending else "就绪" if ready else "%.1fs" % (ceilf(cd * 10.0) / 10.0)
 			slot.cd_label.add_theme_color_override("font_color", Palette.DASH_READY if ready else Color("#abb7c5"))
 
