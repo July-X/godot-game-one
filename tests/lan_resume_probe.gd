@@ -14,6 +14,7 @@ var _draft := 0
 var _pickup := 0
 var _peer_at_start := 0
 var _boss_id := 0
+var _calibrations := 0
 
 
 func _run() -> void:
@@ -32,6 +33,7 @@ func _run() -> void:
 	var linked := err == OK and await _wait_until(func(): return NetworkManager.is_online() and NetworkManager.connected_peers.size() == 1, 8)
 	_check("initial_real_enet", linked, error_string(err))
 	if linked:
+		GameState.cannon_calibrated.connect(func(): _calibrations += 1)
 		_enter_main_scene()
 		var ready := await _wait_until(func(): return _cond_both_players() and NetworkManager.recovery.is_reserved(), 6)
 		_check("two_known_slots_and_ticket", ready, str(_main._players.keys()))
@@ -67,6 +69,19 @@ func _battle_scenario() -> void:
 	if not get_tree().paused and NetworkManager.is_online():
 		await _exercise_restored_input()
 	await _barrier("complete")
+	_check("downed_revived_and_rewired_without_replaying_calibration",
+		GameState.get_main_cannon_speed() == 900.0 and _calibrations == 1, str(_calibrations))
+	var original: int = _main.get_instance_id()
+	if _role == "host":
+		_main._restart()
+	var restarted := await _wait_until(func():
+		var active := get_tree().current_scene
+		return (is_instance_valid(active) and active.get_instance_id() != original
+			and GameState.get_sync_round() > _round and active._players.size() == 2), 6)
+	_check("retry_clears_only_old_round_calibration_and_pending_casts",
+		restarted and GameState.get_main_cannon_speed() == 660.0 and _calibrations == 1
+		and not GameState.is_cast_pending("skill") and not GameState.is_cast_pending("laser"), str(_calibrations))
+	await _barrier("after_retry")
 	await _wait_seconds(0.3)
 
 
@@ -78,6 +93,9 @@ func _stage_battle() -> bool:
 		if not near:
 			return false
 		_main._players[1].force_kill()
+		_check("growth_granted_while_one_pilot_downed", _main._players[1].is_downed, "")
+		for i in 4:
+			GameState.add_kill(_slot)
 	if not await _wait_until(func(): return GameState.rescues_left == 2 and GameState.is_player_alive(1), 3):
 		return false
 	_main._player.global_position = HOME if _role == "host" else WING

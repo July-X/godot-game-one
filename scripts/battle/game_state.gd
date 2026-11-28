@@ -8,6 +8,8 @@ signal powerup_collected(powerup_type)
 signal shield_changed(peer_id, layers)
 signal skill_used(peer_id)
 signal laser_used(peer_id)
+signal cannon_calibrated
+signal cast_rejected(action: String)
 signal player_scores_changed(scores, total_score)
 signal elite_spawn_requested
 signal boss_spawn_requested(boss_level)
@@ -19,6 +21,8 @@ const RESCUE_LIMIT := 3
 const RESCUE_SECONDS := 15
 const RESCUE_WARNING_SECONDS := 5
 const RESCUE_RADIUS := 60.0
+const MAIN_CANNON_SPEED := 660.0
+const CALIBRATED_CANNON_SPEED := 900.0
 
 var rescues_left := RESCUE_LIMIT
 var rescue_peer_id := 0
@@ -29,6 +33,8 @@ var score: int = 0
 var level: int = 1
 var kills: int = 0
 var total_kills: int = 0
+var normal_growth_enabled := false
+var main_cannon_calibrated := false
 var last_elite_threshold: int = 0
 var elite_encounter_count: int = 0
 var post_elite_multiplier: float = 1.0
@@ -74,9 +80,7 @@ var rift_dual_intercept := false
 var _received_sync_sequence := 0
 var _sync_connection_id := 0
 var _minimum_sync_round := 0
-var _server_player_states: Dictionary = {}
-var _pending_skill_ack: Dictionary = {}
-var _pending_laser_ack: Dictionary = {}
+var _pending_casts: Dictionary = {}
 
 func _local_peer_id() -> int:
 	return NetworkManager.local_player_id()
@@ -176,6 +180,7 @@ func _to_dict() -> Dictionary:
 		"level": level,
 		"kills": kills,
 		"total_kills": total_kills,
+		"main_cannon_calibrated": main_cannon_calibrated,
 		"game_running": game_running,
 		"elite_encounter_count": elite_encounter_count,
 		"post_elite_multiplier": post_elite_multiplier,
@@ -221,8 +226,10 @@ func next_sync_round() -> int:
 	return _sync_round + 1
 
 func clear_unconfirmed_actions() -> void:
-	_pending_skill_ack.clear()
-	_pending_laser_ack.clear()
+	_pending_casts.clear()
+
+func is_cast_pending(action: String) -> bool:
+	return _pending_casts.has(action)
 
 func get_sync_round() -> int:
 	if multiplayer.is_server():
@@ -300,14 +307,14 @@ func _rpc_request_use_skill(peer_id: int) -> void:
 	if owner_peer_id <= 1 or peer_id != owner_peer_id:
 		return
 	if not use_skill(peer_id):
+		_report_cast_rejected(peer_id, "skill")
 		return
 	_rpc_confirm_skill_used.rpc_id(NetworkManager.peer_for_slot(owner_peer_id), peer_id)
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_confirm_skill_used(peer_id: int) -> void:
-	if _local_peer_id() != peer_id or NetworkManager.recovery.deadline > 0:
+	if _local_peer_id() != peer_id or NetworkManager.recovery.deadline > 0 or not _pending_casts.erase("skill"):
 		return
-	_pending_skill_ack.erase(_peer_key(peer_id))
 	_apply_confirmed_cooldown(peer_id, "skill_cooldown", SKILL_COOLDOWN_MAX)
 	skill_used.emit(peer_id)
 
@@ -319,24 +326,36 @@ func _rpc_request_use_laser(peer_id: int) -> void:
 	if owner_peer_id <= 1 or peer_id != owner_peer_id:
 		return
 	if not use_laser(peer_id):
+		_report_cast_rejected(peer_id, "laser")
 		return
 	_rpc_confirm_laser_used.rpc_id(NetworkManager.peer_for_slot(owner_peer_id), peer_id, get_laser_cooldown_max(peer_id))
 
 @rpc("authority", "reliable", "call_remote")
 func _rpc_confirm_laser_used(peer_id: int, cooldown: float) -> void:
-	if _local_peer_id() != peer_id or NetworkManager.recovery.deadline > 0:
+	if _local_peer_id() != peer_id or NetworkManager.recovery.deadline > 0 or not _pending_casts.erase("laser"):
 		return
-	_pending_laser_ack.erase(_peer_key(peer_id))
 	_apply_confirmed_cooldown(peer_id, "laser_cooldown", cooldown)
 	laser_used.emit(peer_id)
+
+func _report_cast_rejected(peer_id: int, action: String) -> void:
+	var s := _state(peer_id)
+	var field := action + "_rejections"
+	s[field] = int(s.get(field, 0)) + 1
+	force_sync_to_peer(NetworkManager.peer_for_slot(peer_id))
+
+func _request_cast(peer_id: int, action: String, method: String) -> bool:
+	if is_cast_pending(action) or NetworkManager.recovery.deadline > 0:
+		return false
+	_pending_casts[action] = int(_state(peer_id).get(action + "_rejections", 0))
+	if rpc_id(1, method, peer_id) == OK:
+		return true
+	_pending_casts.erase(action)
+	cast_rejected.emit(action)
+	return false
 
 func _apply_confirmed_cooldown(peer_id: int, field: String, cooldown: float) -> void:
 	var s := _state(peer_id)
 	s[field] = cooldown
-	var key := _peer_key(peer_id)
-	# 确认比上一次状态快照新，避免下一物理帧从旧缓存读回就绪态。
-	if _server_player_states.has(key):
-		_server_player_states[key][field] = cooldown
 	_sync_local_view()
 
 func _from_dict(data: Dictionary) -> void:
@@ -353,6 +372,8 @@ func _from_dict(data: Dictionary) -> void:
 	level = data.get("level", 1)
 	kills = data.get("kills", 0)
 	total_kills = data.get("total_kills", 0)
+	var was_calibrated := main_cannon_calibrated
+	main_cannon_calibrated = bool(data.get("main_cannon_calibrated", false))
 	game_running = data.get("game_running", false)
 	elite_encounter_count = data.get("elite_encounter_count", 0)
 	post_elite_multiplier = data.get("post_elite_multiplier", 1.0)
@@ -365,8 +386,6 @@ func _from_dict(data: Dictionary) -> void:
 	for key: String in _player_states.keys():
 		if not _player_scores.has(key):
 			_player_scores[key] = 0
-	if not multiplayer.is_server():
-		_server_player_states = _player_states.duplicate(true)
 	## 重新发射信号让 UI 更新
 	score_changed.emit(score)
 	_emit_scores_changed()
@@ -381,6 +400,17 @@ func _from_dict(data: Dictionary) -> void:
 		var peer_id := _local_peer_id()
 		var drafts: Dictionary = data.get("upgrade_drafts", {})
 		UpgradeDraft.receive_draft(peer_id, drafts.get(peer_id, {}))
+		var local := _state(peer_id)
+		for action: String in _pending_casts.keys():
+			var field := action + "_rejections"
+			var rejected := int(local.get(field, 0)) > int(_pending_casts[action])
+			# 同协议旧房主没有拒绝计数。成功确认总在其冷却快照之前发送。
+			var already_cooling := not local.has(field) and float(local[action + "_cooldown"]) > 0.0
+			if rejected or already_cooling:
+				_pending_casts.erase(action)
+				cast_rejected.emit(action)
+	if main_cannon_calibrated and not was_calibrated and NetworkManager.recovery.deadline == 0:
+		cannon_calibrated.emit()
 	if rescue_peer_id != previous_rescue_peer or rescue_seconds != previous_rescue_seconds:
 		rescue_synced.emit(previous_rescue_peer, rescues_left < previous_rescues_left)
 
@@ -396,12 +426,9 @@ func ensure_player_state(peer_id: int) -> void:
 	if not _player_scores.has(key):
 		_player_scores[key] = 0
 		_emit_scores_changed()
-	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
-		if not _server_player_states.has(key):
-			_server_player_states[key] = _new_player_state()
 	_mark_dirty()
 
-func reset_game() -> void:
+func reset_game(normal_growth := false) -> void:
 	if NetworkManager.is_online() and multiplayer.is_server():
 		_sync_round += 1
 	UpgradeDraft.clear_drafts()
@@ -411,6 +438,8 @@ func reset_game() -> void:
 	level = 1
 	kills = 0
 	total_kills = 0
+	normal_growth_enabled = normal_growth
+	main_cannon_calibrated = false
 	death_message = ""
 	game_running = true
 	kills_for_next_level = 10
@@ -422,8 +451,7 @@ func reset_game() -> void:
 	last_boss_level = 0
 	_player_states.clear()
 	_player_scores.clear()
-	_pending_skill_ack.clear()
-	_pending_laser_ack.clear()
+	clear_unconfirmed_actions()
 	var local_peer := _local_peer_id()
 	_state(local_peer)
 	_player_scores[_peer_key(local_peer)] = 0
@@ -472,11 +500,17 @@ func add_score(amount: int, peer_id: int = -1) -> void:
 func add_kill(killer_peer_id: int = -1) -> void:
 	kills += 1
 	total_kills += 1
+	if normal_growth_enabled and total_kills == 4 and (not NetworkManager.is_online() or multiplayer.is_server()):
+		main_cannon_calibrated = true
+		cannon_calibrated.emit()
 	add_score(10 * level, killer_peer_id)
 	if kills >= kills_for_next_level:
 		level_up()
 	_maybe_trigger_elite()
 	_mark_dirty()
+
+func get_main_cannon_speed() -> float:
+	return CALIBRATED_CANNON_SPEED if main_cannon_calibrated else MAIN_CANNON_SPEED
 
 
 ## 精英触发：阈值随等级递增（20 + level*2）。
@@ -646,19 +680,10 @@ func use_skill(peer_id: int = -1) -> bool:
 	var s := _state(pid)
 	if NetworkManager.is_online() and not bool(s.is_alive):
 		return false
-	if NetworkManager.is_online() and not multiplayer.is_server():
-		if float(s.skill_cooldown) > 0.0 or not game_running:
-			return false
-		s.skill_cooldown = SKILL_COOLDOWN_MAX
-		_player_states[_peer_key(pid)] = s
-		_pending_skill_ack[_peer_key(pid)] = true
-		if _is_local_peer(pid):
-			_sync_local_view()
-			skill_used.emit(pid)
-		_rpc_request_use_skill.rpc_id(1, pid)
-		return true
 	if float(s.skill_cooldown) > 0.0 or not game_running:
 		return false
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return _request_cast(pid, "skill", "_rpc_request_use_skill")
 	s.skill_cooldown = SKILL_COOLDOWN_MAX
 	_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
@@ -671,20 +696,6 @@ func tick_skill_cooldown(delta: float, peer_id: int = -1) -> void:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
 	if NetworkManager.is_online() and not multiplayer.is_server():
-		if _server_player_states.has(_peer_key(pid)):
-			var server_s: Dictionary = _server_player_states[_peer_key(pid)]
-			var pending := _pending_skill_ack.has(_peer_key(pid))
-			var server_cd := float(server_s.get("skill_cooldown", s.skill_cooldown))
-			if pending:
-				## 防止“请求后立刻被旧同步覆盖为0”的窗口期抖动
-				s.skill_cooldown = max(server_cd, float(s.skill_cooldown))
-				if server_cd > 0.0:
-					_pending_skill_ack.erase(_peer_key(pid))
-			else:
-				s.skill_cooldown = server_cd
-			_player_states[_peer_key(pid)] = s
-			if _is_local_peer(pid):
-				_sync_local_view()
 		return
 	if float(s.skill_cooldown) > 0.0:
 		s.skill_cooldown = max(float(s.skill_cooldown) - delta, 0.0)
@@ -698,18 +709,10 @@ func use_laser(peer_id: int = -1) -> bool:
 	var s := _state(pid)
 	if NetworkManager.is_online() and not bool(s.is_alive):
 		return false
-	if NetworkManager.is_online() and not multiplayer.is_server():
-		if float(s.laser_cooldown) > 0.0 or not game_running:
-			return false
-		s.laser_cooldown = get_laser_cooldown_max(pid)
-		_player_states[_peer_key(pid)] = s
-		_pending_laser_ack[_peer_key(pid)] = true
-		if _is_local_peer(pid):
-			_sync_local_view()
-		_rpc_request_use_laser.rpc_id(1, pid)
-		return true
 	if float(s.laser_cooldown) > 0.0 or not game_running:
 		return false
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		return _request_cast(pid, "laser", "_rpc_request_use_laser")
 	s.laser_cooldown = get_laser_cooldown_max(pid)
 	_player_states[_peer_key(pid)] = s
 	if _is_local_peer(pid):
@@ -722,19 +725,6 @@ func tick_laser_cooldown(delta: float, peer_id: int = -1) -> void:
 	var pid := peer_id if peer_id > 0 else _local_peer_id()
 	var s := _state(pid)
 	if NetworkManager.is_online() and not multiplayer.is_server():
-		if _server_player_states.has(_peer_key(pid)):
-			var server_s: Dictionary = _server_player_states[_peer_key(pid)]
-			var pending := _pending_laser_ack.has(_peer_key(pid))
-			var server_cd := float(server_s.get("laser_cooldown", s.laser_cooldown))
-			if pending:
-				s.laser_cooldown = max(server_cd, float(s.laser_cooldown))
-				if server_cd > 0.0:
-					_pending_laser_ack.erase(_peer_key(pid))
-			else:
-				s.laser_cooldown = server_cd
-			_player_states[_peer_key(pid)] = s
-			if _is_local_peer(pid):
-				_sync_local_view()
 		return
 	if float(s.laser_cooldown) > 0.0:
 		s.laser_cooldown = max(float(s.laser_cooldown) - delta, 0.0)

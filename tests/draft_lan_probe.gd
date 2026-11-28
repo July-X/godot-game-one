@@ -109,7 +109,7 @@ func _guest_drafts() -> void:
 	var first := str(draft.cards[0])
 	await _wait_seconds(0.35)
 	var remaining := float(draft.left)
-	_main._request_player_sync.rpc_id(1)
+	_request_probe_state_snapshot.rpc_id(1)
 	await _wait_seconds(0.20)
 	_check("guest_resync_preserves_offer_and_timer", UpgradeDraft.get_draft(pid).id == draft.id
 		and UpgradeDraft.get_draft(pid).cards == draft.cards and _events(_opens, pid, 3).size() == 1

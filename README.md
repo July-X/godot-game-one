@@ -16,6 +16,7 @@ Godot 4.6 的 2D 俯视角 Roguelike 弹幕射击游戏，支持 2 人 Wi-Fi LAN
 - [弹幕射击可玩性调研](./docs/research_bullet_hell_fun_2026-09-27.md)
 - [标题与联机大厅](./docs/entry_ui.md)
 - [普通敌机出招](./docs/ordinary_enemy_attacks.md)
+- [普通局前期成长与触屏技能验收](./docs/player_growth.md)
 - [联机回归门禁](./tests/run_probe.sh)
 - [波次编排门禁](./tests/wave_probe.tscn)
 

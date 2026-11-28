@@ -644,6 +644,12 @@ func _collect_test_core(pid: int, pos: Vector2) -> void:
 		_main._on_network_powerup_collected(drop.entity_id, pid)
 
 
+@rpc("any_peer", "reliable")
+func _request_probe_state_snapshot() -> void:
+	if not multiplayer.is_server() or NetworkManager.gameplay_sender() <= 1:
+		return
+	GameState.force_sync_to_peer(multiplayer.get_remote_sender_id())
+
 func _wait_until(cond: Callable, timeout: float) -> bool:
 	var deadline: int = Time.get_ticks_msec() + int(timeout * 1000.0)
 	while Time.get_ticks_msec() < deadline:

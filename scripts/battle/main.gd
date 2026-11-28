@@ -225,9 +225,10 @@ func _ready() -> void:
 	if OS.has_feature("android") or OS.has_feature("ios"):
 		_spawn_mobile_controls()
 	_spawn_hud()
-	GameState.reset_game()
+	GameState.reset_game(scene_file_path == "res://scenes/main.tscn")
 	_rpc_set_boss_bg(false)
 	GameState.level_changed.connect(_on_level_up)
+	GameState.cannon_calibrated.connect(_on_cannon_calibrated)
 	GameState.elite_spawn_requested.connect(_on_elite_spawn_requested)
 	GameState.boss_spawn_requested.connect(_on_boss_spawn_requested)
 	GameState.game_over.connect(_on_game_over_triggered)
@@ -1625,8 +1626,16 @@ func _on_level_up(_new_level: int) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		return
 	## 房主为每个存活玩家独立抽卡，加入端只展示快照里的本机批次。
+	var recommended := "firerate" if GameState.normal_growth_enabled and GameState.total_kills == 10 else ""
 	for pid: int in _alive_peer_ids():
-		UpgradeDraft.open_draft(pid)
+		UpgradeDraft.open_draft(pid, recommended)
+
+
+func _on_cannon_calibrated() -> void:
+	if is_instance_valid(_hud):
+		_hud.show_center_banner("主炮校准 · 弹速提升", 1.35, Palette.CARD_STYLE)
+	if is_instance_valid(_player) and not _player.is_downed:
+		_player.get_node("CombatController").show_calibration_flash()
 
 
 func _alive_peer_ids() -> Array[int]:
@@ -2607,6 +2616,11 @@ func _rpc_spawn_bullets(data: Array) -> void:
 		sender = NetworkManager.gameplay_sender()
 		if sender <= 1 or not _alive_players.has(sender):
 			return
+		# 加入端沿用普攻的基础弹速标识。房主以发弹当下的本局状态结算。
+		if GameState.main_cannon_calibrated:
+			for entry: Array in data:
+				if entry.size() > 6 and bool(entry[4]) and float(entry[6]) == GameState.MAIN_CANNON_SPEED:
+					entry[6] = GameState.get_main_cannon_speed()
 		_rpc_spawn_bullets.rpc(data)
 	_spawn_network_bullets(data, sender)
 

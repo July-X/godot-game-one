@@ -286,7 +286,7 @@ func _fly_into_circle() -> void:
 func _check_resnapshot() -> void:
 	var sequence := GameState._received_sync_sequence
 	var remained: bool = GameState.rescue_peer_id == 0 and GameState.rescues_left == 2 and not _main._players[1].is_downed
-	_main._request_player_sync.rpc_id(1)
+	_request_probe_state_snapshot.rpc_id(1)
 	var synced := await _wait_until(func(): return GameState._received_sync_sequence > sequence, 2.0)
 	_check("duplicate_old_snapshot_and_resync_keep_revived_state", remained and synced
 		and GameState.rescue_peer_id == 0 and GameState.rescues_left == 2 and GameState.get_current_health(1) == 35
@@ -316,7 +316,9 @@ func _observe_timeout() -> void:
 	_check("last_five_seconds_orange", warned and label.text.begins_with("P2 倒地 · 5 秒")
 		and label.get_theme_color("font_color") == Palette.DOWNED_CRITICAL, label.text)
 	await _capture_warning()
-	var expired := await _wait_until(func(): return not _main._players.has(_local), 7.0)
+	# 淘汰节点与收掉救援圈分别到达，等两项都应用才判断。
+	var expired := await _wait_until(func():
+		return not _main._players.has(_local) and GameState.rescue_peer_id == 0, 7.0)
 	_check("guest_expiry_removes_ring_and_keeps_session", expired and GameState.rescue_peer_id == 0
 		and GameState.rescues_left == 3 and GameState.game_running and NetworkManager.is_online(), "")
 

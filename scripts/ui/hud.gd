@@ -26,7 +26,7 @@ const SafeArea = preload("res://scripts/ui/battle_safe_area.gd")
 @onready var _final_level_label: Label = $GameOverPanel/VBox/FinalLevelLabel
 @onready var _restart_button: Button = $GameOverPanel/VBox/Restart
 @onready var _perm_leaderboard_entries: VBoxContainer = $GameOverPanel/VBox/LeaderboardEntries
-@onready var _skill_bar: HBoxContainer = $SkillBar
+@onready var _skill_bar: Control = $SkillBar
 
 var _damage_flash: ColorRect
 
@@ -57,6 +57,9 @@ var _alert_tween: Tween
 var _safe_rect := Rect2()
 var _draft_cards: Array = []
 var _draft_prompt := ""
+var _recommends_first := false
+var _rejected_action := ""
+var _rejected_until := 0
 const BOSS_BAR_SIZE := Vector2(520, 39)
 const EDGE_MARGIN := 18.0
 const SIDE_WIDTH := 198.0
@@ -68,8 +71,9 @@ const BOSS_BONUS_BULLET_COUNT_MAX: float = 4.0
 const BOSS_BONUS_DAMAGE_MAX: float = 20.0
 const BOSS_BONUS_MOVE_SPEED_MAX: float = 0.5
 const SKILL_SLOT_DESKTOP: Vector2 = Vector2(80, 80)
-const SKILL_SLOT_MOBILE: Vector2 = Vector2(94, 94)
-const SKILL_INSET_MOBILE := Vector2(48, 56)
+const TOUCH_SKILL_SIZE := 74.0
+const TOUCH_DASH_SIZE := 108.0
+const TOUCH_SKILL_INSET := Vector2(36, 35)
 
 ## 图标资源缺失时的字形兜底（见 _create_skill_slot）
 const SKILL_GLYPH: Dictionary = {
@@ -161,8 +165,10 @@ func _update_draft_panel() -> void:
 	var draft := UpgradeDraft.get_draft(my_pid)
 	var cards: Array = draft.cards
 	_draft_panel.visible = true
-	if cards != _draft_cards:
+	var recommends_first := bool(draft.get("recommends_first", false))
+	if cards != _draft_cards or _recommends_first != recommends_first:
 		_draft_cards = cards.duplicate()
+		_recommends_first = recommends_first
 		_populate_draft(cards)
 		_layout_draft_cards()
 	var left := float(draft.left)
@@ -201,9 +207,10 @@ func _populate_draft(cards: Array) -> void:
 		var card_name: Label = button.get_node("CardName")
 		card_name.text = "%d  %s" % [i + 1, card.name]
 		card_name.add_theme_color_override("font_color", tint)
-		button.get_node("Description").text = card.desc
+		var description: String = "推荐 · 缩短主炮开火间隔" if i == 0 and _recommends_first else card.desc
+		button.get_node("Description").text = description
 		button.get_node("Icon").setup(card.icon, tint)
-		button.tooltip_text = card.desc
+		button.tooltip_text = description
 	_update_draft_title()
 
 func set_draft_prompt(text: String) -> void:
@@ -216,7 +223,8 @@ func set_draft_prompt(text: String) -> void:
 
 func _update_draft_title() -> void:
 	var action := "点选卡片" if _is_touch_platform() else "按 1 / 2" if _draft_cards.size() == 2 else "按 1 / 2 / 3"
-	_draft_title.text = "本机升级 · %s · 超时取第一张" % action if _draft_prompt.is_empty() else _draft_prompt
+	var fallback := "超时选推荐" if _recommends_first else "超时取第一张"
+	_draft_title.text = "本机升级 · %s · %s" % [action, fallback] if _draft_prompt.is_empty() else _draft_prompt
 
 func _on_draft_card_pressed(index: int) -> void:
 	UpgradeDraft.choose_card(_local_peer_id(), index, "tap")
@@ -303,6 +311,7 @@ func _setup_skill_bar() -> void:
 
 	for data in _skill_data:
 		_create_skill_slot(data)
+	GameState.cast_rejected.connect(_on_cast_rejected)
 
 func _create_skill_slot(data: Dictionary) -> void:
 	var btn := Button.new()
@@ -345,6 +354,10 @@ func _create_skill_slot(data: Dictionary) -> void:
 	_skill_slots.append({
 		"data": data, "button": btn, "icon": icon, "key": key_label,
 		"name": action_label, "progress": progress, "cd_label": cooldown,
+		"ready_surface": _surface(Color("#182b3fda"), Color("#95c6d6")),
+		"cooling_surface": _surface(Color("#101b2bdc"), Color("#435166")),
+		"rejected_surface": _surface(Color("#2e1a24dc"), Color("#f59583")),
+		"visual": "",
 	})
 
 func _layout_battle_hud() -> void:
@@ -410,16 +423,19 @@ func _layout_top_rows() -> void:
 
 func _layout_draft_cards() -> void:
 	var compact := not _draft_prompt.is_empty()
+	var short_view := not compact and _is_touch_platform() and _safe_rect.size.y < 420.0
 	var columns := _draft_cards.size()
 	var gap := 8.0 if compact else 12.0
 	var width := floorf(minf(204.0 if compact else 272.0,
 		(_safe_rect.size.x - EDGE_MARGIN * 2.0 - gap * (columns - 1)) / columns))
 	var height := 50.0 if compact else 144.0 if width < 148.0 else 120.0
+	if short_view:
+		height = 80.0
 	var narrow := width < 188.0
 	_draft_row.add_theme_constant_override("separation", int(gap))
-	_draft_panel.add_theme_constant_override("separation", 3 if compact else 8)
-	_draft_title.add_theme_font_size_override("font_size", 13 if compact else 18)
-	_draft_clock.add_theme_font_size_override("font_size", 14 if compact else 18)
+	_draft_panel.add_theme_constant_override("separation", 3 if compact else 4 if short_view else 8)
+	_draft_title.add_theme_font_size_override("font_size", 13 if compact else 16 if short_view else 18)
+	_draft_clock.add_theme_font_size_override("font_size", 14 if compact else 15 if short_view else 18)
 	_draft_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_draft_title.add_theme_color_override("font_outline_color", Color("#0b1324"))
 	_draft_title.add_theme_constant_override("outline_size", 4)
@@ -435,19 +451,20 @@ func _layout_draft_cards() -> void:
 		for label in [title, desc]:
 			label.add_theme_color_override("font_outline_color", Color("#0b1324"))
 			label.add_theme_constant_override("outline_size", 0 if compact else 4)
-		icon.position = Vector2(8, 6) if compact else Vector2(12, 12)
-		icon.size = Vector2(37, 38) if compact else Vector2(34, 34)
+		icon.position = Vector2(8, 6) if compact else Vector2(12, 5 if short_view else 12)
+		icon.size = Vector2(37, 38) if compact else Vector2.ONE * (28 if short_view else 34)
 		icon.visible = not narrow
 		var title_x := 12.0 if narrow else 48.0 if compact else 56.0
-		title.position = Vector2(title_x, 5 if compact else 14)
+		title.position = Vector2(title_x, 5 if compact or short_view else 14)
 		title.add_theme_font_size_override("font_size", 15 if compact or width < 128.0 else 19 if narrow else 22)
 		title.size = Vector2(width - title_x - 10.0, 22 if compact else 32)
 		var desc_x := title_x if compact else 14.0
-		desc.position = Vector2(desc_x, 27 if compact else 55)
+		var description_top := 27.0 if compact else 35.0 if short_view else 55.0
+		desc.position = Vector2(desc_x, description_top)
 		desc.autowrap_mode = TextServer.AUTOWRAP_OFF if compact else TextServer.AUTOWRAP_WORD_SMART
 		desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if compact else TextServer.OVERRUN_NO_TRIMMING
 		desc.add_theme_font_size_override("font_size", 12 if compact else 16 if narrow else 18)
-		desc.size = Vector2(width - desc_x - 12.0, 18 if compact else height - 65.0)
+		desc.size = Vector2(width - desc_x - 12.0, 18 if compact else height - description_top - 7.0)
 	_draft_panel.size = Vector2(width * columns + gap * (columns - 1), 0)
 	_position_draft_panel()
 
@@ -463,26 +480,37 @@ func _position_draft_panel() -> void:
 	if _downed_label.visible:
 		top = maxf(top, _downed_label.position.y + _downed_label.size.y + 6.0)
 	var y := top if not _draft_prompt.is_empty() else maxf(top, _safe_rect.get_center().y - _draft_panel.size.y * 0.5)
+	if _is_touch_platform() and _draft_prompt.is_empty():
+		y = maxf(top, minf(y, _skill_bar.position.y - _draft_panel.size.y - 8.0))
 	_draft_panel.position = Vector2(_safe_rect.get_center().x - _draft_panel.size.x * 0.5, y)
 
 func _layout_skill_bar() -> void:
 	var touch := _is_touch_platform()
-	var slot_size := SKILL_SLOT_MOBILE if touch else SKILL_SLOT_DESKTOP
-	for slot in _skill_slots:
+	var dock_scale := clampf(minf(_safe_rect.size.x / 850.0, _safe_rect.size.y / 540.0), 0.74, 1.0)
+	var bounds := Vector2.ZERO
+	for i in _skill_slots.size():
+		var slot := _skill_slots[i]
 		var btn: Button = slot.button
+		var dash: bool = slot.data.action == "dash"
+		var slot_size := Vector2.ONE * (TOUCH_DASH_SIZE if dash else TOUCH_SKILL_SIZE) * dock_scale if touch else SKILL_SLOT_DESKTOP
+		btn.position = Vector2(88, 86) * dock_scale if touch and dash else Vector2(i * 84, 0) * dock_scale if touch else Vector2(i * (slot_size.x + 8), 0)
 		btn.custom_minimum_size = slot_size
 		btn.size = slot_size
+		bounds = bounds.max(btn.position + slot_size)
 		slot.key.visible = not touch
-		slot.icon.position = Vector2((slot_size.x - 42.0) * 0.5, (slot_size.y - 80.0) * 0.33 + 5.0)
-		slot.icon.size = Vector2(42, 41)
+		slot.name.visible = not touch
+		slot.cd_label.visible = not (touch and dash)
+		var icon_size := (62.0 if dash else 44.0) * dock_scale if touch else 42.0
+		slot.icon.size = Vector2.ONE * icon_size
+		slot.icon.position = Vector2((slot_size.x - icon_size) * 0.5, (slot_size.y - icon_size) * 0.5 - (0.0 if dash else 5.0) if touch else 5.0)
 		slot.name.position = Vector2(0, slot_size.y - 36)
 		slot.name.size = Vector2(slot_size.x, 18)
-		slot.cd_label.position = Vector2(0, slot_size.y - 19)
+		slot.cd_label.position = Vector2(0, slot_size.y - 21)
 		slot.cd_label.size = Vector2(slot_size.x, 15)
-		slot.progress.position = Vector2(4, slot_size.y - 3)
+		slot.progress.position = Vector2(4, slot_size.y - (6 if touch else 3))
 	_skill_bar.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_skill_bar.size = _skill_bar.get_combined_minimum_size()
-	var inset := SKILL_INSET_MOBILE if touch else Vector2.ONE * EDGE_MARGIN
+	_skill_bar.size = bounds
+	var inset := TOUCH_SKILL_INSET if touch else Vector2.ONE * EDGE_MARGIN
 	_skill_bar.position = _safe_rect.end - _skill_bar.size - inset
 
 func _get_design_canvas_size() -> Vector2:
@@ -495,11 +523,17 @@ func _on_skill_slot_touch(event: InputEvent, button: Button, data: Dictionary) -
 	if _accept_touch_press(event, button):
 		_on_skill_slot_pressed(data)
 
+func _on_cast_rejected(action: String) -> void:
+	_rejected_action = action
+	_rejected_until = Time.get_ticks_msec() + 550
+
 func _update_cooldowns() -> void:
+	var touch := _is_touch_platform()
 	for slot in _skill_slots:
 		var cd := 0.0
 		var cd_max := 0.0
-		match slot.data.action:
+		var action: String = slot.data.action
+		match action:
 			"skill":
 				cd = GameState.get_skill_cooldown()
 				cd_max = GameState.SKILL_COOLDOWN_MAX
@@ -512,11 +546,21 @@ func _update_cooldowns() -> void:
 					cd_max = preload("res://scripts/player/motion_controller.gd").DASH_COOLDOWN
 					cd = float(pl.get_dash_cooldown_ratio()) * cd_max
 		var progress: float = clampf(1.0 - cd / cd_max, 0.0, 1.0) if cd_max > 0.0 else 1.0
-		var ready := cd <= 0.0
+		var pending := GameState.is_cast_pending(action)
+		var rejected := _rejected_action == action and Time.get_ticks_msec() < _rejected_until
+		var ready := cd <= 0.0 and not pending and not rejected
 		slot.progress.size = Vector2((slot.button.size.x - 8.0) * progress, 2.0)
+		slot.progress.visible = not touch or ready
 		slot.icon.modulate = Color.WHITE if ready else Color("#8794a6")
-		slot.cd_label.text = "就绪" if ready else "%.1fs" % (ceilf(cd * 10.0) / 10.0)
-		slot.cd_label.add_theme_color_override("font_color", Palette.DASH_READY if ready else Color("#abb7c5"))
+		if touch:
+			var visual := "rejected_surface" if rejected else "ready_surface" if ready else "cooling_surface"
+			if slot.visual != visual:
+				slot.button.add_theme_stylebox_override("normal", slot[visual])
+				slot.visual = visual
+			slot.cd_label.text = "×" if rejected else "…" if pending else str(ceili(cd)) if cd > 0.0 else ""
+		else:
+			slot.cd_label.text = "未释放" if rejected else "确认中" if pending else "就绪" if ready else "%.1fs" % (ceilf(cd * 10.0) / 10.0)
+			slot.cd_label.add_theme_color_override("font_color", Palette.DASH_READY if ready else Color("#abb7c5"))
 
 func _request_player_action(action: String) -> void:
 	var player := _resolve_local_player()

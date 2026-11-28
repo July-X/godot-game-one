@@ -90,7 +90,7 @@ func _ready() -> void:
 
 
 ## 为某个 peer 抽 3 张卡。已经满层的卡不再进池，避免"抽到没用的卡"。
-func open_draft(peer_id: int) -> Array:
+func open_draft(peer_id: int, recommended := "") -> Array:
 	if NetworkManager.is_online() and has_draft(peer_id):
 		_queued_upgrades[peer_id] = int(_queued_upgrades.get(peer_id, 0)) + 1
 		return []
@@ -119,13 +119,19 @@ func open_draft(peer_id: int) -> Array:
 		var tmp: Variant = pool[i]
 		pool[i] = pool[j]
 		pool[j] = tmp
-	return offer_cards(peer_id, pool.slice(0, mini(DRAFT_POOL_SIZE, pool.size())))
+	var has_recommendation := not recommended.is_empty() and pool.has(recommended)
+	if has_recommendation:
+		pool.erase(recommended)
+		pool.push_front(recommended)
+	return offer_cards(peer_id, pool.slice(0, mini(DRAFT_POOL_SIZE, pool.size())), has_recommendation)
 
 
 ## 试飞指定候选，实际选择、超时和加成都走普通升级流程。
-func offer_cards(peer_id: int, picks: Array) -> Array:
+func offer_cards(peer_id: int, picks: Array, recommends_first := false) -> Array:
 	_last_draft_id += 1
 	_drafts[peer_id] = {"id": _last_draft_id, "cards": picks, "left": DRAFT_TIMEOUT_SECONDS, "chosen": false}
+	if recommends_first:
+		_drafts[peer_id]["recommends_first"] = true
 	draft_opened.emit(peer_id, picks)
 	return picks
 

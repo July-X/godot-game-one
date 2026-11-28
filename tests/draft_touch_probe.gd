@@ -10,6 +10,7 @@ var _stage := 0
 var _chosen: Array[Dictionary] = []
 var _shots := {}
 var _safe: Rect2
+var _deny_one_laser := false
 
 func _process(_delta: float) -> void:
 	pass
@@ -18,7 +19,9 @@ func _run() -> void:
 	await get_tree().process_frame
 	var args := OS.get_cmdline_user_args()
 	var wide := args.has("wide")
-	var size := Vector2i(1600 if wide else 1280, 720)
+	var size := Vector2i(1600 if wide else 960, 720)
+	if args.has("compact"):
+		size = Vector2i(660, 410)
 	var window := get_window()
 	window.content_scale_size = size
 	window.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
@@ -31,8 +34,9 @@ func _run() -> void:
 			return
 		_pid = multiplayer.get_unique_id()
 	_main = MAIN.instantiate()
-	_stick = MOBILE.instantiate()
-	_main.add_child(_stick)
+	if not args.has("keys"):
+		_stick = MOBILE.instantiate()
+		_main.add_child(_stick)
 	get_tree().root.add_child(_main)
 	get_tree().current_scene = _main
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -43,12 +47,21 @@ func _run() -> void:
 		return
 	_pilot = _main._players.get(_pid, _main._player)
 	_hud = _main._hud
+	_main.child_entered_tree.connect(_observe)
+	if args.has("keys"):
+		await _check_keyboard()
+		get_tree().quit(_summarize())
+		return
 	_safe = Rect2(Vector2(72 if wide else 14, 23), Vector2(size) - Vector2(92, 37))
+	if args.has("compact"):
+		_safe = Rect2(87, 36, 539, 348)
 	_hud._layout_in_safe_area(_safe)
 	_stick._layout_in_safe_area(_safe)
-	_main.child_entered_tree.connect(_observe)
 	UpgradeDraft.card_chosen.connect(_record_choice)
 	_check("mobile_test_coordinates", _pilot._motion.mobile_mode and _hud._safe_rect == _safe, str(_safe))
+	_check_skill_geometry()
+	if NetworkManager.is_online():
+		await _check_guest_rejection()
 	var edge := _safe.position + Vector2(90, _safe.size.y * 0.79)
 	_touch(0, edge, true)
 	_drag(0, edge + Vector2(0, -85), edge)
@@ -64,6 +77,8 @@ func _run() -> void:
 		_exit_failure("draft_open")
 		return
 	await get_tree().process_frame
+	_check("draft_does_not_overlap_skill_buttons", not _hud._draft_panel.get_global_rect().intersects(
+		_hud._skill_bar.get_global_rect()), str(_hud._draft_panel.get_global_rect()))
 	_check("opening_preserves_left_touch_and_direction",
 		_stick._move_touch_id == 0 and _pilot._motion.touch_move.y < -0.7,
 		"owner=%d axis=%s" % [_stick._move_touch_id, _pilot._motion.touch_move])
@@ -73,7 +88,7 @@ func _run() -> void:
 	var initial_cd := GameState.get_laser_cooldown(_pid)
 	_tap(1, laser)
 	var laser_requested_once: bool = _pilot._action_router._queued_actions == ["laser"]
-	var expected_lasers := 3 if _role == "client" else 6
+	var expected_lasers := 3
 	var fired := await _wait_until(func(): return _shot_count("laser", _pid) >= expected_lasers, 1.4)
 	_check("second_finger_laser_uses_real_projectiles_and_cooldown",
 		laser_requested_once and initial_cd == 0 and fired and _shot_count("laser", _pid) == expected_lasers
@@ -98,7 +113,7 @@ func _run() -> void:
 	var scatter: Vector2 = _hud._skill_slots[1].button.get_global_rect().get_center()
 	_tap(1, scatter)
 	var scatter_requested_once: bool = _pilot._action_router._queued_actions == ["skill"]
-	var expected_scatter := 16 if _role == "client" else 32
+	var expected_scatter := 16
 	var scattered := await _wait_until(func(): return _shot_count("scatter", _pid) >= expected_scatter, 1.4)
 	_check("second_finger_scatter_uses_real_projectiles_and_cooldown", scatter_requested_once and scattered
 		and _shot_count("scatter", _pid) == expected_scatter and GameState.get_skill_cooldown(_pid) > 0
@@ -121,8 +136,8 @@ func _run() -> void:
 	_check("release_clears_joystick", _stick._move_touch_id == -1 and _pilot._motion.touch_move == Vector2.ZERO, "")
 	if NetworkManager.is_online():
 		var remote_pid := int(NetworkManager.connected_peers[0]) if _role == "host" else 1
-		var remote_count := 16 if _role == "host" else 32
-		var remote_laser := 3 if _role == "host" else 6
+		var remote_count := 16
+		var remote_laser := 3
 		var received := await _wait_until(func():
 			return _shot_count("scatter", remote_pid) >= remote_count and _shot_count("laser", remote_pid) >= remote_laser, 2)
 		_check("both_peers_receive_each_other_full_skills", received
@@ -130,6 +145,71 @@ func _run() -> void:
 			"remote_scatter=%d remote_laser=%d" % [_shot_count("scatter", remote_pid), _shot_count("laser", remote_pid)])
 	await _check_timeout(edge)
 	get_tree().quit(_summarize())
+
+func _check_keyboard() -> void:
+	var start: Vector2 = _pilot.global_position
+	var motion := InputEventMouseMotion.new()
+	motion.relative = Vector2(110, 0)
+	get_viewport().push_input(motion)
+	_check("mouse_still_moves_desktop_pilot", await _wait_until(func(): return _pilot.global_position.x > start.x + 5, 1), "")
+	for code: Key in [KEY_Q, KEY_W, KEY_SHIFT, KEY_Q, KEY_W, KEY_SHIFT]:
+		var key := InputEventKey.new()
+		key.keycode = code
+		key.pressed = true
+		get_viewport().push_input(key)
+	_check("q_w_shift_trigger_one_cast_each", await _wait_until(func():
+		return _shot_count("laser", _pid) == 3 and _shot_count("scatter", _pid) == 16 and _pilot.is_dash_invincible(), 1), "")
+	await _wait_seconds(1.2)
+	_check("dash_recovers_without_delayed_replay", _pilot.can_dash()
+		and _shot_count("laser", _pid) == 3 and _shot_count("scatter", _pid) == 16, "")
+
+func _check_guest_rejection() -> void:
+	if _role == "host":
+		var ready := await _wait_until(func(): return _stage == 3, 4)
+		_check("ready_to_test_authoritative_rejection", ready, "")
+		if not ready:
+			return
+		var wire := int(NetworkManager.connected_peers[0])
+		var slot := NetworkManager.slot_for_peer(wire)
+		# The guest still sees ready when pressing. Only the rejection sync may reveal the host cooldown.
+		GameState.set_process(false)
+		GameState._state(slot).laser_cooldown = 5.0
+		_arm_rejection_probe.rpc_id(wire)
+		var received := await _wait_until(func(): return _stage == 4, 4)
+		_check("rejected_laser_creates_no_authoritative_projectiles", received and _shot_count("laser", slot) == 0, "")
+		GameState._state(slot).laser_cooldown = 0.0
+		_stage = 0
+		GameState.set_process(true)
+		GameState.force_sync_to_peer(wire)
+	else:
+		_mark.rpc_id(1, 3)
+		_check("guest_stale_ready_at_tap", await _wait_until(func(): return _deny_one_laser, 4)
+			and GameState.get_laser_cooldown(_pid) == 0, "")
+		_tap(1, _hud._skill_slots[0].button.get_global_rect().get_center())
+		var rejected := await _wait_until(func(): return _hud._rejected_action == "laser", 2)
+		_check("authoritative_rejection_clears_pending_without_firing", rejected and not GameState.is_cast_pending("laser")
+			and _shot_count("laser", _pid) == 0 and GameState.get_laser_cooldown(_pid) > 0.0, "")
+		_mark.rpc_id(1, 4)
+		_check("can_retry_rejected_cast_when_authority_ready", await _wait_until(func():
+			return GameState.get_laser_cooldown(_pid) == 0, 3), "")
+
+@rpc("authority", "reliable")
+func _arm_rejection_probe() -> void:
+	_deny_one_laser = true
+
+func _check_skill_geometry() -> void:
+	var original := _safe
+	for safe: Rect2 in [original, Rect2(87, 36, 539, 348)]:
+		_hud._layout_in_safe_area(safe)
+		var laser: Rect2 = _hud._skill_slots[0].button.get_global_rect()
+		var scatter: Rect2 = _hud._skill_slots[1].button.get_global_rect()
+		var dash: Rect2 = _hud._skill_slots[2].button.get_global_rect()
+		_check("right_hand_targets_fit_safe_area", safe.encloses(laser) and safe.encloses(scatter) and safe.encloses(dash)
+			and laser.size.x >= 54 and scatter.size.x >= 54 and dash.size.x > laser.size.x
+			and laser.end.y < dash.position.y and scatter.end.y < dash.position.y
+			and not _hud._skill_slots[2].cd_label.visible,
+			"%s laser=%s scatter=%s dash=%s" % [safe, laser, scatter, dash])
+	_hud._layout_in_safe_area(original)
 
 func _check_timeout(edge: Vector2) -> void:
 	_touch(0, edge, true)
@@ -166,9 +246,6 @@ func _observe_projectile(node: Node) -> void:
 	if not is_instance_valid(node):
 		return
 	var kind := "laser" if node.scene_file_path.ends_with("laser_bolt.tscn") else "scatter"
-	# 加入端激光有本机预览与房主回传，只用后者验证实际联机出弹。
-	if kind == "laser" and _role == "client" and not node._is_network_ghost:
-		return
 	if kind == "scatter" and (not node._is_player_bullet or node._speed != 500.0):
 		return
 	var key := [kind, node.owner_peer_id]

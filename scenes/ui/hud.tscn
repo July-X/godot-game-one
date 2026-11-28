@@ -113,17 +113,8 @@ theme_override_font_sizes/font_size = 12
 text = "FPS: 0"
 horizontal_alignment = 2
 
-[node name="SkillBar" type="HBoxContainer" parent="."]
-anchor_left = 1.0
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -320.0
-offset_top = -180.0
-offset_right = -20.0
-offset_bottom = -18.0
-theme_override_constants/separation = 8
-alignment = 2
+[node name="SkillBar" type="Control" parent="."]
+mouse_filter = 2
 
 [node name="GameOverPanel" type="Panel" parent="."]
 visible = false

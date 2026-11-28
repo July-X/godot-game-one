@@ -442,6 +442,9 @@ func _shoot_circle() -> void:
 			SPEED_SLOW, Palette.ENEMY_BULLET_SLOW)
 
 func take_damage(amount: int = 1, killer_peer_id: int = -1) -> void:
+	# 同帧命中的多颗主炮只可把这架普通敌机计入团队击杀一次。
+	if ordinary_attack and is_queued_for_deletion():
+		return
 	health -= amount
 	modulate = Color(2, 2, 2, 1)
 	var tween := create_tween()

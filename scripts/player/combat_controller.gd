@@ -20,8 +20,6 @@ var _missile_pods: Array[Node2D] = []
 var _missile_pod_built: int = 0
 var _pickup_radius: float = 280.0
 var _pickup_frame_skip: int = 0
-var _pending_skill_cast: bool = false
-var _pending_laser_cast: bool = false
 
 
 func update(delta: float) -> void:
@@ -48,8 +46,8 @@ func reset_shoot_timer() -> void:
 
 
 func cancel_pending_casts() -> void:
-	_pending_skill_cast = false
-	_pending_laser_cast = false
+	if _player.peer_id == NetworkManager.local_player_id():
+		GameState.clear_unconfirmed_actions()
 
 
 ## ── 子弹生成辅助（消除多人同步代码重复） ──────────────
@@ -89,6 +87,9 @@ func _shoot() -> void:
 	var bullet_count: int = GameState.get_bullet_count(_player.peer_id)
 	var level: int = GameState.get_shoot_level(_player.peer_id)
 	var damage: int = GameState.get_bullet_damage(_player.peer_id)
+	var speed := GameState.get_main_cannon_speed()
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		speed = GameState.MAIN_CANNON_SPEED
 	var engine_offset: Vector2 = Vector2.from_angle(base_angle) * 24
 	var perp: Vector2 = Vector2(-sin(base_angle), cos(base_angle))
 
@@ -98,7 +99,7 @@ func _shoot() -> void:
 			var a: float = base_angle + spread_angles[i % spread_angles.size()] * (0.5 + (level - 12) * 0.1)
 			var spread_offset: float = (i - bullet_count / 2.0) * 18.0
 			var offset: Vector2 = perp * spread_offset
-			_spawn_bullet(_player.global_position + engine_offset + offset, a, damage, true, level, 660.0)
+			_spawn_bullet(_player.global_position + engine_offset + offset, a, damage, true, level, speed)
 	elif level >= 8:
 		var max_spread: float = 16.0 + level
 		var positions: Array[float] = []
@@ -107,7 +108,7 @@ func _shoot() -> void:
 		for i in bullet_count:
 			var a: float = base_angle + positions[i] * 0.008
 			var offset: Vector2 = perp * positions[i]
-			_spawn_bullet(_player.global_position + engine_offset + offset, a, damage, true, level, 660.0)
+			_spawn_bullet(_player.global_position + engine_offset + offset, a, damage, true, level, speed)
 	elif level >= 4:
 		var max_spread: float = 12.0 + level * 3.0
 		var positions: Array[float] = []
@@ -115,7 +116,7 @@ func _shoot() -> void:
 			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
 		for i in bullet_count:
 			var offset: Vector2 = perp * positions[i]
-			_spawn_bullet(_player.global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
+			_spawn_bullet(_player.global_position + engine_offset + offset, base_angle, damage, true, level, speed)
 	else:
 		var max_spread: float = 10.0 + level * 2.0
 		var positions: Array[float] = []
@@ -123,7 +124,7 @@ func _shoot() -> void:
 			positions.append(-max_spread + i * (max_spread * 2.0 / max(bullet_count - 1, 1)))
 		for i in bullet_count:
 			var offset: Vector2 = perp * positions[i]
-			_spawn_bullet(_player.global_position + engine_offset + offset, base_angle, damage, true, level, 660.0)
+			_spawn_bullet(_player.global_position + engine_offset + offset, base_angle, damage, true, level, speed)
 
 	_show_muzzle_flash()
 
@@ -154,17 +155,34 @@ func fire_laser() -> void:
 	var base_angle: float = _player.rotation - PI * 0.5
 	if priority_target != null:
 		base_angle = _player.global_position.angle_to_point(priority_target.global_position)
+	var online := NetworkManager.is_online()
+	var spawn_locally := not online or multiplayer.is_server()
+	var battle := get_tree().current_scene
 	for i in range(count):
 		var angle: float = base_angle + (i - 1) * 0.15
 		var pos: Vector2 = _player.global_position + Vector2.from_angle(angle) * 28
-		var bolt := _laser_scene.instantiate()
-		get_tree().current_scene.add_child(bolt)
-		bolt.setup(pos, angle, damage, _player.peer_id)
-		if NetworkManager.is_online():
-			var _m = get_tree().current_scene
-			if _m and _m.has_method("register_laser_spawn"):
-				_m.register_laser_spawn(pos, angle, damage, _player.peer_id)
+		if spawn_locally:
+			var bolt := _laser_scene.instantiate()
+			battle.add_child(bolt)
+			bolt.setup(pos, angle, damage, _player.peer_id)
+		if online and battle.has_method("register_laser_spawn"):
+			battle.register_laser_spawn(pos, angle, damage, _player.peer_id)
 	SFX.play_laser()
+
+
+func show_calibration_flash() -> void:
+	var ring := Line2D.new()
+	ring.position = Vector2(0, -23)
+	ring.default_color = Palette.CARD_STYLE
+	ring.width = 2.5
+	ring.closed = true
+	ring.points = PackedVector2Array([Vector2(0, -7), Vector2(7, 0), Vector2(0, 7), Vector2(-7, 0)])
+	ring.z_index = 2
+	_player.add_child(ring)
+	var tween := ring.create_tween().set_parallel()
+	tween.tween_property(ring, "scale", Vector2.ONE * 2.5, 0.38)
+	tween.tween_property(ring, "modulate:a", 0.0, 0.38)
+	tween.chain().tween_callback(ring.queue_free)
 
 
 func _show_muzzle_flash() -> void:
@@ -187,36 +205,20 @@ func _consume_actions() -> void:
 	for action in actions:
 		match action:
 			"skill":
-				if GameState.use_skill(_player.peer_id):
-					if NetworkManager.is_online() and not multiplayer.is_server():
-						_pending_skill_cast = true
-					else:
-						fire_ring_shotgun()
+				GameState.use_skill(_player.peer_id)
 			"laser":
-				if GameState.use_laser(_player.peer_id):
-					if NetworkManager.is_online() and not multiplayer.is_server():
-						_pending_laser_cast = true
-					else:
-						fire_laser()
+				GameState.use_laser(_player.peer_id)
 
 
 func _on_skill_used(peer_id: int) -> void:
 	if peer_id != _player.peer_id or _player.is_downed:
 		return
-	if NetworkManager.is_online() and not multiplayer.is_server():
-		if not _pending_skill_cast:
-			return
-		_pending_skill_cast = false
 	fire_ring_shotgun()
 
 
 func _on_laser_used(peer_id: int) -> void:
 	if peer_id != _player.peer_id or _player.is_downed:
 		return
-	if NetworkManager.is_online() and not multiplayer.is_server():
-		if not _pending_laser_cast:
-			return
-		_pending_laser_cast = false
 	fire_laser()
 
 
