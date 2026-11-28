@@ -388,6 +388,8 @@ func set_lan_hold(held: bool) -> void:
 				Pool.release(shot)
 		GameState.clear_unconfirmed_actions()
 		if _is_first_ordinary_boss():
+			SFX.stop_first_boss_cues(true)
+			_boss.queue_redraw()
 			_update_boss_hud()
 		_lan_message = _hud.show_lan_wait()
 		return
@@ -411,6 +413,7 @@ func set_lan_hold(held: bool) -> void:
 		_lan_message.hide()
 		_lan_message.queue_free()
 	if _is_first_ordinary_boss():
+		_boss.queue_redraw()
 		_update_boss_hud()
 	Input.mouse_mode = _lan_mouse_mode
 
@@ -1420,27 +1423,14 @@ func _update_boss_hud() -> void:
 	var window: Boss.AttackWindow = _boss.get_attack_window()
 	var first_ordinary := _is_first_ordinary_boss()
 	var attack: String = Boss.ATTACK_WINDOW_LABELS[window]
-	if window == Boss.AttackWindow.OPEN:
-		attack = _first_boss_pulse_label() if first_ordinary else _boss.coop_pulse_label()
+	if window == Boss.AttackWindow.OPEN and not first_ordinary:
+		attack = _boss.coop_pulse_label()
 	_hud.show_boss_status(_boss.get_network_health(), _boss.get_network_max_health(),
 		_boss.get_shield_hp(), _boss.get_max_shield_hp(), _boss.get_phase_name(), attack,
-		_boss.is_shield_recharging(), first_ordinary, first_ordinary and _boss.is_shield_exposed())
+		_boss.is_shield_recharging(), first_ordinary)
 
 func _is_first_ordinary_boss() -> bool:
-	return (GameState.normal_growth_enabled and _has_active_boss()
-		and _boss.get_network_level() == GameState.FIRST_BOSS_LEVEL)
-
-func _first_boss_pulse_label() -> String:
-	var marked: int = _boss.coop_pulse_warning_slot()
-	if marked == 0:
-		return _boss.coop_pulse_label()
-	# 同一局的槽位和脉冲快照在换线后仍有效。冻结期间没有即时操作提示。
-	if _lan_frozen_frame >= 0 or not NetworkManager.is_online() or not _boss.has_impact_shield():
-		return ""
-	var local := NetworkManager.local_player_id()
-	if _alive_players.size() != 2 or not _alive_players.has(marked) or not _alive_players.has(local):
-		return ""
-	return "锁定你 · 横移躲开" if marked == local else "锁定队友 · 侧翼打盾"
+	return _has_active_boss() and _boss.uses_first_boss_cues()
 
 func _enter_boss_fight_mode() -> void:
 	_clear_non_boss_entities()
@@ -2554,8 +2544,12 @@ func _rpc_sync_boss_shield(eid: int, stamp: int, hp: float, max_hp: float, origi
 	if not GameState.game_running or not _has_active_boss() or _boss.entity_id != eid:
 		return
 	var advanced: bool = _boss.apply_network_boss_shield(stamp, hp, max_hp)
-	if advanced and stamp % Boss.SHIELD_PHASE_COUNT == Boss.ShieldPhase.EXPOSED:
+	if not advanced or (_boss.uses_first_boss_cues() and _lan_frozen_frame >= 0):
+		return
+	if _boss.is_shield_exposed():
 		_boss.play_shield_release(origin)
+	elif _boss.uses_first_boss_cues() and _boss.is_shield_recharging():
+		SFX.play_boss_shield_recharge()
 
 func publish_boss_attack_window(boss: Boss) -> void:
 	if not GameState.game_running or boss != _boss or boss.is_queued_for_deletion():

@@ -175,7 +175,8 @@ func _run() -> void:
 	if _verify:
 		_check("real_damage_was_observed", _hp_drops > 0)
 		_check("laser_has_ended", is_instance_valid(_boss) and not _boss._ultimate_laser_firing)
-		_check("open_vulnerability_label", _main._hud._boss_status_phase.text == "护盾已破 · 输出")
+		_check("open_phase_uses_core_instead_of_caption", _main._hud._boss_status_phase.text.is_empty()
+			and _boss.is_shield_exposed() and _boss.uses_first_boss_cues())
 		_check("vulnerable_keeps_hull_bar_and_empty_shield", _main._hud._boss_shield_fill.size.x == 0.0 and _main._hud._boss_status_fill.color == Color("#e1827f"))
 	if is_instance_valid(_boss):
 		_boss.take_damage(_boss.get_network_health() + 1)
@@ -340,7 +341,7 @@ func _report(name: String) -> void:
 			and boss_sprite.global_position == _boss._ultimate_laser_start)
 		print("[BATTLE] opaque_hull=", hull, " player=", swift, " hit_radius=", hit_circle.shape.radius)
 	if _verify and name == "shield_release":
-		_check("one_release_in_boss_row", hud._boss_status_phase.text == "护盾已破 · 输出"
+		_check("break_does_not_displace_draft", hud._boss_status_phase.text.is_empty() and _boss.is_shield_exposed()
 			and hud._boss_shield_fill.size.x == 0.0 and hud._draft_panel.visible and boss_rect.end.y <= cards.position.y)
 
 func _check_safe_area() -> void:

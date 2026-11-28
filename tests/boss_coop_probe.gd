@@ -15,6 +15,7 @@ var _cover := false
 var _shoot_left := 0.0
 var _drops := 0
 var _evidence := ""
+var _cue_playbacks := {"lock": {}, "recharge": {}, "break": {}}
 
 
 func _run() -> void:
@@ -63,7 +64,23 @@ func _run() -> void:
 
 
 func _process(_delta: float) -> void:
-	pass
+	for voice: AudioStreamPlayer in SFX.get_children():
+		if not voice.playing:
+			continue
+		var kind := ""
+		if voice.stream == SFX._stream_boss_pulse_lock:
+			kind = "lock"
+		elif voice.stream == SFX._stream_boss_shield_recharge:
+			kind = "recharge"
+		elif voice.stream == SFX._stream_shield_break:
+			kind = "break"
+		if not kind.is_empty():
+			var playing := voice.get_stream_playback()
+			if playing:
+				_cue_playbacks[kind][playing.get_instance_id()] = true
+
+func _cue_count(kind: String) -> int:
+	return _cue_playbacks[kind].size()
 
 
 func _physics_process(delta: float) -> void:
@@ -104,6 +121,7 @@ func _arrange(label: String, host_at := P1_AT, guest_at := P2_AT) -> void:
 func _lock_on(label: String, expected: int) -> Dictionary:
 	await _arrange(label)
 	var boss: BossModel = _main._boss
+	var sounds := _cue_count("lock")
 	if _role == "host":
 		boss.global_position = AT
 		boss._pulse_used_this_shield = false # 隔离下一盾轮首招，常规节奏另由实弹矩阵覆盖。
@@ -125,8 +143,14 @@ func _lock_on(label: String, expected: int) -> Dictionary:
 		and not boss.has_duo_window() and not cue.has("duo")
 		and Vector2(end - origin).normalized().dot(AT.direction_to(target)) > 0.998,
 		"slot=%d stamp=%d from=%s to=%s" % [cue.slot, cue.stamp, origin, end])
-	_check(label + "_local_warning_and_hud_layout", _threat_text() == _role_text(expected) and _boss_rows_clear(),
-		"threat=%s shield=%s local_slot=%d" % [_threat_text(), _main._hud._boss_status_phase.text, NetworkManager.local_player_id()])
+	var marked := expected == NetworkManager.local_player_id()
+	_check(label + "_local_warning_uses_own_pilot_without_caption", boss.first_boss_lock_visible()
+		and is_instance_valid(boss.first_boss_local_lock_pilot()) == marked and _threat_text().is_empty() and _boss_rows_clear(),
+		"target=%d local=%d cue=%s" % [expected, NetworkManager.local_player_id(), marked])
+	if marked:
+		await _wait_until(func(): return _cue_count("lock") > sounds, 0.18)
+	_check(label + "_lock_sound_only_on_target_once", _cue_count("lock") == sounds + int(marked),
+		"sounds=%d→%d target=%s" % [sounds, _cue_count("lock"), marked])
 	if expected == 1 and label == "p1":
 		var direction := origin.direction_to(end)
 		var across := direction.orthogonal()
@@ -138,6 +162,8 @@ func _lock_on(label: String, expected: int) -> Dictionary:
 			and not boss.coop_pulse_contains(end + direction * (radius + 0.5)), "")
 	if label == "p1" or label == "p2-cover":
 		await _capture(label + "-warning")
+	elif label in ["down", "break", "rewire"]:
+		await _barrier(label + "_both_saw_lock")
 	return cue
 
 
@@ -154,8 +180,7 @@ func _evade_and_cover(label: String, target: int) -> void:
 	var active: Dictionary = _main._boss.coop_pulse_snapshot()
 	_check(label + "_fire_keeps_locked_geometry", fired and active.slot == cue.slot
 		and active.from == cue.from and active.to == cue.to, str(active))
-	_check(label + "_fire_replaces_role_with_pulse", await _wait_until(func(): return _threat_text().begins_with("脉冲 · "), 0.18),
-		_threat_text())
+	_check(label + "_fire_clears_lock_marker", not _main._boss.first_boss_lock_visible() and _threat_text().is_empty(), "")
 	var stopped := await _wait_until(func(): return _phase() == OPEN, 0.6)
 	_steer = Vector2.ZERO
 	_cover = false
@@ -192,7 +217,7 @@ func _no_safe_path() -> void:
 		_main._boss.global_position = AT
 		_check("overlapping_pilots_cannot_start_pulse", not _main._boss._try_coop_pulse(), "")
 	await _barrier("overlap_attempted")
-	_check("no_role_hint_without_real_lock", _phase() == OPEN and _threat_text().is_empty(), "")
+	_check("no_marker_without_real_lock", _phase() == OPEN and not _main._boss.first_boss_lock_visible(), "")
 	await _barrier("overlap_checked")
 
 
@@ -202,7 +227,7 @@ func _downed_fallback() -> void:
 		_main._players[1].force_kill()
 	var down := await _wait_until(func(): return GameState.rescue_peer_id == 1 and _phase() == OPEN, 0.55)
 	_check("downed_cancels_unfired_pulse", down and _main._boss.coop_pulse_snapshot().stamp == cue.stamp + 1, "")
-	_check("downed_clears_role_hint", await _wait_until(func(): return _threat_text().is_empty(), 0.2), _threat_text())
+	_check("downed_clears_lock_marker", not _main._boss.first_boss_lock_visible(), "")
 	if _role == "host":
 		var boss: BossModel = _main._boss
 		boss._shoot_timer = 0.0
@@ -222,14 +247,20 @@ func _downed_fallback() -> void:
 
 func _shield_window() -> void:
 	var cue := await _lock_on("break", 1)
+	var break_sounds := _cue_count("break")
+	var recharge_sounds := _cue_count("recharge")
 	if _role == "host":
 		_cannon(ceili(_main._boss.get_shield_hp()))
 	var broken := await _wait_until(func(): return not _main._boss.has_impact_shield() and _phase() == OPEN, 0.65)
+	if _role == "host":
+		_main._boss._shoot_timer = 90.0
 	_check("actual_cannon_break_cancels_unfired_pulse", broken and _main._boss.coop_pulse_snapshot().stamp == cue.stamp + 1
-		and await _wait_until(func(): return _threat_text().is_empty(), 0.2), str(_main._boss.coop_pulse_snapshot()))
+		and not _main._boss.first_boss_lock_visible(), str(_main._boss.coop_pulse_snapshot()))
+	await _capture("shield-break")
 	await _wait_seconds(1.05)
-	_check("output_label_persists_after_original_toast", _main._hud._boss_status_phase.text == "护盾已破 · 输出"
-		and _main._hud._boss_shield_release_left == 0.0 and _boss_rows_clear(), _main._hud._boss_status_phase.text)
+	_check("exposed_keeps_empty_shield_and_no_caption", _main._boss.is_shield_exposed()
+		and _main._hud._boss_shield_fill.size.x == 0.0 and _main._hud._boss_status_phase.text.is_empty()
+		and _cue_count("break") == break_sounds + 1 and _boss_rows_clear(), _main._hud._boss_status_phase.text)
 	await _capture("exposed")
 	var exposed_stamp: int = _main._boss.get_shield_stamp()
 	var restored := await _rewire("exposed")
@@ -238,12 +269,19 @@ func _shield_window() -> void:
 	await _barrier("exposed_old_lock_sent")
 	_check("reconnect_exposed_ignores_old_lock_and_does_not_replay_break", restored and _phase() == OPEN
 		and _main._boss.get_shield_stamp() == exposed_stamp and _main._hud._boss_shield_release_left == 0.0
-		and _main._hud._boss_status_phase.text == "护盾已破 · 输出" and _threat_text().is_empty(), "")
+		and _main._hud._boss_status_phase.text.is_empty() and _cue_count("break") == break_sounds + 1
+		and not _main._boss.first_boss_lock_visible(), "")
 	var recharge := await _wait_until(func(): return _main._boss.is_shield_recharging(), 4.5)
 	await get_tree().process_frame
-	_check("recharge_replaces_output_until_shield_raised", recharge and _main._hud._boss_status_phase.text == "即将回盾"
-		and _boss_rows_clear(), _main._hud._boss_status_phase.text)
+	_check("recharge_keeps_bar_empty_and_has_no_caption", recharge and _main._hud._boss_status_phase.text.is_empty()
+		and _main._hud._boss_shield_fill.size.x == 0.0 and _boss_rows_clear(), _main._hud._boss_status_phase.text)
 	await _capture("recharge")
+	await _wait_until(func(): return _cue_count("recharge") > recharge_sounds, 0.20)
+	var recharge_stamp: int = _main._boss.get_shield_stamp()
+	var recovered_recharge := await _rewire("recharge")
+	_check("reconnect_recharge_rebuilds_phase_without_replaying_sound", recovered_recharge
+		and _main._boss.get_shield_stamp() == recharge_stamp and _main._boss.is_shield_recharging()
+		and not _main._boss.has_impact_shield() and _cue_count("recharge") == recharge_sounds + 1, "")
 	_check("raised_shield_replaces_recharge", await _wait_until(func():
 		return _main._boss.has_impact_shield() and _main._hud._boss_status_phase.text.begins_with("护盾 "), 1.5),
 		_main._hud._boss_status_phase.text)
@@ -254,7 +292,16 @@ func _rewire(label: String) -> bool:
 	await _barrier(label + "_ready_to_pause")
 	if _role == "client":
 		NetworkManager.recovery.set_background(true)
-		await _wait_seconds(0.15)
+	var frozen := await _wait_until(func(): return get_tree().paused, 1.0)
+	var cue_running := false
+	for voice: AudioStreamPlayer in SFX.get_children():
+		cue_running = cue_running or (voice.playing and voice.stream in [
+			SFX._stream_shield_break, SFX._stream_boss_shield_recharge, SFX._stream_boss_pulse_lock])
+	_check(label + "_hold_hides_warning_and_stops_cue_tails", frozen and not _main._boss.first_boss_lock_visible()
+		and not cue_running, "")
+	if _role == "client":
+		# 让原连接先送达后台消息，房主也能在真正断链前看到冻结。
+		await _wait_seconds(0.18)
 		_main._boss.queue_free()
 		_main._entities.erase(_boss_id)
 		NetworkManager.drop_lan_transport()
@@ -269,6 +316,7 @@ func _recovery_and_death() -> void:
 	var max_hp: float = _main._boss.get_network_max_health()
 	var maximum_shield: float = _main._boss.get_max_shield_hp()
 	var old_id: int = _main._players[_guest].get_instance_id()
+	var lock_sounds := _cue_count("lock")
 	var restored := await _rewire("locked")
 	_check("new_wire_keeps_locked_pulse_and_fixed_budget", restored and _main._players[_guest].get_instance_id() == old_id
 		and _phase() == LOCK and _main._boss.coop_pulse_snapshot() == cue and _main._boss.get_network_max_health() == max_hp
@@ -286,8 +334,9 @@ func _recovery_and_death() -> void:
 	await _barrier("replayed_lock")
 	_check("duplicate_and_older_pulse_do_not_change_restored_lock", _phase() == LOCK
 		and _main._boss.coop_pulse_snapshot() == cue, "")
-	var shown := await _wait_until(func(): return _threat_text() == _role_text(_guest), 0.20)
-	_check("restore_only_current_role_cue", shown and _phase() == LOCK, _threat_text())
+	_check("restore_current_lock_without_replaying_local_sound", _main._boss.first_boss_lock_visible()
+		and is_instance_valid(_main._boss.first_boss_local_lock_pilot()) == (_role == "client")
+		and _cue_count("lock") == lock_sounds, "")
 	get_tree().node_added.connect(func(node: Node):
 		if node.scene_file_path == "res://scenes/entities/powerup.tscn":
 			_drops += 1)
@@ -300,11 +349,22 @@ func _recovery_and_death() -> void:
 		var broken := await _wait_until(func(): return not boss.has_impact_shield(), 0.15)
 		var was_live := _phase() == FIRE
 		boss._health = 1.0
-		var fatal_tick := Engine.get_physics_frames()
-		_cannon(1)
+		var hit_tick := [-1]
+		var death_tick := [-1]
+		var immediate_cleanup := [false]
+		boss.boss_died.connect(func():
+			death_tick[0] = Engine.get_physics_frames()
+			immediate_cleanup[0] = (_main._boss == null and not boss.first_boss_lock_visible()
+				and not _main._hud._boss_status_root.visible))
+		var round := _cannon(1)
+		if is_instance_valid(round):
+			round.body_entered.connect(func(body: Node):
+				if body == boss:
+					hit_tick[0] = Engine.get_physics_frames())
 		var died := await _wait_until(func(): return not is_instance_valid(_main._boss), 0.3)
 		_check("live_pulse_stops_on_actual_fatal_collision", fired and broken and was_live and died
-			and Engine.get_physics_frames() - fatal_tick <= 4, "ticks=%d" % (Engine.get_physics_frames() - fatal_tick))
+			and hit_tick[0] >= 0 and death_tick[0] == hit_tick[0] and immediate_cleanup[0],
+			"hit_tick=%d death_tick=%d cleaned=%s" % [hit_tick[0], death_tick[0], immediate_cleanup[0]])
 		_main._rpc_spawn_boss.rpc(_boss_id, 5, 1, old_snapshot)
 		_main._rpc_sync_boss_pulse.rpc(_boss_id, old_snapshot.pulse)
 	var cleared := await _wait_until(func(): return not is_instance_valid(_main._boss) and _drops == 6 and _reward_count() == rewards + 1, 3)
@@ -316,8 +376,13 @@ func _recovery_and_death() -> void:
 	_check("death_hides_all_boss_status", not _main._hud._boss_status_root.visible and _threat_text().is_empty(), "")
 
 
-func _cannon(damage: int) -> void:
+func _cannon(damage: int) -> Area2D:
+	var previous := get_tree().get_nodes_in_group("player_bullets")
 	_main._players[1]._combat._spawn_bullet(_main._boss.global_position + Vector2(0, 43), -PI * 0.5, damage, true, 1, 900.0)
+	for round in get_tree().get_nodes_in_group("player_bullets"):
+		if not previous.has(round):
+			return round
+	return null
 
 func _reward_count() -> int:
 	var s := GameState._state(NetworkManager.local_player_id())
@@ -325,9 +390,6 @@ func _reward_count() -> int:
 
 func _phase() -> int:
 	return int(_main._boss.coop_pulse_snapshot().phase) if is_instance_valid(_main._boss) else OPEN
-
-func _role_text(target: int) -> String:
-	return "锁定你 · 横移躲开" if target == NetworkManager.local_player_id() else "锁定队友 · 侧翼打盾"
 
 func _threat_text() -> String:
 	var label := _main._hud.get("_boss_attack_label") as Label

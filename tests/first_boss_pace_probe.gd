@@ -363,13 +363,14 @@ func _exercise_schedule() -> void:
 	first.set_physics_process(false)
 	first.take_damage(first.get_shield_hp())
 	await get_tree().create_timer(0.80).timeout
-	_check("solo_first_boss_keeps_output_status_without_coop_cue", hud._boss_status_phase.text == "护盾已破 · 输出"
-		and not hud._boss_attack_label.is_visible_in_tree() and first.is_shield_exposed())
+	_check("solo_first_boss_uses_core_phase_without_caption_or_coop_marker", hud._boss_status_phase.text.is_empty()
+		and not hud._boss_attack_label.is_visible_in_tree() and first.is_shield_exposed()
+		and first.uses_first_boss_cues() and not first.first_boss_lock_visible())
 	first._tick_shield_cycle(Boss.BOSS_EXPOSURE_SECONDS - Boss.BOSS_RECHARGE_WARNING + 0.05)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	_check("solo_output_replaced_by_actual_recharge", hud._boss_status_phase.text == "即将回盾"
-		and first.is_shield_recharging())
+	_check("solo_recharge_keeps_shield_bar_empty_without_caption", hud._boss_status_phase.text.is_empty()
+		and first.is_shield_recharging() and hud._boss_shield_fill.size.x == 0.0)
 	first.die()
 	await get_tree().process_frame
 	_battle._spawn_boss(10)
@@ -388,7 +389,7 @@ func _check_legacy_boss_hud(battle: Node, label: String) -> void:
 	await get_tree().process_frame
 	var hud = battle._hud
 	_check(label + "_keeps_combined_laser_status", hud._boss_status_phase.text.ends_with(" · 激光蓄力")
-		and not hud._boss_attack_label.is_visible_in_tree())
+		and not hud._boss_attack_label.is_visible_in_tree() and not boss.uses_first_boss_cues())
 	boss.take_damage(boss.get_shield_hp())
 	await get_tree().create_timer(0.80).timeout
 	_check(label + "_keeps_legacy_exposure_status", hud._boss_status_phase.text == "可攻击")

@@ -201,7 +201,7 @@ func _shield_cycle() -> bool:
 	_check("breaker_does_not_spill_into_hull", _boss.get_network_health() == hull_hp and release_cues == 1
 		and not is_instance_valid(_main._boss_laser_visual), "")
 	_check("hud_break_keeps_hull_full", await _wait_until(func():
-		return (_hud_says("护盾已破 · 输出") and _main._hud._boss_shield_fill.size.x == 0.0
+		return (_hud_says("") and _main._hud._boss_shield_fill.size.x == 0.0
 			and _main._hud._boss_status_fill.size.x == 500.0), 0.25), "")
 	if _role == "solo" and DisplayServer.get_name() != "headless":
 		await _read_pixels(instance_from_id(bursts[0]))
@@ -214,7 +214,7 @@ func _shield_cycle() -> bool:
 		return (is_equal_approx(_boss.get_network_health(), after_open_hit)
 			and _main._hud._boss_status_fill.size.x < 500.0), 1.5), str(_boss.get_network_health()))
 	_check("warns_before_regenerating", await _wait_until(func():
-		return _boss.is_shield_recharging() and _hud_says("即将回盾") and not _has_boss_shield(), 4.0), "")
+		return _boss.is_shield_recharging() and _hud_says("") and not _has_boss_shield(), 4.0), "")
 	if not _require("returns_at_full_shield_without_healing", await _wait_until(func():
 			return (_has_boss_shield() and is_equal_approx(_boss.get_shield_hp(), full_shield)
 				and is_equal_approx(_boss.get_network_health(), after_open_hit)), 1.4)):
@@ -258,7 +258,7 @@ func _shield_cycle() -> bool:
 	_check("open_while_beam_stays_same_node_and_geometry", is_same(in_flight, _main._boss_laser_visual)
 		and _faces_laser_beam() and is_equal_approx(_boss.get_network_health(), after_open_hit), "")
 	_check("combined_beam_and_shield_state_in_hud", await _wait_until(func():
-		return (_main._hud._boss_status_phase.text == "护盾已破 · 输出"
+		return (_main._hud._boss_status_phase.text.is_empty()
 			and _main._hud._boss_attack_label.text.begins_with("激光")
 			and _main._hud._boss_shield_fill.size.x == 0.0), 0.22), "")
 	if _role == "host":
@@ -774,6 +774,8 @@ func _read_pixels(fx) -> void:
 	var t: float = fx._age / fx._duration
 	var radius: float = frag.radius + frag.speed * t * fx._spread
 	var mid: Vector2 = Vector2.from_angle(frag.angle) * (radius + frag.length * (1.0 + t) * sqrt(fx._spread) * 0.5)
+	if fx._closed_ring:
+		mid = Vector2.from_angle(frag.angle) * (BossModel.FirstBossCues.RING_RADIUS + frag.speed * t * fx._spread)
 	bullet.setup(fx.to_global(mid), 0, 1, false, 1, 0)
 	bullet.reset_physics_interpolation()
 	var center := Vector2i(fx.get_global_transform_with_canvas() * mid)

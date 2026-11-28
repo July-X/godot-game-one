@@ -13,6 +13,7 @@ const ATTACK_WINDOW_LABELS := ["", "", "激光蓄力", "激光推进", "激光�
 const WINDOWS_PER_CYCLE := AttackWindow.HOLD - AttackWindow.OPEN + 1
 enum ShieldPhase { RAISED, EXPOSED, RECHARGING }
 const SHIELD_PHASE_COUNT := 3
+const FirstBossCues := preload("res://scripts/visuals/first_boss_cues.gd")
 enum BossPhase { SUPPRESSION, RIFT, OVERLOAD }
 enum PulsePhase { OPEN, LOCK, FIRE, TRACK }
 
@@ -124,6 +125,9 @@ func is_shield_recharging() -> bool:
 func is_shield_exposed() -> bool:
 	return _shield_stamp >= 0 and _shield_stamp % SHIELD_PHASE_COUNT == ShieldPhase.EXPOSED
 
+func uses_first_boss_cues() -> bool:
+	return _level == GameState.FIRST_BOSS_LEVEL and GameState.normal_growth_enabled
+
 func apply_network_boss_shield(stamp: int, hp: float, max_hp: float) -> bool:
 	if stamp < _shield_stamp:
 		return false
@@ -131,6 +135,9 @@ func apply_network_boss_shield(stamp: int, hp: float, max_hp: float) -> bool:
 	_shield_stamp = stamp
 	_max_shield_hp = max_hp
 	_shield_hp = clampf(hp if advanced else minf(hp, _shield_hp), 0.0, max_hp)
+	if advanced and uses_first_boss_cues():
+		_recharge_art_age = 0.0
+		_flank_cue.queue_redraw()
 	if _flank_left > 0.0 and _is_network_ghost and (stamp != _flank_shield_stamp or not has_impact_shield()):
 		_flank_left = 0.0
 		_flank_cue.queue_redraw()
@@ -141,6 +148,8 @@ func apply_network_boss_shield(stamp: int, hp: float, max_hp: float) -> bool:
 	return advanced
 
 var _is_network_ghost: bool = false
+var _recharge_art_age := 0.0
+var _local_lock_art_age := 0.0
 var _sprite_variant_id: int = 0
 var _rush_cooldown: float = 0.0
 var _last_position: Vector2 = Vector2.ZERO
@@ -309,6 +318,8 @@ func set_target(target: Node2D) -> void:
 
 func _ready() -> void:
 	_flank_cue.draw.connect(_draw_flank_window)
+	if uses_first_boss_cues():
+		_flank_cue.draw.connect(_draw_first_boss_core)
 	_state = State.IDLE
 	_state_timer = 0.0
 	_last_position = global_position
@@ -330,6 +341,14 @@ func _physics_process(delta: float) -> void:
 		return
 	if _pulse.get("marked", false):
 		queue_redraw()
+	if uses_first_boss_cues():
+		if is_shield_recharging():
+			_recharge_art_age = fposmod(_recharge_art_age + delta, 0.52)
+			queue_redraw()
+		if _pulse.phase == PulsePhase.LOCK:
+			_local_lock_art_age = minf(_local_lock_art_age + delta, FirstBossCues.LOCK_SETTLE_SECONDS)
+			# 锁线固定，角标跟随本机运动。即使分工取消，下一帧也重画清理。
+			queue_redraw()
 	if _flank_left > 0.0:
 		_tick_flank_window(delta)
 	if _duo.left > 0.0 or _duo_success_left > 0.0:
@@ -517,13 +536,25 @@ func _phase_speed_mult() -> float:
 func _draw() -> void:
 	if not _dead:
 		_draw_coop_pulse()
-	if _health <= 0.0 or (not has_impact_shield() and not is_shield_recharging()):
+	if _health <= 0.0 or _dead:
+		return
+	if uses_first_boss_cues():
+		if has_impact_shield():
+			FirstBossCues.draw_shield_ring(self)
+		elif is_shield_recharging():
+			FirstBossCues.draw_recharge(self, _recharge_art_age)
+		return
+	if not has_impact_shield() and not is_shield_recharging():
 		return
 	var tone := Color("#729cb374") if has_impact_shield() else Color("#afd0e592")
 	var arc := 0.62 if has_impact_shield() else 0.28
 	for side in 4:
 		var start := side * PI * 0.5 + 0.38
 		draw_arc(Vector2.ZERO, 72.0, start, start + arc, 14, tone, 1.5, true)
+
+func _draw_first_boss_core() -> void:
+	if _health > 0.0 and not _dead and (is_shield_exposed() or is_shield_recharging()):
+		FirstBossCues.draw_exposed_core(_flank_cue)
 
 func play_shield_release(world_position: Vector2) -> void:
 	if not is_inside_tree() or is_queued_for_deletion() or not GameState.game_running:
@@ -534,7 +565,7 @@ func play_shield_release(world_position: Vector2) -> void:
 	burst.position = world.to_local(world_position)
 	burst.z_index = -1
 	world.add_child(burst)
-	burst.setup_mothership_release()
+	burst.setup_mothership_release(uses_first_boss_cues())
 	SFX.play_shield_break()
 	shield_released.emit()
 
@@ -553,10 +584,15 @@ func _tick_shield_cycle(delta: float) -> void:
 		_publish_shield_state()
 	elif _exposure_left <= BOSS_RECHARGE_WARNING + 0.00001 and not is_shield_recharging():
 		_shield_stamp += 1
+		_recharge_art_age = 0.0
+		if uses_first_boss_cues():
+			SFX.play_boss_shield_recharge()
 		_publish_shield_state()
 
 func _publish_shield_state() -> void:
 	queue_redraw()
+	if uses_first_boss_cues():
+		_flank_cue.queue_redraw()
 	var battle := get_parent()
 	if battle and battle.has_method("publish_boss_shield"):
 		battle.publish_boss_shield(self)
@@ -911,6 +947,7 @@ func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
 		_apply_network_duo_window(next.duo)
 	if next.is_empty() or int(next.stamp) <= int(_pulse.stamp):
 		return
+	var was_locked: bool = _pulse.phase == PulsePhase.LOCK
 	_pulse = next.duplicate()
 	_pulse.erase("flank")
 	_pulse.erase("duo")
@@ -918,6 +955,12 @@ func apply_network_coop_pulse(next: Dictionary, live_edge := false) -> void:
 		face_laser_direction(Vector2(_pulse.to - _pulse.from).normalized())
 	if live_edge and _pulse.phase == PulsePhase.FIRE:
 		SFX.play_enemy_volley()
+	if uses_first_boss_cues():
+		if was_locked and _pulse.phase != PulsePhase.LOCK:
+			SFX.stop_boss_pulse_lock()
+		_local_lock_art_age = 0.0 if live_edge else FirstBossCues.LOCK_SETTLE_SECONDS
+		if live_edge and is_instance_valid(first_boss_local_lock_pilot()):
+			SFX.play_boss_pulse_lock()
 	queue_redraw()
 
 func coop_pulse_label() -> String:
@@ -932,10 +975,18 @@ func coop_pulse_label() -> String:
 		return "瞄准 " + pilot
 	return "锁定 " + pilot if _pulse.phase == PulsePhase.LOCK else "脉冲 · " + pilot
 
-func coop_pulse_warning_slot() -> int:
-	if _pulse.phase == PulsePhase.TRACK or _pulse.phase == PulsePhase.LOCK:
-		return int(_pulse.slot)
-	return 0
+func first_boss_lock_visible() -> bool:
+	if not uses_first_boss_cues() or not GameState.game_running or _dead or _health <= 0.0 \
+			or _pulse.phase != PulsePhase.LOCK or not has_impact_shield() or get_attack_window() != AttackWindow.OPEN:
+		return false
+	var battle := get_parent()
+	return NetworkManager.is_online() and battle._lan_frozen_frame < 0 and _coop_pair_alive() \
+		and _attack_pilot_alive(_pulse_pilot(int(_pulse.slot)))
+
+func first_boss_local_lock_pilot() -> Node2D:
+	if not first_boss_lock_visible() or int(_pulse.slot) != NetworkManager.local_player_id():
+		return null
+	return _pulse_pilot(int(_pulse.slot))
 
 func coop_pulse_contains(point: Vector2) -> bool:
 	return point.distance_squared_to(Geometry2D.get_closest_point_to_segment(point, _pulse.from, _pulse.to)) \
@@ -1183,6 +1234,12 @@ func _finish_coop_pulse() -> void:
 func _draw_coop_pulse() -> void:
 	if _pulse.phase == PulsePhase.OPEN:
 		return
+	if uses_first_boss_cues() and _pulse.phase == PulsePhase.LOCK:
+		if not first_boss_lock_visible():
+			return
+		var local := first_boss_local_lock_pilot()
+		if is_instance_valid(local):
+			FirstBossCues.draw_local_lock(self, local.global_position, _local_lock_art_age)
 	var tone := Color("#ffb86b")
 	if _pulse.get("marked", false):
 		var pilot := _pulse_pilot(_pulse.slot)
@@ -1484,6 +1541,8 @@ func die() -> void:
 	queue_free()
 
 func play_death_feedback() -> void:
+	if uses_first_boss_cues():
+		SFX.stop_first_boss_cues()
 	_spawn_explosion.call_deferred(global_position)
 
 func _spawn_explosion(death_pos: Vector2) -> void:

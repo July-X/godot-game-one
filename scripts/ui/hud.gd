@@ -1125,7 +1125,7 @@ func show_center_banner(text: String, hold: float = 2.0, color: Color = Color(1.
 		_layout_top_rows())
 
 func show_boss_status(current: float, maximum: float, shield: float, max_shield: float,
-		phase_name: String, attack_window: String, recharging: bool, first_ordinary: bool, exposed: bool) -> void:
+		phase_name: String, attack_window: String, recharging: bool, first_ordinary: bool) -> void:
 	_ensure_boss_status_ui()
 	if not _boss_status_root.visible:
 		_boss_status_root.show()
@@ -1143,10 +1143,10 @@ func show_boss_status(current: float, maximum: float, shield: float, max_shield:
 	elif shield > 0.0:
 		_boss_shield_release_left = 0.0
 		status = "护盾 %d%%" % maxi(1, roundi(shield_ratio * 100))
+	elif first_ordinary:
+		status = ""
 	elif recharging:
 		status = "即将回盾"
-	elif exposed:
-		status = "护盾已破 · 输出"
 	elif _boss_shield_release_left > 0.0:
 		status = "破盾 · 可攻击"
 	var separate_attack := first_ordinary and not attack_window.is_empty()

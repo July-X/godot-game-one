@@ -22,6 +22,8 @@ var _stream_shield_hit: AudioStreamWAV
 var _stream_shield_break: AudioStreamWAV
 var _stream_boss_warning: AudioStreamWAV
 var _stream_boss_approach: AudioStreamWAV
+var _stream_boss_shield_recharge: AudioStreamWAV
+var _stream_boss_pulse_lock: AudioStreamWAV
 var _stream_volley: AudioStreamWAV
 var _stream_laser: AudioStreamWAV
 var _stream_player_hurt: AudioStreamWAV
@@ -56,6 +58,8 @@ func _ready() -> void:
 	_stream_boss_warning.data += gap + _generate_tone(1245, 0.23, 0.45).data
 	_stream_boss_approach = _generate_tone(523.25, 0.12, 0.35)
 	_stream_boss_approach.data += gap + _generate_tone(349.23, 0.22, 0.39).data
+	_stream_boss_shield_recharge = _generate_sweep(315.0, 850.0, 0.29, 0.23, 0.085)
+	_stream_boss_pulse_lock = _generate_tone(720.0, 0.085, 0.15)
 	_stream_player_hurt = _generate_tone(200.0, 0.2, 0.4)
 	_stream_ui_confirm = _generate_tone(800.0, 0.08, 0.25)
 	_stream_ui_select = _generate_tone(500.0, 0.05, 0.15)
@@ -116,7 +120,7 @@ func _generate_tone(freq: float, duration: float, volume: float = 0.3, sample_ra
 	stream.data = data
 	return stream
 
-func _generate_sweep(start_f: float, end_f: float, duration: float, volume: float = 0.3) -> AudioStreamWAV:
+func _generate_sweep(start_f: float, end_f: float, duration: float, volume: float = 0.3, fade_in: float = 0.0) -> AudioStreamWAV:
 	var sample_rate := 44100
 	var num_samples := int(duration * sample_rate)
 	var data := PackedByteArray()
@@ -126,6 +130,9 @@ func _generate_sweep(start_f: float, end_f: float, duration: float, volume: floa
 		var t: float = float(i) / num_samples
 		var freq: float = lerp(start_f, end_f, t)
 		var decay: float = 1.0 - t * 0.7
+		if fade_in > 0.0:
+			decay *= minf(float(i) / (fade_in * sample_rate), 1.0)
+			decay *= minf((num_samples - i) / (0.045 * sample_rate), 1.0)
 		phase = fmod(phase + freq / sample_rate, 1.0)
 		var sv: float = sin(phase * TAU) * volume * decay
 		var si: int = clampi(int(sv * 32767), -32768, 32767)
@@ -227,6 +234,25 @@ func play_boss_warning() -> void:
 
 func play_boss_approach() -> void:
 	_play_priority_warning(_stream_boss_approach)
+
+func play_boss_shield_recharge() -> void:
+	_play_stream(_stream_boss_shield_recharge, _players)
+
+func play_boss_pulse_lock() -> void:
+	_play_stream(_stream_boss_pulse_lock, _players)
+
+func stop_boss_pulse_lock() -> void:
+	for voice in _players:
+		if voice.playing and voice.stream == _stream_boss_pulse_lock:
+			voice.stop()
+
+func stop_first_boss_cues(include_break := false) -> void:
+	stop_boss_pulse_lock()
+	for voice in _players:
+		if voice.playing and voice.stream == _stream_boss_shield_recharge:
+			voice.stop()
+	if include_break:
+		_break_voice.stop()
 
 func _play_priority_warning(stream: AudioStreamWAV) -> void:
 	_warning_voice.stream = stream

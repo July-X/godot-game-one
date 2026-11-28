@@ -6,9 +6,11 @@ var _fragments: Array[Dictionary] = []
 var _flecks := PackedVector2Array()
 var _spread := 1.0
 var _mothership_release := false
+var _closed_ring := false
 
-func setup_mothership_release() -> void:
+func setup_mothership_release(closed_ring := false) -> void:
 	_mothership_release = true
+	_closed_ring = closed_ring
 	_duration = 0.32
 	_spread = 0.22
 	setup(72.0, Color(0.45, 0.66, 0.80, 0.6), 24)
@@ -42,13 +44,21 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	var t: float = clampf(_age / _duration, 0.0, 1.0)
 	var alpha: float = 1.0 - t
-	for frag in _fragments:
+	for i in _fragments.size():
+		var frag := _fragments[i]
 		var dir := Vector2.from_angle(float(frag.angle))
 		var base_radius: float = float(frag.radius) + float(frag.speed) * t * _spread
-		var p1: Vector2 = dir * base_radius
-		var p2: Vector2 = dir * (base_radius + float(frag.length) * (1.0 + t) * sqrt(_spread))
 		var c: Color = frag.color
 		c.a *= alpha
+		if _closed_ring:
+			if i % 2 == 0:
+				var angle := float(frag.angle)
+				var radius := 72.0 + float(frag.speed) * t * _spread
+				var extent := lerpf(0.18, 0.045, t)
+				draw_arc(Vector2.ZERO, radius, angle - extent, angle + extent, 6, c, 2.6, true)
+			continue
+		var p1: Vector2 = dir * base_radius
+		var p2: Vector2 = dir * (base_radius + float(frag.length) * (1.0 + t) * sqrt(_spread))
 		draw_line(p1, p2, c, (1.0 if _mothership_release else 3.0) * alpha + 1.0)
 	if _mothership_release:
 		return
