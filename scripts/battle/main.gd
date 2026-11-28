@@ -18,6 +18,7 @@ var _boss_ultimate_laser_visual_script = preload("res://scripts/battle/enemies/b
 var _wave_director_script = preload("res://scripts/battle/wave_director.gd")
 var _player_scene = preload("res://scenes/entities/player.tscn")
 var _enemy_scene = preload("res://scenes/entities/enemy.tscn")
+const OrdinaryEnemy := preload("res://scripts/battle/enemies/enemy.gd")
 var _elite_scene = preload("res://scenes/entities/elite.tscn")
 var _boss_scene = preload("res://scenes/entities/boss.tscn")
 var _asteroid_scene = preload("res://scenes/entities/asteroid.tscn")
@@ -143,6 +144,7 @@ var _hitstop_last_usec: int = 0
 const PLAYER_SYNC_STRIDE: int = 4
 ## 待发送的子弹生成数据（Host → Client 或 Client → Host）
 var _pending_bullet_spawns: Array = []
+var _pending_enemy_warning_acks: Dictionary[int, Vector2i] = {}
 var _pending_scatter_spawns: Array = []
 var _pending_laser_spawns: Array = []
 var _alive_players: Dictionary = {}
@@ -374,6 +376,14 @@ func set_lan_hold(held: bool) -> void:
 		_pending_bullet_spawns.clear()
 		_pending_scatter_spawns.clear()
 		_pending_laser_spawns.clear()
+		_pending_enemy_warning_acks.clear()
+		# A rejoining pilot should see a fresh warning before fighting these attacks.
+		for item in _entities.values():
+			if is_instance_valid(item) and item is OrdinaryEnemy and item.ordinary_attack:
+				item.clear_ordinary_attack_for_hold()
+		for shot in get_tree().get_nodes_in_group("enemy_bullets"):
+			if shot.ordinary_enemy_round > 0:
+				Pool.release(shot)
 		GameState.clear_unconfirmed_actions()
 		_lan_message = _hud.show_lan_wait()
 		return
@@ -484,6 +494,8 @@ func _resume_bullets() -> Array:
 			if shot.is_queued_for_deletion() or shot.get_parent() != self:
 				continue
 			if shot.scene_file_path == _bullet_scene.resource_path:
+				if shot.ordinary_enemy_round > 0:
+					continue
 				data.append([shot.global_position, shot._direction.angle(), shot._damage, shot._is_player_bullet,
 					shot._level, shot._speed, shot.modulate, shot.owner_peer_id, shot._lifetime, shot._has_bounced, false])
 			elif shot.scene_file_path == _laser_scene.resource_path:
@@ -946,6 +958,7 @@ func _spawn_enemy_at(enemy_type: int, pos: Vector2, authored_health := 0, can_dr
 
 ## 普通波次和精英召唤先各自配置属性，再共用实体登记、生成与销毁。
 func add_enemy(enemy: CharacterBody2D, spawn_multiplier := 1.0) -> void:
+	enemy.ordinary_attack = scene_file_path == "res://scenes/main.tscn"
 	if NetworkManager.is_online() and multiplayer.is_server():
 		var eid := _next_entity_id
 		_next_entity_id += 1
@@ -954,8 +967,58 @@ func add_enemy(enemy: CharacterBody2D, spawn_multiplier := 1.0) -> void:
 		enemy.enemy_died.connect(_on_network_enemy_died.bind(eid))
 		_rpc_spawn_enemy.rpc(eid, enemy.enemy_type, enemy.position.x, enemy.position.y, enemy.health,
 			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, spawn_multiplier,
-			enemy.bullet_speed_mult)
+			enemy.bullet_speed_mult, GameState.get_sync_round() if enemy.ordinary_attack else 0)
 	add_child(enemy)
+
+func broadcast_ordinary_enemy_attack(enemy: OrdinaryEnemy) -> void:
+	if multiplayer.is_server() and _lan_frozen_frame < 0 and is_instance_valid(_entities.get(enemy.entity_id)):
+		_rpc_enemy_attack.rpc(GameState.get_sync_round(), enemy.entity_id, enemy.ordinary_attack_snapshot())
+
+@rpc("authority", "reliable", "call_remote")
+func _rpc_enemy_attack(round_id: int, eid: int, state: Dictionary) -> void:
+	if round_id != GameState.get_sync_round() or _lan_frozen_frame >= 0 or not GameState.game_running:
+		return
+	var enemy := _entities.get(eid) as OrdinaryEnemy
+	if is_instance_valid(enemy) and enemy.ordinary_attack:
+		_apply_ordinary_enemy_state(enemy, round_id, state)
+
+func _queue_enemy_warning_ack(eid: int, round_id: int, stamp: int) -> void:
+	_pending_enemy_warning_acks[eid] = Vector2i(round_id, stamp)
+	# A single render callback coalesces active warnings and never leaves a
+	# coroutine waiting per enemy if the window temporarily stops drawing.
+	if DisplayServer.get_name() == "headless":
+		if not get_tree().process_frame.is_connected(_flush_enemy_warning_acks):
+			get_tree().process_frame.connect(_flush_enemy_warning_acks, CONNECT_ONE_SHOT)
+	elif not RenderingServer.frame_post_draw.is_connected(_flush_enemy_warning_acks):
+		RenderingServer.frame_post_draw.connect(_flush_enemy_warning_acks)
+
+func _flush_enemy_warning_acks() -> void:
+	if _lan_frozen_frame >= 0 or not NetworkManager.is_online():
+		_pending_enemy_warning_acks.clear()
+	var graphical := DisplayServer.get_name() != "headless"
+	for eid: int in _pending_enemy_warning_acks.keys():
+		var data := _pending_enemy_warning_acks[eid]
+		var enemy := _entities.get(eid) as OrdinaryEnemy
+		if not is_instance_valid(enemy) or enemy.is_queued_for_deletion() or enemy.attack_stamp != data.y \
+				or data.x != GameState.get_sync_round():
+			_pending_enemy_warning_acks.erase(eid)
+			continue
+		if graphical and (not enemy._ordinary_visual.is_visible_in_tree() or enemy._ordinary_visual.drawn_warning_stamp != data.y):
+			continue
+		_pending_enemy_warning_acks.erase(eid)
+		_rpc_enemy_warning_seen.rpc_id(1, data.x, eid, data.y)
+	if _pending_enemy_warning_acks.is_empty() and RenderingServer.frame_post_draw.is_connected(_flush_enemy_warning_acks):
+		RenderingServer.frame_post_draw.disconnect(_flush_enemy_warning_acks)
+
+@rpc("any_peer", "reliable", "call_remote")
+func _rpc_enemy_warning_seen(round_id: int, eid: int, stamp: int) -> void:
+	if not multiplayer.is_server() or _lan_frozen_frame >= 0 or not GameState.game_running:
+		return
+	if round_id != GameState.get_sync_round() or NetworkManager.gameplay_sender() <= 1:
+		return
+	var enemy := _entities.get(eid) as OrdinaryEnemy
+	if is_instance_valid(enemy) and not enemy.is_queued_for_deletion() and enemy.ordinary_attack:
+		enemy.confirm_ordinary_attack_seen(stamp)
 
 func _on_enemy_died() -> void:
 	pass
@@ -1844,7 +1907,9 @@ func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node, recovering :
 				float(node.get("shoot_cooldown")),
 				float(node.get("drop_chance")),
 				1.0,
-				float(node.get("bullet_speed_mult"))
+				float(node.get("bullet_speed_mult")),
+				GameState.get_sync_round() if node.ordinary_attack else 0,
+				node.ordinary_attack_snapshot() if node.ordinary_attack else {}
 			)
 
 ## Host → Client：生成敌人幽灵副本
@@ -1854,14 +1919,21 @@ func _send_entity_spawn_to_peer(peer_id: int, eid: int, node: Node, recovering :
 ## 但**弹速是纯渲染参数**——不同步的话两端看到的弹幕速度不一样，
 ## 玩家的擦弹判断和走位预案会直接失效。
 @rpc("authority", "reliable", "call_remote")
-func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int, spd: float, cd: float, drop: float, mult: float, bullet_mult: float) -> void:
+func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int, spd: float, cd: float, drop: float,
+		mult: float, bullet_mult: float, ordinary_round := 0, attack := {}) -> void:
 	if not NetworkManager.is_online():
 		return
 	if _despawned_entity_ids.has(eid):
 		return
+	if ordinary_round > 0 and ordinary_round != GameState.get_sync_round():
+		return
 	if _entities.has(eid):
 		var old_node: Node = _entities[eid]
 		if is_instance_valid(old_node):
+			if ordinary_round > 0 and old_node is OrdinaryEnemy and old_node.ordinary_attack and not old_node.is_queued_for_deletion():
+				old_node.health = hp
+				_apply_ordinary_enemy_state(old_node, ordinary_round, attack)
+				return
 			old_node.queue_free()
 	var enemy = _enemy_scene.instantiate()
 	enemy.name = str(eid)
@@ -1874,10 +1946,21 @@ func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int,
 	enemy.shoot_cooldown = cd
 	enemy.drop_chance = drop
 	enemy.bullet_speed_mult = bullet_mult
+	enemy.ordinary_attack = ordinary_round > 0
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	_entities[eid] = enemy
 	add_child(enemy)
+	_apply_ordinary_enemy_state(enemy, ordinary_round, attack)
+
+func _apply_ordinary_enemy_state(enemy: OrdinaryEnemy, round_id: int, state: Dictionary) -> void:
+	if state.is_empty() or (_lan_frozen_frame >= 0 and int(state.phase) != OrdinaryEnemy.AttackPhase.FLIGHT):
+		return
+	var previous := enemy.attack_stamp
+	if enemy.apply_ordinary_attack(state):
+		_queue_enemy_warning_ack(enemy.entity_id, round_id, state.stamp)
+	elif enemy.attack_stamp != previous:
+		_pending_enemy_warning_acks.erase(enemy.entity_id)
 
 ## Host → Client：生成精英幽灵副本
 @rpc("authority", "reliable", "call_remote")
@@ -2091,6 +2174,7 @@ func _rpc_spawn_asteroid(eid: int, pos_x: float, pos_y: float) -> void:
 ## Host → Client：销毁实体
 @rpc("authority", "reliable", "call_remote")
 func _rpc_despawn_entity(eid: int, combat_kill := false) -> void:
+	_pending_enemy_warning_acks.erase(eid)
 	_despawned_entity_ids[eid] = true
 	if is_instance_valid(_boss) and _boss.entity_id == eid:
 		_clear_boss_laser_visual()
@@ -2357,11 +2441,15 @@ func _apply_remote_player_state(p_peer_id: int, pos: Vector2, rot: float) -> voi
 ## 子弹同步 ──────────────────────────────────────────────────
 
 ## 注册一颗子弹生成（由 enemy/boss/player 调用）
-func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float, color: Color = Color(1,1,1,1), owner_peer_id: int = -1, scatter := false) -> void:
+func register_bullet_spawn(pos: Vector2, angle: float, damage: float, is_player: bool, level: int, speed: float,
+		color: Color = Color(1,1,1,1), owner_peer_id: int = -1, scatter := false, ordinary_round := 0) -> void:
 	if not NetworkManager.is_online():
 		return
 	var pending := _pending_scatter_spawns if scatter else _pending_bullet_spawns
-	pending.append([pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b, owner_peer_id])
+	var entry := [pos.x, pos.y, angle, damage, is_player, level, speed, color.r, color.g, color.b, owner_peer_id]
+	if ordinary_round > 0:
+		entry.append(ordinary_round)
+	pending.append(entry)
 	if _entry_shot_trace and is_player and not scatter and not multiplayer.is_server():
 		_trace_entry_shot("queued", owner_peer_id, pending.size())
 
@@ -2546,6 +2634,9 @@ func _rpc_spawn_scatter(data: Array) -> void:
 func _spawn_network_bullets(data: Array, sender := -1, reliable := false) -> void:
 	var guest_bullets := 0
 	for entry in data:
+		var ordinary_round := int(entry[11]) if entry.size() > 11 and sender < 0 else 0
+		if ordinary_round > 0 and (ordinary_round != GameState.get_sync_round() or _lan_frozen_frame >= 0):
+			continue
 		var bullet := Pool.acquire("bullet", _bullet_scene)
 		if bullet == null:
 			continue
@@ -2562,6 +2653,7 @@ func _spawn_network_bullets(data: Array, sender := -1, reliable := false) -> voi
 			entry[6],                      # speed
 			owner_slot
 		)
+		bullet.ordinary_enemy_round = ordinary_round
 		if entry.size() > 7:
 			bullet.modulate = Color(entry[7], entry[8], entry[9], 1.0)
 		if is_player and owner_slot > 0:

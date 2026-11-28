@@ -36,7 +36,9 @@ func _run() -> void:
 	await get_tree().scene_changed
 	var lobby := get_tree().current_scene
 	_check("title_to_lobby", lobby.scene_file_path == LOBBY)
-	if host:
+	if case_name == "expect-mismatch" and args.has("discovery-wire"):
+		await _join_announced_room(lobby, host)
+	elif host:
 		lobby.get_node("VBox/PanelModeSelect").hide()
 		lobby.get_node("VBox/PanelHost").show()
 		_check("host_listens", NetworkManager.create_host_with_mode(NetworkManager.TRANSPORT_HARMONY, port) == OK)
@@ -52,6 +54,29 @@ func _run() -> void:
 	await get_tree().create_timer(.25).timeout
 	print("[LOBBY] SUMMARY pass=%d failed=%d" % [_passed, _failed])
 	get_tree().quit(int(_failed > 0))
+
+func _join_announced_room(lobby: Node, host: bool) -> void:
+	if host:
+		lobby._btn_be_host.pressed.emit()
+		_check("real_lobby_created_room", NetworkManager.is_host and NetworkManager.is_online())
+		# Loopback processes share the discovery port. Relay the production announcement
+		# over UDP after giving its receive socket to the joining process.
+		NetworkDiscovery.stop_all()
+		var wire := PacketPeerUDP.new()
+		wire.set_dest_address("127.0.0.1", NetworkDiscovery.DISCOVERY_PORT)
+		var packet := ("%s|Space Bullet Hell|%d" % [NetworkDiscovery.DISCOVERY_RESPONSE, NetworkManager.DEFAULT_PORT]).to_utf8_buffer()
+		var deadline := Time.get_ticks_msec() + 5000
+		while NetworkManager.connected_peers.is_empty() and Time.get_ticks_msec() < deadline:
+			wire.put_packet(packet)
+			await get_tree().create_timer(.1).timeout
+		wire.close()
+	else:
+		lobby._btn_be_client.pressed.emit()
+		var address := "127.0.0.1:%d" % NetworkManager.DEFAULT_PORT
+		var found := await _wait_until(func(): return lobby._host_buttons.has(address), 5.0)
+		_check("room_listed_from_udp_announcement", found)
+		if found:
+			lobby._host_buttons[address].pressed.emit()
 
 func _verify_start(lobby: Node, host: bool, case_name: String) -> void:
 	var remix := case_name == "remix"
@@ -337,6 +362,7 @@ func _verify_rift_retry_profile() -> void:
 func _verify_rejection(lobby: Node, host: bool) -> void:
 	var status: Label = lobby._lbl_host_status if host else lobby._lbl_join_status
 	_check("visible_version_warning", await _wait_until(func(): return status.text.contains("联机版本不兼容"), 4.5))
+	print("[LOBBY] VERSION_HINT ", status.text)
 	if host:
 		_check("both_start_buttons_disabled", lobby._btn_start.disabled and lobby._btn_rift.disabled)
 		lobby._btn_start.pressed.emit()

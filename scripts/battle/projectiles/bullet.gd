@@ -20,6 +20,7 @@ var _homing_strength: float = 0.0
 var _pooled: bool = false
 var _is_network_ghost: bool = false
 var owner_peer_id: int = -1
+var ordinary_enemy_round := 0
 
 @onready var _sprite: Sprite2D = $Sprite2D
 
@@ -43,6 +44,7 @@ func reset() -> void:
 	_lifetime = 4.0
 	_is_network_ghost = false
 	owner_peer_id = -1
+	ordinary_enemy_round = 0
 	_pierce_left = 0
 	_pierced.clear()
 	_splash_radius = 0.0

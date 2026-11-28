@@ -5,7 +5,7 @@ signal game_start_requested
 const SafeArea := preload("res://scripts/ui/battle_safe_area.gd")
 const RouteRules := preload("res://scripts/battle/trials/rift_route_rules.gd")
 const EntryCard := preload("res://scripts/ui/entry_card.gd")
-const LAN_PROTOCOL := "space-bullet-hell-lan:9"
+const LAN_PROTOCOL := "space-bullet-hell-lan:10"
 const VERSION_WAIT_MS := 3000
 const VERSION_ERROR := "联机版本不兼容，请将两台设备更新到同一版本后重试"
 const EMPTY_SEARCH_MS := 1800
@@ -444,7 +444,7 @@ func _on_lobby_packet(peer_id: int, packet: PackedByteArray) -> void:
 	if peer_id not in NetworkManager.connected_peers and (NetworkManager.is_host or peer_id != 1):
 		return
 	if packet != _lobby_identity():
-		_show_version_error()
+		_show_version_error(packet == (LAN_PROTOCOL if _dual_intercept else LAN_PROTOCOL + ":dual-intercept").to_utf8_buffer())
 		return
 	_compatible_peer = peer_id
 	_version_deadline = 0
@@ -456,14 +456,14 @@ func _on_lobby_packet(peer_id: int, packet: PackedByteArray) -> void:
 		_lbl_scan_hint.text = "等待房主开始"
 		_lbl_join_status.text = "联机版本一致。"
 
-func _show_version_error() -> void:
+func _show_version_error(wrong_room := false) -> void:
 	_compatible_peer = 0
 	_version_deadline = 0
 	_btn_start.disabled = true
 	_btn_rift.disabled = true
 	_rift_rule.hide()
 	_confirm_rift_rule.hide()
-	var message := "请确认双方都从标题进入「双线截击」，并使用同一版本" if _dual_intercept else VERSION_ERROR
+	var message := "请确认双方都从标题进入「双线截击」，并使用同一版本" if wrong_room and _dual_intercept else VERSION_ERROR
 	if NetworkManager.is_host:
 		_lbl_host_status.text = message
 		_host_detail.text = "搭档可以返回并重新加入。"
