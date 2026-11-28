@@ -1,6 +1,10 @@
 extends CharacterBody2D
 
 signal enemy_died
+signal transport_exited
+
+const TRANSPORT_HP := 12
+const TRANSPORT_SPEED := 300.0
 
 @export var enemy_type: int = 0
 @export var health: int = 2
@@ -15,6 +19,7 @@ signal enemy_died
 ## 默认 1.0 = 原始三档速度，不受主题影响。
 var bullet_speed_mult: float = 1.0
 var ordinary_attack := false
+var is_transport := false
 
 var entity_id: int = 0
 
@@ -76,8 +81,12 @@ func _ready() -> void:
 	elif _sprite:
 		_sprite.texture = SpriteFactory.create_enemy_sprite(enemy_type)
 	if _health_bar:
-		_health_bar.max_value = health
+		_health_bar.max_value = TRANSPORT_HP if is_transport else health
 		_health_bar.value = health
+	if is_transport:
+		remove_from_group("ordinary_enemies")
+		rotation = PI * 0.5
+		return
 	_move_angle = randf() * TAU
 	_wobble_timer = randf() * TAU
 	_shoot_timer = randf_range(0.5, shoot_cooldown)
@@ -92,11 +101,18 @@ func _physics_process(delta: float) -> void:
 	if _is_network_ghost:
 		if _health_bar:
 			_health_bar.value = health
-		if ordinary_attack:
+		if ordinary_attack and not is_transport:
 			var travel := global_position - _last_ghost_position
 			if attack_phase == AttackPhase.FLIGHT and travel.length_squared() > 0.16:
 				rotation = travel.angle() + PI * 0.5
 			_last_ghost_position = global_position
+		return
+
+	if is_transport:
+		position.x += move_speed * delta
+		_health_bar.value = health
+		if position.x > NetworkManager.battle_size(self).x + WaveDirector.SPAWN_MARGIN:
+			retire_transport()
 		return
 
 	_wobble_timer += delta * 2.0
@@ -303,8 +319,11 @@ func _set_attack_phase(phase: AttackPhase, released := false) -> void:
 		get_tree().current_scene.broadcast_ordinary_enemy_attack(self)
 
 func ordinary_attack_snapshot() -> Dictionary:
-	return {"stamp": attack_stamp, "phase": attack_phase, "at": attack_origin, "heading": attack_heading,
+	var snapshot := {"stamp": attack_stamp, "phase": attack_phase, "at": attack_origin, "heading": attack_heading,
 		"angles": attack_angles, "first": attack_first_count, "release": attack_release}
+	if is_transport:
+		snapshot["transport"] = true
+	return snapshot
 
 func apply_ordinary_attack(snapshot: Dictionary) -> bool:
 	var stamp: int = snapshot.stamp
@@ -458,11 +477,19 @@ func die(killer_peer_id: int = -1) -> void:
 			return
 		# 主炮和清屏炸弹共用此入口。分数或死亡回调可能在节点释放前再次进入。
 		_death_started = true
-	GameState.add_kill(killer_peer_id)
+	if not is_transport:
+		GameState.add_kill(killer_peer_id)
 	enemy_died.emit()
 	## 延迟生成特效和道具，避免物理查询冲突
 	call_deferred("_spawn_explosion")
 	call_deferred("_try_spawn_powerup")
+	queue_free()
+
+func retire_transport() -> void:
+	if _death_started or is_queued_for_deletion():
+		return
+	_death_started = true
+	transport_exited.emit()
 	queue_free()
 
 func _spawn_explosion() -> void:
@@ -481,6 +508,11 @@ func play_death_feedback() -> void:
 	SFX.play_enemy_death()
 
 func _try_spawn_powerup() -> void:
+	if is_transport:
+		var battle := get_parent()
+		if is_instance_valid(battle):
+			battle.spawn_powerup_at("heal", global_position)
+		return
 	if randf() < drop_chance:
 		var pu = _powerup_scene.instantiate()
 		get_tree().current_scene.add_child(pu)

@@ -327,6 +327,13 @@ func has_pending_spawn_due(delta: float) -> bool:
 			return true
 	return false
 
+## 待发队列有内容或即将换拍时，普通排期优先。
+func has_quiet_gap(level: int, seconds: float) -> bool:
+	if not _pending.is_empty() or _phase_left < seconds:
+		return false
+	var budget_wait := (float(formation_size(level, _phase_index)) - _budget) / threat_rate(level, _phase_index)
+	return maxf(_cooldown, budget_wait) >= seconds
+
 
 ## 推进编排器。返回"此刻应当出场"的敌人列表。
 ##

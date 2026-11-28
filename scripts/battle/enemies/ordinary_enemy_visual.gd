@@ -43,6 +43,9 @@ func phase_changed() -> void:
 	_rays.queue_redraw()
 
 func _draw() -> void:
+	if ship.is_transport:
+		_draw_transport()
+		return
 	var phase: int = ship.attack_phase
 	var preparing: bool = phase == ship.AttackPhase.PREPARE
 	var following: bool = phase == ship.AttackPhase.FOLLOW_THROUGH
@@ -53,6 +56,17 @@ func _draw() -> void:
 		0: _draw_needle(charging, firing, recovering)
 		1: _draw_shear(charging, firing, recovering, charging and ship.attack_first_count == 2)
 		2: _draw_ring(charging, firing, recovering)
+
+func _draw_transport() -> void:
+	# 两节方货舱与并列短尾迹使用同一轴线，静音时也能看出行进方向。
+	_hull([Vector2(-10, -20), Vector2(10, -20), Vector2(18, -10), Vector2(18, 17),
+		Vector2(11, 20), Vector2(-11, 20), Vector2(-18, 17), Vector2(-18, -10)], Color("#b99458"))
+	_rect(-11, -9, 22, 10, Color("#ebd99d"))
+	_rect(-11, 4, 22, 9, Color("#ebd99d"))
+	_rect(-7, -17, 14, 4, COOL)
+	for x: float in [-11.0, 7.0]:
+		_rect(x, 19, 4, 8, COOL)
+		_rect(x, 31, 4, 6 + int(fmod(_flight_time * 22.0, 5.0)), Color(0.42, 0.90, 0.95, 0.45))
 
 func _draw_attack_rays() -> void:
 	var preparing: bool = ship.attack_phase == ship.AttackPhase.PREPARE

@@ -11,6 +11,8 @@ signal guest_bullet_batch_spawned(slot: int, count: int, reliable: bool)
 const MotionController = preload("res://scripts/player/motion_controller.gd")
 const Boss = preload("res://scripts/battle/enemies/boss/boss.gd")
 const FIRST_BOSS_AFTERMATH_SECONDS := 2.0
+const TRANSPORT_ENTRY_GAP := 1.1
+enum TransportOffer { BEFORE_FIRST_BOSS, WAITING_FOR_GAP, SPENT }
 
 var _hit_effect_scene = preload("res://scenes/effects/hit_effect.tscn")
 var _bullet_scene = preload("res://scenes/entities/bullet.tscn")
@@ -48,6 +50,8 @@ var _boss_variant_last: int = 0
 var _boss_fight_active: bool = false
 var _pending_boss_level: int = 0
 var _first_boss_aftermath_left := 0.0
+var _transport_offer := TransportOffer.BEFORE_FIRST_BOSS
+var _transport: OrdinaryEnemy
 ## 旧的 `_enemy_spawn_timer` / `_difficulty_timer`（间隔刷怪 + 8 秒脉冲）已删除，
 ## 杂兵投放改由 `_wave_director` 的乐句节拍统一负责。
 var _asteroid_timer: float = 0.0
@@ -817,11 +821,42 @@ func _tick_wave_director(delta: float) -> void:
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		return
 	var alive: int = get_tree().get_nodes_in_group("enemies").size()
+	# 可选目标在场时，普通导演仍按原数量和预算投放。
+	if is_instance_valid(_transport):
+		alive -= 1
 	var orders: Array = _wave_director.advance(delta, GameState.level, alive,
 		NetworkManager.battle_size(self), ENEMY_SCREEN_CAP)
 	for order: Dictionary in orders:
 		_spawn_enemy_at(int(order["type"]), order["pos"])
 	_refresh_wave_phase_hud()
+	if orders.is_empty() and alive <= 1:
+		_try_launch_transport()
+
+
+func _try_launch_transport() -> void:
+	if _transport_offer != TransportOffer.WAITING_FOR_GAP or _first_boss_aftermath_left > 0.0:
+		return
+	if _pending_boss_level > 0 or _asteroid_timer < TRANSPORT_ENTRY_GAP \
+			or not _wave_director.has_quiet_gap(GameState.level, TRANSPORT_ENTRY_GAP):
+		return
+	for slot: int in _alive_peer_ids():
+		var draft := UpgradeDraft.get_draft(slot)
+		if not draft.is_empty() and not bool(draft.chosen):
+			return
+	_transport_offer = TransportOffer.SPENT
+	_transport = _enemy_scene.instantiate()
+	_transport.is_transport = true
+	_transport.position = Vector2(-_wave_director_script.SPAWN_MARGIN, NetworkManager.battle_size(self).y * 0.26)
+	_transport.health = OrdinaryEnemy.TRANSPORT_HP
+	_transport.move_speed = OrdinaryEnemy.TRANSPORT_SPEED
+	_transport.drop_chance = 0.0
+	add_enemy(_transport)
+	SFX.play_transport_approach()
+
+
+func _retire_transport() -> void:
+	if is_instance_valid(_transport):
+		_transport.retire_transport()
 
 
 ## 每帧刷新乐句读数。刻意按"变化才重写"处理：
@@ -990,9 +1025,14 @@ func add_enemy(enemy: CharacterBody2D, spawn_multiplier := 1.0) -> void:
 		enemy.entity_id = eid
 		_entities[eid] = enemy
 		enemy.enemy_died.connect(_on_network_enemy_died.bind(eid))
+		var initial_attack: Dictionary = {}
+		if enemy.is_transport:
+			enemy.transport_exited.connect(_on_network_enemy_died.bind(eid, false))
+			initial_attack = enemy.ordinary_attack_snapshot()
+			initial_attack["transport_approach"] = true
 		_rpc_spawn_enemy.rpc(eid, enemy.enemy_type, enemy.position.x, enemy.position.y, enemy.health,
 			enemy.move_speed, enemy.shoot_cooldown, enemy.drop_chance, spawn_multiplier,
-			enemy.bullet_speed_mult, GameState.get_sync_round() if enemy.ordinary_attack else 0)
+			enemy.bullet_speed_mult, GameState.get_sync_round() if enemy.ordinary_attack else 0, initial_attack)
 	add_child(enemy)
 
 func broadcast_ordinary_enemy_attack(enemy: OrdinaryEnemy) -> void:
@@ -1048,13 +1088,13 @@ func _rpc_enemy_warning_seen(round_id: int, eid: int, stamp: int) -> void:
 func _on_enemy_died() -> void:
 	pass
 
-func _on_network_enemy_died(entity_id: int) -> void:
+func _on_network_enemy_died(entity_id: int, combat_kill := true) -> void:
 	_despawned_entity_ids[entity_id] = true
 	_entity_target_positions.erase(entity_id)
 	if _entities.has(entity_id):
 		_entities.erase(entity_id)
-	if multiplayer.is_server():
-		_rpc_despawn_entity.rpc(entity_id, true)
+	if NetworkManager.is_online() and multiplayer.is_server():
+		_rpc_despawn_entity.rpc(entity_id, combat_kill)
 
 ## Client → Host（经 GameState 转发）：敌人受击
 func _on_network_enemy_hit(entity_id: int, damage: int, attacker_peer_id: int = -1) -> void:
@@ -1076,7 +1116,10 @@ func request_network_powerup_magnet(entity_id: int) -> void:
 
 ## Boss 死亡信号可触发结算或换场，延迟到达的掉落只属于原战场。
 func spawn_boss_fragment(kind: String, world_pos: Vector2, assigned_peer_id := 0) -> void:
-	if not GameState.game_running or not is_inside_tree() or is_queued_for_deletion() or get_tree().current_scene != self:
+	spawn_powerup_at(kind, world_pos, assigned_peer_id)
+
+func spawn_powerup_at(kind: String, world_pos: Vector2, assigned_peer_id := 0) -> void:
+	if _fallback_in_progress or not GameState.game_running or not is_inside_tree() or is_queued_for_deletion() or get_tree().current_scene != self:
 		return
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		return
@@ -1194,6 +1237,7 @@ func _on_elite_spawn_requested() -> void:
 		return
 	if GameState.normal_growth_enabled and (_pending_boss_level == GameState.FIRST_BOSS_LEVEL or GameState.first_boss_warning_active):
 		return
+	_retire_transport()
 	call_deferred("_spawn_elite")
 
 const ELITE_ENTRY_SECONDS := 1.5
@@ -1287,6 +1331,9 @@ func _on_boss_spawn_requested(level: int) -> void:
 		return
 	if not GameState.game_running:
 		return
+	if _transport_offer == TransportOffer.WAITING_FOR_GAP and level > GameState.FIRST_BOSS_LEVEL:
+		_transport_offer = TransportOffer.SPENT
+	_retire_transport()
 	var first_ordinary := GameState.normal_growth_enabled and level == GameState.FIRST_BOSS_LEVEL
 	if first_ordinary and GameState.first_boss_warning_active:
 		return
@@ -1411,6 +1458,8 @@ func _on_boss_died() -> void:
 	if _boss != null:
 		if _boss.uses_first_boss_cues() and (not NetworkManager.is_online() or multiplayer.is_server()):
 			_first_boss_aftermath_left = FIRST_BOSS_AFTERMATH_SECONDS
+			if _transport_offer == TransportOffer.BEFORE_FIRST_BOSS:
+				_transport_offer = TransportOffer.WAITING_FOR_GAP
 		_expect_local_boss_reward(_boss)
 		var eid: int = _boss.entity_id
 		if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
@@ -1622,6 +1671,7 @@ func _rpc_force_game_over(final_score: int, final_level: int) -> void:
 		_hud._on_game_over(final_score, final_level)
 
 func _clear_runtime_entities_on_game_over() -> void:
+	_transport_offer = TransportOffer.SPENT
 	if GameState.normal_growth_enabled:
 		GameState.set_first_boss_warning(false)
 	queue_redraw()
@@ -1677,6 +1727,7 @@ func _on_level_up(_new_level: int) -> void:
 		_player.on_level_up()
 	if NetworkManager.is_online() and not multiplayer.is_server():
 		return
+	_retire_transport()
 	## 房主为每个存活玩家独立抽卡，加入端只展示快照里的本机批次。
 	var recommended := "firerate" if GameState.normal_growth_enabled and GameState.total_kills == 10 else ""
 	for pid: int in _alive_peer_ids():
@@ -1992,7 +2043,7 @@ func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int,
 		var old_node: Node = _entities[eid]
 		if is_instance_valid(old_node):
 			if ordinary_round > 0 and old_node is OrdinaryEnemy and old_node.ordinary_attack and not old_node.is_queued_for_deletion():
-				old_node.health = hp
+				old_node.health = mini(hp, old_node.health) if old_node.is_transport else hp
 				_apply_ordinary_enemy_state(old_node, ordinary_round, attack)
 				return
 			old_node.queue_free()
@@ -2008,11 +2059,14 @@ func _rpc_spawn_enemy(eid: int, etype: int, pos_x: float, pos_y: float, hp: int,
 	enemy.drop_chance = drop
 	enemy.bullet_speed_mult = bullet_mult
 	enemy.ordinary_attack = ordinary_round > 0
+	enemy.is_transport = enemy.ordinary_attack and bool(attack.get("transport", false))
 	if _player and is_instance_valid(_player):
 		enemy.set_target(_player)
 	_entities[eid] = enemy
 	add_child(enemy)
 	_apply_ordinary_enemy_state(enemy, ordinary_round, attack)
+	if enemy.is_transport and bool(attack.get("transport_approach", false)):
+		SFX.play_transport_approach()
 
 func _apply_ordinary_enemy_state(enemy: OrdinaryEnemy, round_id: int, state: Dictionary) -> void:
 	if state.is_empty() or (_lan_frozen_frame >= 0 and int(state.phase) != OrdinaryEnemy.AttackPhase.FLIGHT):
@@ -2372,6 +2426,8 @@ func _rpc_sync_entity_health(data: PackedFloat32Array, boss_shield_stamp := -1, 
 				hp = minf(hp, _boss.get_network_health())
 			if node.has_method("apply_network_health"):
 				node.apply_network_health(hp, max_hp)
+			elif node is OrdinaryEnemy and node.is_transport:
+				node.health = mini(node.health, int(hp))
 
 ## Host → Client：只同步带护盾实体的护盾值，避免所有实体同步包膨胀。
 @rpc("authority", "reliable", "call_remote")
@@ -2415,6 +2471,8 @@ func _batch_sync_entity_health() -> void:
 			health_data.append(float(node.get_network_health()))
 			if node.has_method("get_network_max_health"):
 				health_data.append(float(node.get_network_max_health()))
+		elif is_instance_valid(node) and node is OrdinaryEnemy and node.is_transport:
+			health_data.append_array(PackedFloat32Array([eid, node.health, OrdinaryEnemy.TRANSPORT_HP]))
 	if health_data.size() > 0:
 		var shield_stamp: int = _boss.get_shield_stamp() if _has_active_boss() else -1
 		var shield_hp: float = _boss.get_shield_hp() if _has_active_boss() else -1.0
